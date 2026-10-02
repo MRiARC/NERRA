@@ -1,0 +1,27 @@
+# NERRA development infrastructure.
+# Only Postgres runs in Docker — the FastAPI app runs on your machine
+# (make api) so you get hot reload and easy debugging.
+name: nerra
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nerra-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nerra}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nerra_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-nerra}
+    ports:
+      # Host port 5433 — 5432 often collides with a locally installed Postgres.
+      - "5433:5432"
+    volumes:
+      - nerra_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nerra} -d ${POSTGRES_DB:-nerra}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  nerra_pgdata:
