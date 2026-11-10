@@ -40,6 +40,7 @@ import {
   Claim,
   ManuscriptStatus,
   ManuscriptVersion,
+  ManuscriptSummary,
 } from "@/lib/api";
 
 function getErrorMessage(err: unknown): string {
@@ -88,6 +89,12 @@ export default function NerraDashboard() {
   const [versions, setVersions] = useState<ManuscriptVersion[]>([]);
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   const [exportingBible, setExportingBible] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [manuscripts, setManuscripts] = useState<ManuscriptSummary[]>([]);
+  const [isAppendOpen, setIsAppendOpen] = useState(false);
+  const [appendTitle, setAppendTitle] = useState("");
+  const [appendText, setAppendText] = useState("");
+  const [appendingChapter, setAppendingChapter] = useState(false);
 
   // Filter state
   const [issueFilter, setIssueFilter] = useState<
@@ -257,9 +264,10 @@ export default function NerraDashboard() {
 
   async function handleImportManuscript(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedProjectId || !importText.trim()) return;
+    if (!selectedProjectId || (!importFile && !importText.trim())) return;
     try {
-      const res = await api.importManuscript(selectedProjectId, importTitle, importText);
+      const res = await api.importManuscript(selectedProjectId, importTitle, importText, importFile);
+      setImportFile(null);
       setImportStatus({
         manuscript_id: res.manuscript_id,
         status: "processing",
@@ -347,6 +355,34 @@ export default function NerraDashboard() {
       ]);
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  async function handleOpenAppend() {
+    if (!selectedProjectId) return;
+    try {
+      const list = await api.getManuscripts(selectedProjectId);
+      setManuscripts(list);
+      setIsAppendOpen(true);
+    } catch (err: unknown) {
+      alert("Failed to load manuscripts: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleAppendChapter(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProjectId || manuscripts.length === 0 || !appendText.trim()) return;
+    setAppendingChapter(true);
+    try {
+      await api.appendChapter(selectedProjectId, manuscripts[0].id, appendTitle, appendText);
+      setIsAppendOpen(false);
+      setAppendTitle("");
+      setAppendText("");
+      await loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Append chapter failed: " + getErrorMessage(err));
+    } finally {
+      setAppendingChapter(false);
     }
   }
 
@@ -462,6 +498,16 @@ export default function NerraDashboard() {
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Import Manuscript</span>
+          </button>
+
+          <button
+            onClick={handleOpenAppend}
+            disabled={!selectedProjectId}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="Append a new chapter incrementally"
+          >
+            <Plus className="w-3.5 h-3.5 text-sky-400" />
+            <span className="hidden lg:inline">Append Ch</span>
           </button>
 
           <button
@@ -1260,25 +1306,32 @@ export default function NerraDashboard() {
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-400">Manuscript Prose / Chapters</label>
+                  <label className="text-xs font-semibold text-slate-400">Upload File (.txt, .md, .docx, .pdf) or Paste Prose</label>
                   <button
                     type="button"
                     onClick={() => {
                       setImportTitle("The Ashford Mystery");
                       setImportText(SAMPLE_STORY);
+                      setImportFile(null);
                     }}
                     className="text-[11px] text-indigo-400 hover:text-indigo-300 font-medium"
                   >
                     Reset to Ashford Mystery Demo
                   </button>
                 </div>
+                <input
+                  type="file"
+                  accept=".txt,.md,.docx,.pdf"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  className="mb-2 block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700"
+                />
                 <textarea
-                  rows={10}
+                  rows={9}
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
                   placeholder="Paste chapter text here with 'Chapter 1', 'Chapter 2', etc..."
-                  required
+                  required={!importFile}
                 />
               </div>
 
@@ -1442,6 +1495,63 @@ export default function NerraDashboard() {
         </div>
       )}
 
+      {/* APPEND CHAPTER MODAL */}
+      {isAppendOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-sky-400" />
+                Append New Chapter
+              </h3>
+              <button onClick={() => setIsAppendOpen(false)} className="text-slate-400 hover:text-white">
+                ✕
+              </button>
+            </div>
+            {manuscripts.length === 0 ? (
+              <p className="text-xs text-slate-400 py-4">Import a manuscript first before appending a chapter.</p>
+            ) : (
+              <form onSubmit={handleAppendChapter} className="space-y-3">
+                <p className="text-xs text-slate-400">
+                  Target manuscript: <strong className="text-slate-200">{manuscripts[0].title}</strong> ({manuscripts[0].chapters_total} chapters)
+                </p>
+                <input
+                  type="text"
+                  value={appendTitle}
+                  onChange={(e) => setAppendTitle(e.target.value)}
+                  placeholder="Chapter Title (optional)"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+                />
+                <textarea
+                  rows={8}
+                  value={appendText}
+                  onChange={(e) => setAppendText(e.target.value)}
+                  placeholder="Paste new chapter prose here..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-200 font-mono"
+                  required
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAppendOpen(false)}
+                    className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={appendingChapter}
+                    className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50"
+                  >
+                    {appendingChapter ? "Analyzing..." : "Append & Analyze"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* DRAFT VERSIONS MODAL */}
       {isVersionsOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1488,6 +1598,11 @@ export default function NerraDashboard() {
                         {ver.diff_summary.claims_count ?? 0} claims ·{" "}
                         {ver.diff_summary.open_issues_count ?? 0} open issues
                       </p>
+                      {ver.diff_summary.semantic_diff && (
+                        <p className="text-xs text-indigo-300 mt-2 whitespace-pre-wrap bg-slate-950/60 border border-slate-800 rounded p-2">
+                          {ver.diff_summary.semantic_diff}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right shrink-0 text-xs font-mono space-y-1">
                       <div>

@@ -239,7 +239,17 @@ export interface ManuscriptVersion {
     open_issues_count?: number;
     lines_added?: number;
     lines_removed?: number;
+    semantic_diff?: string;
   };
+  created_at: string;
+}
+
+export interface ManuscriptSummary {
+  id: string;
+  title: string;
+  status: string;
+  chapters_done: number;
+  chapters_total: number;
   created_at: string;
 }
 
@@ -331,15 +341,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ title, genre: description }),
     }),
-  importManuscript: (projectId: string, title: string, text: string) => {
+  importManuscript: (projectId: string, title: string, text: string, file?: File | null) => {
     const formData = new FormData();
     formData.append("title", title);
-    formData.append("text", text);
+    if (file) {
+      formData.append("file", file);
+    } else {
+      formData.append("text", text);
+    }
     return apiFetch<{ manuscript_id: string; project_id: string; status: string }>(
       `/projects/${projectId}/manuscripts/import`,
       { method: "POST", body: formData }
     );
   },
+  getManuscripts: (projectId: string) =>
+    apiFetch<ManuscriptSummary[]>(`/projects/${projectId}/manuscripts`),
+  appendChapter: (projectId: string, manuscriptId: string, chapterTitle: string, text: string) =>
+    apiFetch<ManuscriptStatus>(`/projects/${projectId}/manuscripts/${manuscriptId}/chapters`, {
+      method: "POST",
+      body: JSON.stringify({ chapter_title: chapterTitle, text }),
+    }),
   getManuscriptStatus: (manuscriptId: string, projectId: string) =>
     apiFetch<ManuscriptStatus>(`/manuscripts/${manuscriptId}/status?project_id=${projectId}`),
   reanalyzeManuscript: (manuscriptId: string, projectId: string, chapterNumber?: number) =>

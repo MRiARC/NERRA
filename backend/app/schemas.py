@@ -8,6 +8,7 @@ Two jobs:
 """
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -78,6 +79,30 @@ class StatusOut(BaseModel):
     chapters_done: int
     chapters_total: int
     error_note: str | None
+
+
+class ManuscriptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    status: str
+    chapters_done: int
+    chapters_total: int
+    created_at: datetime
+
+
+class ChapterAppendIn(BaseModel):
+    chapter_title: str = Field(default="")
+    text: str = Field(min_length=20)
+
+
+class ChangeDetectionOut(BaseModel):
+    event_type: str
+    changed_chapters: list[int] = Field(default_factory=list)
+    unchanged_chapters: list[int] = Field(default_factory=list)
+    stale_claim_chapters: list[int] = Field(default_factory=list)
+    paragraph_diffs: dict = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

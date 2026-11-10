@@ -8,20 +8,21 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, get_owned_project
 from app.database import get_db
 from app.models import Manuscript, User
-from app.schemas import ImportOut, StatusOut
-from app.services.pipeline import run_import_pipeline_guarded
+from app.schemas import ChangeDetectionOut, ChapterAppendIn, ImportOut, ManuscriptOut, StatusOut
+from app.services import change_detector
+from app.services.pipeline import append_chapter_to_manuscript, run_import_pipeline_guarded
 
 router = APIRouter(tags=["manuscripts"])
 
-MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB is plenty for demo manuscripts
+MAX_IMPORT_BYTES = 10 * 1024 * 1024  # 10 MB supports long .pdf / .docx / .txt manuscripts
 
 
 def _extract_text(file: UploadFile | None, pasted_text: str) -> str:
-    """Get plain text from an uploaded file (.txt/.md/.docx) or pasted text."""
+    """Get plain text from an uploaded file (.txt/.md/.docx/.pdf) or pasted text."""
     if file is not None:
         data = file.file.read(MAX_IMPORT_BYTES + 1)
         if len(data) > MAX_IMPORT_BYTES:
-            raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
+            raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
         filename = (file.filename or "").lower()
         if filename.endswith(".docx"):
@@ -32,10 +33,18 @@ def _extract_text(file: UploadFile | None, pasted_text: str) -> str:
             document = Document(io.BytesIO(data))
             return "\n".join(p.text for p in document.paragraphs)
 
+        if filename.endswith(".pdf") or file.content_type == "application/pdf":
+            import io
+
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            return "\n\n".join((page.extract_text() or "") for page in reader.pages)
+
         if filename.endswith((".txt", ".md")) or file.content_type == "text/plain":
             return data.decode("utf-8", errors="replace")
 
-        raise HTTPException(status_code=415, detail="Unsupported file type — use .txt, .md or .docx")
+        raise HTTPException(status_code=415, detail="Unsupported file type — use .txt, .md, .docx, or .pdf")
 
     return pasted_text
 
@@ -101,6 +110,59 @@ def manuscript_status(
         chapters_done=manuscript.chapters_done,
         chapters_total=manuscript.chapters_total,
         error_note=manuscript.error_note,
+    )
+
+
+@router.get("/projects/{project_id}/manuscripts", response_model=list[ManuscriptOut])
+def list_manuscripts(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """List manuscripts uploaded to the project."""
+    return (
+        db.query(Manuscript)
+        .filter(Manuscript.project_id == project.id)
+        .order_by(Manuscript.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/projects/{project_id}/manuscripts/diff", response_model=ChangeDetectionOut)
+def preview_manuscript_diff(
+    project_id: uuid.UUID,
+    text: str = Form(default=""),
+    file: UploadFile | None = File(default=None),
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Detect changed chapters & paragraph diffs against the latest project draft."""
+    content = _extract_text(file, text).strip()
+    return change_detector.detect_changes(db, project.id, content)
+
+
+@router.post("/projects/{project_id}/manuscripts/{manuscript_id}/chapters", response_model=StatusOut, status_code=201)
+def append_chapter(
+    project_id: uuid.UUID,
+    manuscript_id: uuid.UUID,
+    payload: ChapterAppendIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StatusOut:
+    """Incrementally append and analyze a single new chapter (`New Chapter Added` trigger)."""
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None or manuscript.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+    updated = append_chapter_to_manuscript(db, manuscript, payload.text, payload.chapter_title)
+    return StatusOut(
+        manuscript_id=updated.id,
+        status=updated.status,
+        chapters_done=updated.chapters_done,
+        chapters_total=updated.chapters_total,
+        error_note=updated.error_note,
     )
 
 

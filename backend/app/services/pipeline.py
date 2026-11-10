@@ -83,7 +83,7 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
     chunk with embedding=None and log — the pipeline must not die over this.
     """
     from app.models import Chunk
-    from app.services import embedder
+    from app.services import change_detector, embedder
 
     try:
         embedding = embedder.embed_one(content)
@@ -97,6 +97,7 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
             chapter_number=chapter_number,
             content=content,
             content_hash=_content_hash(content),
+            paragraph_hashes=change_detector.compute_paragraph_hashes(content),
             embedding=embedding,
         )
     )
@@ -109,8 +110,18 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
 
 
 def run_import_pipeline(manuscript_id, db: Session) -> None:
-    """Analyze a manuscript end to end: split chapters, extract & validate, embed, compute timeline, check consistency, sync Neo4j, and snapshot version."""
-    from app.services import consistency, exporter, extractor, graph, splitter, timeline
+    """Analyze a manuscript end to end with signal scanning, deep context building, multi-pass extraction, timeline, consistency, Neo4j sync, and versioning."""
+    from app.services import (
+        change_detector,
+        consistency,
+        context_builder,
+        exporter,
+        extractor,
+        graph,
+        signal_scanner,
+        splitter,
+        timeline,
+    )
     from app.services.extractor import ExtractionPayload
 
     manuscript = db.get(Manuscript, manuscript_id)
@@ -119,10 +130,16 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
 
     _set_status(db, manuscript, "processing")
 
+    change_report = change_detector.detect_changes(db, manuscript.project_id, manuscript.raw_text)
+    for stale_ch in change_report.get("stale_claim_chapters") or []:
+        change_detector.mark_chapter_claims_stale(db, manuscript.project_id, stale_ch)
+
     chapters = splitter.split_chapters(manuscript.raw_text)
     manuscript.chapters_total = len(chapters)
     manuscript.chapters_done = 0
     db.commit()
+
+    extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
 
     for chapter in chapters:
         content_hash = _content_hash(chapter.content)
@@ -135,8 +152,17 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             else:
                 payload = cached.result
         else:
-            roster = extractor.get_roster(db, manuscript.project_id)
-            payload = extractor.extract_chapter(chapter.number, chapter.content, roster)
+            if extract_is_mocked:
+                roster = extractor.get_roster(db, manuscript.project_id)
+                payload = extractor.extract_chapter(chapter.number, chapter.content, roster)
+            else:
+                signals = signal_scanner.scan_chapter_signals(chapter.content)
+                ctx_packet = context_builder.build_story_context_packet(
+                    db, manuscript.project_id, chapter.number, chapter.content, signals=signals
+                )
+                payload = extractor.extract_chapter_multipass(
+                    chapter.number, chapter.content, ctx_packet["prompt_text"]
+                )
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
 
@@ -159,6 +185,71 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Version snapshot skipped: %s", exc)
     _set_status(db, manuscript, "ready")
+
+
+def append_chapter_to_manuscript(
+    db: Session, manuscript: Manuscript, chapter_text: str, chapter_title: str = ""
+) -> Manuscript:
+    """Incrementally append and analyze a single new chapter (`New Chapter Added` trigger)."""
+    from app.services import (
+        consistency,
+        context_builder,
+        exporter,
+        extractor,
+        graph,
+        signal_scanner,
+        splitter,
+        timeline,
+    )
+
+    existing_chapters = splitter.split_chapters(manuscript.raw_text)
+    next_num = len(existing_chapters) + 1
+    heading = chapter_title.strip() or f"Chapter {next_num}"
+    body = chapter_text.strip()
+    if not body.lower().startswith("chapter "):
+        appended_block = f"\n\n{heading}\n\n{body}"
+    else:
+        appended_block = f"\n\n{body}"
+
+    manuscript.raw_text = (manuscript.raw_text or "").rstrip() + appended_block
+    manuscript.chapters_total = next_num
+    _set_status(db, manuscript, "processing")
+
+    signals = signal_scanner.scan_chapter_signals(body)
+    ctx_packet = context_builder.build_story_context_packet(
+        db, manuscript.project_id, next_num, body, signals=signals
+    )
+    extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
+    if extract_is_mocked:
+        payload = extractor.extract_chapter(next_num, body, ctx_packet["prompt_text"])
+    else:
+        payload = extractor.extract_chapter_multipass(next_num, body, ctx_packet["prompt_text"])
+    payload = extractor.validate_payload(payload, body)
+
+    content_hash = _content_hash(body)
+    extractor.persist_extraction(db, manuscript.project_id, next_num, payload)
+    _save_analysis(db, manuscript.id, next_num, content_hash, payload.model_dump())
+    _embed_and_store_chunk(db, manuscript, next_num, body)
+
+    manuscript.chapters_done = next_num
+    db.commit()
+
+    try:
+        timeline.compute_story_chronology(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Timeline chronology computation skipped on append: %s", exc)
+    consistency.run_consistency_pass(db, manuscript.project_id)
+    try:
+        graph.sync_project_graph(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Graph sync skipped on append: %s", exc)
+    try:
+        exporter.record_manuscript_version(db, manuscript)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Version snapshot skipped on append: %s", exc)
+    _set_status(db, manuscript, "ready")
+    db.refresh(manuscript)
+    return manuscript
 
 
 def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) -> None:

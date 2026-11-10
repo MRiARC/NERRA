@@ -116,6 +116,7 @@ class Chunk(Base):
     chapter_number: Mapped[int]
     content: Mapped[str]
     content_hash: Mapped[str]
+    paragraph_hashes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.embedding_dim), nullable=True
     )
@@ -250,6 +251,7 @@ class Claim(Base):
     chapter: Mapped[int]
     evidence_quote: Mapped[str]  # exact sentence from the manuscript
     source_paragraph_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    extraction_version: Mapped[int] = mapped_column(default=1)
     confidence: Mapped[float] = mapped_column(default=1.0)
     validation_state: Mapped[str] = mapped_column(default="AUTO_ACCEPTED")  # AUTO_ACCEPTED | PENDING_REVIEW | DISMISSED
     # active | superseded | intentional

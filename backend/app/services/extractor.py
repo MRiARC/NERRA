@@ -235,7 +235,7 @@ def quote_in_text(quote: str, chapter_text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# YOUR THREE FUNCTIONS (Task 03)
+# Extraction & Validation Entrypoints
 # ---------------------------------------------------------------------------
 
 
@@ -260,6 +260,86 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
     )
     raw = next(block.input for block in response.content if getattr(block, "type", None) == "tool_use")
     return ExtractionPayload.model_validate(raw)
+
+
+def extract_chapter_multipass(chapter_number: int, chapter_text: str, story_context: str) -> ExtractionPayload:
+    """Run 3 focused parallel Claude Sonnet passes for high-recall chapter extraction."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    class EntitiesPassPayload(BaseModel):
+        characters: list[ExtractedCharacter] = Field(default_factory=list)
+        relationships: list[ExtractedRelationship] = Field(default_factory=list)
+        locations: list[ExtractedLocation] = Field(default_factory=list)
+        objects: list[ExtractedObject] = Field(default_factory=list)
+
+    class TimelineCustodyPassPayload(BaseModel):
+        events: list[ExtractedEvent] = Field(default_factory=list)
+        knowledge: list[ExtractedKnowledge] = Field(default_factory=list)
+        custody_events: list[ExtractedCustodyEvent] = Field(default_factory=list)
+
+    class ClaimsRulesPassPayload(BaseModel):
+        claims: list[ExtractedClaim] = Field(default_factory=list)
+        world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
+
+    def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
+        client = get_anthropic_client()
+        prompt = (
+            f"You are analyzing Chapter {chapter_number} of a novel.\n\n"
+            f"EXISTING STORY CONTEXT:\n{story_context}\n\n"
+            f"FOCUS FOR THIS PASS:\n{focus_instructions}\n\n"
+            f"CHAPTER TEXT:\n---\n{chapter_text}\n---"
+        )
+        res = client.messages.create(
+            model=settings.extraction_model,
+            max_tokens=settings.extraction_max_tokens,
+            tools=[{
+                "name": tool_name,
+                "description": f"Save structured output for {tool_name}",
+                "input_schema": schema_cls.model_json_schema(),
+            }],
+            tool_choice={"type": "tool", "name": tool_name},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = next(block.input for block in res.content if getattr(block, "type", None) == "tool_use")
+        return schema_cls.model_validate(raw)
+
+    passes = [
+        (
+            "save_entities",
+            EntitiesPassPayload,
+            "Extract EVERY character (resolving pronouns/epithets and recording aliases), relationships "
+            "(with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
+        ),
+        (
+            "save_timeline_custody",
+            TimelineCustodyPassPayload,
+            "Extract EVERY chronological/narrative scene beat (participants, location, temporal_anchor, "
+            "is_flashback/is_flashforward), knowledge acquisition ('witnessed'|'told'|'deduced'|'overheard' with source_character), "
+            "and object custody transfer/use.",
+        ),
+        (
+            "save_claims_rules",
+            ClaimsRulesPassPayload,
+            "Extract ALL verifiable factual claims (physical traits, ages, possessions, behavior, and 'knows_about' assertions) "
+            "with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
+        ),
+    ]
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(lambda p: _run_pass(*p), passes))
+
+    ent_out, tl_out, cl_out = results[0], results[1], results[2]
+    return ExtractionPayload(
+        characters=ent_out.characters,
+        relationships=ent_out.relationships,
+        locations=ent_out.locations,
+        objects=ent_out.objects,
+        events=tl_out.events,
+        knowledge=tl_out.knowledge,
+        custody_events=tl_out.custody_events,
+        claims=cl_out.claims,
+        world_rules=cl_out.world_rules,
+    )
 
 
 def validate_payload(payload: ExtractionPayload, chapter_text: str) -> ExtractionPayload:
