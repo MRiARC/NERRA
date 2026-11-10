@@ -50,8 +50,54 @@ def _is_heading(line: str) -> bool:
     return any(p.match(line_clean) for p in _COMPILED_PATTERNS)
 
 
-def split_chapters(text: str) -> list[Chapter]:
-    """Split raw manuscript text into a list of chapters."""
+def _detect_headings_llm(text: str) -> list[str]:
+    """Ask Claude to identify literal chapter/scene heading lines in prose lacking standard headings."""
+    try:
+        from pydantic import BaseModel, Field
+
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return []
+
+        class SectionSplitPlan(BaseModel):
+            headings: list[str] = Field(default_factory=list)
+
+        client = get_anthropic_client()
+        response = client.messages.create(
+            model=settings.fast_model,
+            max_tokens=1024,
+            tools=[
+                {
+                    "name": "save_headings",
+                    "description": "Save exact verbatim section/chapter boundary lines",
+                    "input_schema": SectionSplitPlan.model_json_schema(),
+                }
+            ],
+            tool_choice={"type": "tool", "name": "save_headings"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Identify exact verbatim heading/separator lines (such as unnumbered chapter titles, "
+                        "POV names like 'SARAH', 'Prologue', 'Epilogue', or '***') that divide sections in this text. "
+                        "Return ONLY lines appearing verbatim in the manuscript.\n\n"
+                        + text[:30000]
+                    ),
+                }
+            ],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "save_headings":
+                return [h.strip() for h in SectionSplitPlan.model_validate(block.input).headings if h.strip()]
+    except Exception:  # noqa: BLE001
+        return []
+    return []
+
+
+def split_chapters(text: str, use_llm: bool | None = None) -> list[Chapter]:
+    """Split raw manuscript text into chapters, using LLM boundary fallback when multiple lines lack headings."""
     if not text or not text.strip():
         return [Chapter(number=1, title="Full text", content=text, start=0, end=len(text))]
 
@@ -67,6 +113,19 @@ def split_chapters(text: str) -> list[Chapter]:
     for line_start, line_end, line_str in lines_with_offsets:
         if _is_heading(line_str):
             headings.append((line_start, line_end, line_str.strip()))
+
+    if use_llm is None:
+        from app.config import settings
+
+        non_empty_lines = sum(1 for _, _, ln in lines_with_offsets if ln.strip())
+        use_llm = bool(settings.anthropic_api_key) and non_empty_lines >= 2
+
+    if not headings and use_llm:
+        llm_heading_set = set(_detect_headings_llm(text))
+        if llm_heading_set:
+            for line_start, line_end, line_str in lines_with_offsets:
+                if line_str.strip() in llm_heading_set:
+                    headings.append((line_start, line_end, line_str.strip()))
 
     if not headings:
         return [Chapter(number=1, title="Full text", content=text, start=0, end=len(text))]

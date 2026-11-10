@@ -56,14 +56,77 @@ def detect_temporal_markers(
     return anchor, is_flashback, is_flashforward
 
 
-def compute_story_chronology(db: Session, project_id) -> list:
-    """Assign normalized `story_time_order` across all StoryEvents in a project.
+def order_events_chronologically_llm(events: list, use_llm: bool = True) -> list | None:
+    """Use Claude to infer relative chronological ordering, unmarked flashbacks, and parallel time slots."""
+    if not use_llm or len(events) < 2:
+        return None
+    try:
+        from pydantic import BaseModel, Field
 
-    Ordering rule:
-      1. Flashback events come earliest (ordered among themselves by narrative order).
-      2. Main-present events follow sequentially by (chapter_number, scene_order).
-      3. Flash-forward events come last.
-    """
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return None
+
+        class OrderedEventItem(BaseModel):
+            event_index: int
+            story_time_order: int
+            is_flashback: bool = False
+            is_flashforward: bool = False
+            temporal_anchor: str | None = None
+
+        class ChronologyPlan(BaseModel):
+            ordered: list[OrderedEventItem] = Field(default_factory=list)
+
+        event_lines = "\n".join(
+            f"{idx}: [Ch.{ev.chapter_number}.{ev.scene_order}] {ev.summary} "
+            f"(anchor={ev.temporal_anchor}, loc={ev.location})"
+            for idx, ev in enumerate(events)
+        )
+        prompt = f"""Order these story events in true IN-UNIVERSE CHRONOLOGICAL ORDER (`story_time_order` starting at 1).
+Use identical `story_time_order` integers for events happening SIMULTANEOUSLY in parallel locations.
+Identify flashbacks (`is_flashback=true`) and flashforwards (`is_flashforward=true`) even without explicit keywords.
+
+EVENTS:
+{event_lines}"""
+
+        client = get_anthropic_client()
+        response = client.messages.create(
+            model=settings.chat_model,
+            max_tokens=2048,
+            tools=[
+                {
+                    "name": "save_chronology",
+                    "description": "Save true story-chronological order for events",
+                    "input_schema": ChronologyPlan.model_json_schema(),
+                }
+            ],
+            tool_choice={"type": "tool", "name": "save_chronology"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "save_chronology":
+                parsed = ChronologyPlan.model_validate(block.input)
+                by_idx = {item.event_index: item for item in parsed.ordered}
+                if len(by_idx) == len(events):
+                    for idx, ev in enumerate(events):
+                        plan_item = by_idx[idx]
+                        ev.story_time_order = plan_item.story_time_order
+                        ev.is_flashback = plan_item.is_flashback
+                        ev.is_flashforward = plan_item.is_flashforward
+                        if plan_item.temporal_anchor:
+                            ev.temporal_anchor = plan_item.temporal_anchor
+                    return sorted(events, key=lambda e: (e.story_time_order, e.chapter_number, e.scene_order))
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("LLM timeline chronology fallback to deterministic markers: %s", exc)
+    return None
+
+
+def compute_story_chronology(db: Session, project_id, use_llm: bool = True) -> list:
+    """Assign normalized `story_time_order` across all StoryEvents in a project."""
     from app.models import StoryEvent
 
     pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
@@ -99,6 +162,11 @@ def compute_story_chronology(db: Session, project_id) -> list:
             flashforwards.append(ev)
         else:
             present.append(ev)
+
+    llm_ordered = order_events_chronologically_llm(events, use_llm=use_llm)
+    if llm_ordered is not None:
+        db.commit()
+        return llm_ordered
 
     ordered = flashbacks + present + flashforwards
     for idx, ev in enumerate(ordered, start=1):

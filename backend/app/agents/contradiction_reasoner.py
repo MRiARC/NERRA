@@ -50,9 +50,9 @@ class ReasonerState(TypedDict, total=False):
 
 
 def gather_context_node(state: ReasonerState) -> dict:
-    """Gather surrounding manuscript chunk excerpts for the chapters involved."""
+    """Gather full surrounding manuscript chunks and character context for involved chapters."""
     from app.database import SessionLocal
-    from app.models import Chunk, Manuscript
+    from app.models import Character, Chunk, Manuscript
 
     chapters = {
         ev.get("chapter")
@@ -60,24 +60,36 @@ def gather_context_node(state: ReasonerState) -> dict:
         if isinstance(ev.get("chapter"), int)
     }
     passages: list[str] = []
-    if chapters and state.get("project_id"):
+    if state.get("project_id"):
         db = SessionLocal()
         try:
-            chunks = (
-                db.query(Chunk)
-                .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
-                .filter(Manuscript.project_id == state["project_id"])
-                .filter(Chunk.chapter_number.in_(list(chapters)))
+            chars = (
+                db.query(Character)
+                .filter(Character.project_id == state["project_id"])
                 .all()
             )
-            for ch in chunks:
-                passages.append(f"[Chapter {ch.chapter_number}] {ch.content[:800]}")
+            if chars:
+                roster_lines = [
+                    f"{c.name}" + (f" (aliases: {', '.join(c.aliases)})" if c.aliases else "")
+                    for c in chars
+                ]
+                passages.append("[Known Characters]\n" + ", ".join(roster_lines))
+            if chapters:
+                chunks = (
+                    db.query(Chunk)
+                    .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
+                    .filter(Manuscript.project_id == state["project_id"])
+                    .filter(Chunk.chapter_number.in_(list(chapters)))
+                    .all()
+                )
+                for ch in chunks:
+                    passages.append(f"[Chapter {ch.chapter_number}]\n{ch.content[:4000]}")
         except Exception as exc:  # noqa: BLE001
             logger.debug("Context gather skipped DB chunks: %s", exc)
         finally:
             db.close()
 
-    return {"surrounding_context": "\n".join(passages)}
+    return {"surrounding_context": "\n\n".join(passages)}
 
 
 def reason_about_intent_node(state: ReasonerState) -> dict:
@@ -96,22 +108,22 @@ def reason_about_intent_node(state: ReasonerState) -> dict:
 
             if settings.anthropic_api_key:
                 client = get_anthropic_client()
-                prompt = f"""Analyze this story continuity issue and classify the author's intent.
+                prompt = f"""Analyze this story continuity issue carefully and classify the author's intent.
 
 ISSUE TYPE: {state.get('issue_type')}
 DESCRIPTION: {description}
 EVIDENCE QUOTES: {evidence_text}
-SURROUNDING PASSAGES:
-{context[:2000]}
+SURROUNDING PASSAGES & CHARACTER CONTEXT:
+{context[:12000]}
 
 Decide whether this is:
-- "error": A genuine accidental continuity mistake (e.g. changing eye color or physical traits with no plot explanation).
-- "intentional": Deliberate narrative tension (e.g. a character using a false name, disguise, lying, or unreliable narrator).
-- "ambiguous": Unclear without author confirmation (route to review queue).
+- "error": A genuine accidental continuity mistake (e.g. changing eye color, impossible timeline/custody contradiction, or leaked secret with no plot explanation).
+- "intentional": Deliberate narrative tension (e.g. a character using a false name, disguise, lying, magical shift, or unreliable narrator).
+- "ambiguous": Plausible either way without author confirmation (route to review queue).
 """
                 response = client.messages.create(
-                    model=settings.extraction_model,
-                    max_tokens=512,
+                    model=settings.chat_model,
+                    max_tokens=1024,
                     tools=[
                         {
                             "name": "classify_intent",
