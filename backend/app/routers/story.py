@@ -22,6 +22,7 @@ from app.models import (
     Issue,
     KnowledgeUpdate,
     Location,
+    ManuscriptVersion,
     ObjectCustodyEvent,
     Relationship,
     StoryEvent,
@@ -30,6 +31,7 @@ from app.models import (
     WorldRule,
 )
 from app.schemas import (
+    BibleExportOut,
     CharacterMergeIn,
     CharacterOut,
     ClaimOut,
@@ -39,6 +41,7 @@ from app.schemas import (
     IssueStatus,
     KnowledgeMatrixOut,
     KnowledgeOut,
+    ManuscriptVersionOut,
     ObjectCustodyOut,
     RelationshipOut,
     StoryGraphOut,
@@ -47,7 +50,7 @@ from app.schemas import (
     WorldRuleCreate,
     WorldRuleOut,
 )
-from app.services import consistency, graph, knowledge, timeline
+from app.services import consistency, exporter, graph, knowledge, timeline
 
 router = APIRouter(tags=["story"])
 
@@ -399,3 +402,30 @@ def delete_world_rule(
         raise HTTPException(status_code=404, detail="World rule not found")
     db.delete(rule)
     db.commit()
+
+
+@router.get("/projects/{project_id}/versions", response_model=list[ManuscriptVersionOut])
+def list_versions(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """Draft snapshots and diff summaries across manuscript uploads."""
+    return (
+        db.query(ManuscriptVersion)
+        .filter(ManuscriptVersion.project_id == project.id)
+        .order_by(ManuscriptVersion.version_number.desc())
+        .all()
+    )
+
+
+@router.get("/projects/{project_id}/export/bible", response_model=BibleExportOut)
+def export_story_bible(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Compile and return the full project Story Bible in Markdown."""
+    return exporter.export_story_bible_markdown(db, project.id)

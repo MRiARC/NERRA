@@ -222,6 +222,31 @@ export interface ManuscriptStatus {
 export interface ChatResponse {
   answer: string;
   citations: Array<{ chapter: number; excerpt: string }>;
+  intent?: string;
+  graph_entities?: string[];
+}
+
+export interface ManuscriptVersion {
+  id: string;
+  manuscript_id: string;
+  version_number: number;
+  content_hash: string;
+  diff_summary: {
+    title?: string;
+    chapters_total?: number;
+    characters_count?: number;
+    claims_count?: number;
+    open_issues_count?: number;
+    lines_added?: number;
+    lines_removed?: number;
+  };
+  created_at: string;
+}
+
+export interface BibleExport {
+  project_title: string;
+  markdown: string;
+  generated_at: string;
 }
 
 export interface GraphNode {
@@ -390,4 +415,8 @@ export const api = {
     }),
   deleteWorldRule: (projectId: string, ruleId: string) =>
     apiFetch<void>(`/projects/${projectId}/world-rules/${ruleId}`, { method: "DELETE" }),
+  getVersions: (projectId: string) =>
+    apiFetch<ManuscriptVersion[]>(`/projects/${projectId}/versions`),
+  exportBible: (projectId: string) =>
+    apiFetch<BibleExport>(`/projects/${projectId}/export/bible`),
 };

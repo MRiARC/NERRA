@@ -36,9 +36,36 @@ class ChatState(TypedDict, total=False):
 
     project_id: str
     question: str
+    intent: str
+    graph_entities: list[str]
     contexts: list[dict]  # [{chapter, content}] retrieved passages + facts
     answer: str
     citations: list[dict]  # [{chapter, excerpt}]
+
+
+def classify_query_intent(question: str) -> str:
+    """Classify the story question to guide Graph RAG retrieval."""
+    q = (question or "").lower()
+    if any(k in q for k in ("know", "knew", "knows", "secret", "aware", "suspect", "learned", "discovered", "told")):
+        return "epistemic"
+    if any(k in q for k in ("relationship", "between", "ally", "enemy", "trust", "friend", "rival", "related", "mentor")):
+        return "relational"
+    if any(k in q for k in ("when", "before", "after", "timeline", "chronolog", "flashback", "order", "sequence")):
+        return "chronological"
+    if any(k in q for k in ("what color", "where", "who", "attribute", "describe", "eyes", "hair", "holding", "custody", "carry")):
+        return "factual"
+    return "semantic"
+
+
+def grade_contexts(question: str, contexts: list[dict]) -> bool:
+    """Grade whether retrieved contexts provide grounding for the question."""
+    if not contexts:
+        return False
+    has_chapter = any(int(ctx.get("chapter", 0) or 0) > 0 for ctx in contexts)
+    q_tokens = {w for w in re.findall(r"[a-z]{4,}", (question or "").lower())}
+    combined = " ".join(ctx.get("content", "").lower() for ctx in contexts)
+    overlap = any(tok in combined for tok in q_tokens) if q_tokens else True
+    return has_chapter and overlap
 
 
 # ---------------------------------------------------------------------------
@@ -47,26 +74,26 @@ class ChatState(TypedDict, total=False):
 
 
 def retrieve_node(state: ChatState) -> dict:
-    """Gather evidence for answering the question.
+    """Gather Graph RAG evidence for answering the question.
 
-    Build `contexts`: a list of {"chapter": int, "content": str} dicts, the
-    most relevant passages for state["question"]:
-
-      1. Semantic search: embed the question with services.embedder, then
-         query Chunk rows joined to Manuscript on project_id, ordered by
-         .embedding.cosine_distance(vector) — take the top 4.
-      2. Add facts: the project's Character names + active Claims (top 10)
-         as one extra context dict {"chapter": 0, "content": "Known facts: ..."}.
-      3. Return {"contexts": contexts}.
+    Combines:
+      1. Intent classification (`epistemic`, `relational`, `chronological`, `factual`, `semantic`).
+      2. pgvector semantic passage search (+ keyword retry fallback when needed).
+      3. Multi-hop Graph neighborhood expansion (Neo4j/SQL) for mentioned entities,
+         plus timeline & knowledge facts matching the query intent.
+      4. Active structured Claim facts.
     """
     from app.database import SessionLocal
-    from app.models import Character, Claim, Chunk, Manuscript
-    from app.services import embedder
+    from app.models import Character, Claim, Chunk, KnowledgeUpdate, Location, Manuscript, Relationship
+    from app.services import embedder, graph, timeline
 
     project_id = state["project_id"]
     question = state["question"]
+    intent = classify_query_intent(question)
 
-    contexts = []
+    contexts: list[dict] = []
+    graph_entities: list[str] = []
+    seen_chunk_ids: set[str] = set()
     db = SessionLocal()
     try:
         # 1. Semantic search using local sentence-transformers embedder
@@ -82,9 +109,10 @@ def retrieve_node(state: ChatState) -> dict:
                 .all()
             )
             for chunk in chunks:
+                seen_chunk_ids.add(str(chunk.id))
                 contexts.append({
                     "chapter": chunk.chapter_number,
-                    "content": chunk.content
+                    "content": chunk.content,
                 })
         except Exception as exc:
             logger.warning("Retrieval chunk search failed: %s", exc)
@@ -99,18 +127,89 @@ def retrieve_node(state: ChatState) -> dict:
                 .all()
             )
             for chunk in fallback_chunks:
+                seen_chunk_ids.add(str(chunk.id))
                 contexts.append({
                     "chapter": chunk.chapter_number,
-                    "content": chunk.content
+                    "content": chunk.content,
                 })
 
-        # 2. Add facts: Character names + active Claims (top 10)
+        # 2. Graph RAG: match Character & Location entities and expand neighborhood
         characters = db.query(Character).filter(Character.project_id == project_id).all()
+        locations = db.query(Location).filter(Location.project_id == project_id).all()
+        char_by_id = {c.id: c.name for c in characters}
         char_names = [c.name for c in characters]
+
+        q_lower = question.lower()
+        matched_char_ids = {
+            c.id for c in characters if len(c.name) >= 2 and c.name.lower() in q_lower
+        }
+        matched_entities = [c.name for c in characters if c.id in matched_char_ids]
+        for loc in locations:
+            if len(loc.name) >= 2 and loc.name.lower() in q_lower and loc.name not in matched_entities:
+                matched_entities.append(loc.name)
+
+        graph_notes: list[str] = []
+        if matched_char_ids:
+            rel_rows = (
+                db.query(Relationship)
+                .filter(Relationship.project_id == project_id)
+                .all()
+            )
+            for r in rel_rows:
+                if r.character_a_id in matched_char_ids or r.character_b_id in matched_char_ids:
+                    ca = char_by_id.get(r.character_a_id, str(r.character_a_id))
+                    cb = char_by_id.get(r.character_b_id, str(r.character_b_id))
+                    graph_notes.append(
+                        f"{ca} --[{r.type}, ch.{r.chapter or '?'}]--> {cb}"
+                        + (f": {r.description}" if r.description else "")
+                    )
+
+        for entity_name in matched_entities[:3]:
+            graph_entities.append(entity_name)
+            try:
+                neighbors = graph.get_entity_neighborhood(db, project_id, entity_name, hops=2)
+                for nbr in neighbors[:8]:
+                    labels = ", ".join(nbr.get("labels") or ["Entity"])
+                    graph_notes.append(
+                        f"Neighbor of {entity_name}: {nbr.get('name')} ({labels}, ch.{nbr.get('chapter') or '?'})"
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Graph neighborhood lookup failed for %s: %s", entity_name, exc)
+
+        if intent == "chronological":
+            try:
+                tl = timeline.get_project_timeline(db, project_id, order="chronological")
+                for ev in tl.get("events", [])[:8]:
+                    ev_chars = ", ".join(ev.get("characters") or [])
+                    graph_notes.append(
+                        f"Chronological event ch.{ev.get('chapter')} (order {ev.get('story_time_order')}): {ev.get('summary')}"
+                        + (f" [{ev_chars}]" if ev_chars else "")
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Timeline Graph RAG lookup failed: %s", exc)
+
+        if intent == "epistemic":
+            k_rows = (
+                db.query(KnowledgeUpdate)
+                .filter(KnowledgeUpdate.project_id == project_id)
+                .order_by(KnowledgeUpdate.chapter.asc())
+                .limit(10)
+                .all()
+            )
+            for ku in k_rows:
+                graph_notes.append(f"Knowledge ch.{ku.chapter}: {ku.character} learned '{ku.fact}'")
+
+        if graph_notes:
+            contexts.append({
+                "chapter": 0,
+                "content": f"Graph & Timeline Context ({intent}): " + "; ".join(graph_notes[:12]),
+            })
+
+        # 3. Structured Claims facts
         claims = (
             db.query(Claim)
             .filter(Claim.project_id == project_id, Claim.status == "active")
-            .limit(10)
+            .limit(12)
             .all()
         )
         claim_facts = [
@@ -120,10 +219,25 @@ def retrieve_node(state: ChatState) -> dict:
         facts_summary = f"Characters: {', '.join(char_names)}. Claims: {'; '.join(claim_facts)}."
         contexts.append({"chapter": 0, "content": f"Known facts: {facts_summary}"})
 
+        # 4. Self-correction retry: if context grading fails, fetch entity keyword chunks
+        if not grade_contexts(question, contexts):
+            for tok in re.findall(r"[A-Za-z]{4,}", question)[:2]:
+                extra = (
+                    db.query(Chunk)
+                    .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
+                    .filter(Manuscript.project_id == project_id, Chunk.content.ilike(f"%{tok}%"))
+                    .limit(2)
+                    .all()
+                )
+                for ch_row in extra:
+                    if str(ch_row.id) not in seen_chunk_ids:
+                        seen_chunk_ids.add(str(ch_row.id))
+                        contexts.insert(0, {"chapter": ch_row.chapter_number, "content": ch_row.content})
+
     finally:
         db.close()
 
-    return {"contexts": contexts}
+    return {"contexts": contexts, "intent": intent, "graph_entities": graph_entities}
 
 
 def answer_node(state: ChatState) -> dict:
@@ -249,4 +363,9 @@ def run_story_chat(project_id, question: str) -> dict:
                 "excerpt": first_ctx.get("content", "")[:200]
             })
 
-    return {"answer": answer, "citations": citations}
+    return {
+        "answer": answer,
+        "citations": citations,
+        "intent": final_state.get("intent", "general"),
+        "graph_entities": list(final_state.get("graph_entities") or []),
+    }

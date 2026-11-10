@@ -303,3 +303,22 @@ class Citation(BaseModel):
 class ChatOut(BaseModel):
     answer: str
     citations: list[Citation]
+    intent: str = "general"
+    graph_entities: list[str] = Field(default_factory=list)
+
+
+class ManuscriptVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    manuscript_id: uuid.UUID
+    version_number: int
+    content_hash: str
+    diff_summary: dict = Field(default_factory=dict)
+    created_at: object
+
+
+class BibleExportOut(BaseModel):
+    project_title: str
+    markdown: str
+    generated_at: str
