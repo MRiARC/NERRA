@@ -19,6 +19,9 @@ import {
   Clock,
   Eye,
   Package,
+  BookMarked,
+  Trash2,
+  Wand2,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
 import TimelineView from "@/components/TimelineView";
@@ -31,6 +34,7 @@ import {
   Location,
   StoryObject,
   ObjectCustodyEvent,
+  WorldRule,
   Claim,
   ManuscriptStatus,
 } from "@/lib/api";
@@ -69,10 +73,23 @@ export default function NerraDashboard() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [storyObjects, setStoryObjects] = useState<StoryObject[]>([]);
   const [custodyByObj, setCustodyByObj] = useState<Record<string, ObjectCustodyEvent[]>>({});
+  const [worldRules, setWorldRules] = useState<WorldRule[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
 
+  // Rule & reasoner state
+  const [newRuleText, setNewRuleText] = useState("");
+  const [newRuleCategory, setNewRuleCategory] = useState<WorldRule["category"]>("setting");
+  const [reasoningIssueId, setReasoningIssueId] = useState<string | null>(null);
+
   // Filter state
-  const [issueFilter, setIssueFilter] = useState<"all" | "contradiction" | "knowledge_violation" | "unresolved_thread" | "continuity_note">("all");
+  const [issueFilter, setIssueFilter] = useState<
+    | "all"
+    | "review_queue"
+    | "contradiction"
+    | "knowledge_violation"
+    | "unresolved_thread"
+    | "continuity_note"
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Modals & Panels
@@ -136,11 +153,12 @@ export default function NerraDashboard() {
   async function loadProjectData(projectId: string) {
     setLoading(true);
     try {
-      const [iss, chars, world, clms] = await Promise.all([
+      const [iss, chars, world, clms, rules] = await Promise.all([
         api.getIssues(projectId),
         api.getCharacters(projectId),
         api.getWorld(projectId),
         api.getClaims(projectId),
+        api.getWorldRules(projectId),
       ]);
       setIssues(iss);
       setCharacters(chars);
@@ -148,10 +166,46 @@ export default function NerraDashboard() {
       setStoryObjects(world.objects);
       setCustodyByObj({});
       setClaims(clms);
+      setWorldRules(rules);
     } catch (err) {
       console.error("Failed to load project details:", err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleReasonIssue(issueId: string) {
+    if (!selectedProjectId) return;
+    setReasoningIssueId(issueId);
+    try {
+      const updated = await api.reasonAboutIssue(selectedProjectId, issueId);
+      setIssues((prev) => prev.map((item) => (item.id === issueId ? updated : item)));
+    } catch (err: unknown) {
+      alert("AI intent check failed: " + getErrorMessage(err));
+    } finally {
+      setReasoningIssueId(null);
+    }
+  }
+
+  async function handleCreateRule(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProjectId || !newRuleText.trim()) return;
+    try {
+      await api.createWorldRule(selectedProjectId, newRuleCategory, newRuleText.trim());
+      setNewRuleText("");
+      loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Failed to create rule: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteRule(ruleId: string) {
+    if (!selectedProjectId) return;
+    try {
+      await api.deleteWorldRule(selectedProjectId, ruleId);
+      setWorldRules((prev) => prev.filter((r) => r.id !== ruleId));
+    } catch (err: unknown) {
+      alert("Failed to delete rule: " + getErrorMessage(err));
     }
   }
 
@@ -282,7 +336,15 @@ export default function NerraDashboard() {
 
   // Filtered issues
   const filteredIssues = issues.filter((iss) => {
-    if (issueFilter !== "all" && iss.type !== issueFilter) return false;
+    if (issueFilter === "review_queue") {
+      const isReview =
+        iss.severity === "yellow" ||
+        iss.intent_classification === "ambiguous" ||
+        (iss.confidence !== undefined && iss.confidence < 0.85);
+      if (!isReview) return false;
+    } else if (issueFilter !== "all" && iss.type !== issueFilter) {
+      return false;
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return iss.description.toLowerCase().includes(q) || iss.type.toLowerCase().includes(q);
@@ -291,6 +353,13 @@ export default function NerraDashboard() {
   });
 
   const redCount = issues.filter((i) => i.severity === "red" && i.status === "open").length;
+  const reviewQueueCount = issues.filter(
+    (i) =>
+      i.status === "open" &&
+      (i.severity === "yellow" ||
+        i.intent_classification === "ambiguous" ||
+        (i.confidence !== undefined && i.confidence < 0.85))
+  ).length;
   const blueCount = issues.filter((i) => i.severity === "blue" && i.status === "open").length;
   const greenCount = issues.filter((i) => i.severity === "green" && i.status === "open").length;
 
@@ -495,6 +564,7 @@ export default function NerraDashboard() {
                   {(
                     [
                       { id: "all", label: "All Issues", count: issues.length },
+                      { id: "review_queue", label: "🟡 Review Queue", count: reviewQueueCount },
                       { id: "contradiction", label: "🔴 Contradictions", count: redCount },
                       { id: "knowledge_violation", label: "🔵 Knowledge Timing", count: issues.filter((i) => i.type === "knowledge_violation").length },
                       { id: "unresolved_thread", label: "🟢 Dangling Threads", count: greenCount },
@@ -591,13 +661,49 @@ export default function NerraDashboard() {
                               >
                                 {issue.status}
                               </span>
+
+                              {issue.intent_classification && (
+                                <span
+                                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                    issue.intent_classification === "intentional"
+                                      ? "bg-purple-500/10 text-purple-300 border-purple-500/30"
+                                      : issue.intent_classification === "ambiguous"
+                                      ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                      : "bg-rose-500/10 text-rose-300 border-rose-500/30"
+                                  }`}
+                                >
+                                  {issue.intent_classification}
+                                  {issue.confidence !== undefined
+                                    ? ` · ${Math.round(issue.confidence * 100)}%`
+                                    : ""}
+                                </span>
+                              )}
                             </div>
 
                             <h4 className="text-sm font-semibold text-white leading-snug">{issue.description}</h4>
+                            {issue.ai_reasoning && (
+                              <p className="text-xs text-slate-400 bg-slate-950/50 border border-slate-800/70 rounded-lg px-3 py-2 mt-1">
+                                <span className="text-indigo-400 font-semibold mr-1.5">AI Reasoning:</span>
+                                {issue.ai_reasoning}
+                              </p>
+                            )}
                           </div>
 
                           {/* Action controls */}
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            <button
+                              onClick={() => handleReasonIssue(issue.id)}
+                              disabled={reasoningIssueId === issue.id}
+                              className="text-xs px-2.5 py-1 rounded-md bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 transition flex items-center gap-1 disabled:opacity-50"
+                              title="Run LangGraph Intent Reasoner"
+                            >
+                              <Wand2
+                                className={`w-3.5 h-3.5 ${
+                                  reasoningIssueId === issue.id ? "animate-spin" : ""
+                                }`}
+                              />
+                              <span>Intent Check</span>
+                            </button>
                             {issue.status === "open" ? (
                               <>
                                 <button
@@ -865,6 +971,70 @@ export default function NerraDashboard() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* World Rules Registry (Milestone 2.4) */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <BookMarked className="w-4 h-4 text-purple-400" />
+                    World Rules &amp; Canon Constraints
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Define canon laws (magic limits, physics, setting constraints) checked automatically against new chapters.
+                  </p>
+                </div>
+
+                <form onSubmit={handleCreateRule} className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={newRuleCategory}
+                    onChange={(e) => setNewRuleCategory(e.target.value as WorldRule["category"])}
+                    className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none"
+                  >
+                    <option value="setting">Setting</option>
+                    <option value="magic">Magic</option>
+                    <option value="physics">Physics</option>
+                    <option value="society">Society</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={newRuleText}
+                    onChange={(e) => setNewRuleText(e.target.value)}
+                    placeholder='e.g. "Magic cannot revive the dead" or "No iron weapons in Ashford"'
+                    className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold transition"
+                  >
+                    Add Rule
+                  </button>
+                </form>
+
+                {worldRules.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {worldRules.map((rule) => (
+                      <div
+                        key={rule.id}
+                        className="border border-slate-800 bg-slate-900/50 rounded-xl p-4 flex items-start justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                            {rule.category}
+                          </span>
+                          <p className="text-xs text-slate-200 leading-relaxed">{rule.rule_text}</p>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteRule(rule.id)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 transition"
+                          title="Delete world rule"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
