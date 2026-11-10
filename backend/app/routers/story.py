@@ -37,8 +37,10 @@ from app.schemas import (
     IssueStatus,
     KnowledgeOut,
     RelationshipOut,
+    StoryGraphOut,
     WorldOut,
 )
+from app.services import graph
 
 router = APIRouter(tags=["story"])
 
@@ -132,7 +134,25 @@ def merge_characters(
     db.delete(dup)
     db.commit()
     db.refresh(target)
+    try:
+        graph.sync_project_graph(db, project.id)
+    except Exception:  # noqa: BLE001
+        pass
     return target
+
+
+@router.get("/projects/{project_id}/graph", response_model=StoryGraphOut)
+def get_project_story_graph(
+    project_id: uuid.UUID,
+    chapter: int | None = None,
+    refresh: bool = False,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StoryGraphOut:
+    """Return the project's Story Knowledge Graph (Neo4j Cypher backed with SQL fallback)."""
+    data = graph.get_project_graph(db, project.id, max_chapter=chapter, force_sync=refresh)
+    return StoryGraphOut(**data)
 
 
 @router.get("/projects/{project_id}/relationships", response_model=list[RelationshipOut])

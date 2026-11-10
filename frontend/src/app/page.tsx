@@ -15,7 +15,9 @@ import {
   Layers,
   ShieldAlert,
   Check,
+  Network,
 } from "lucide-react";
+import StoryGraphView from "@/components/StoryGraphView";
 import {
   api,
   Project,
@@ -49,7 +51,9 @@ The tunnel under the Bellweather Inn smelled of salt and old paper. Sarah moved 
 export default function NerraDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"issues" | "characters" | "locations" | "claims" | "chat">("issues");
+  const [activeTab, setActiveTab] = useState<
+    "issues" | "characters" | "graph" | "locations" | "claims" | "chat"
+  >("issues");
   const [loading, setLoading] = useState(false);
 
   // Story state
@@ -362,6 +366,18 @@ export default function NerraDashboard() {
               </button>
 
               <button
+                onClick={() => setActiveTab("graph")}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+                  activeTab === "graph"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Network className="w-4 h-4 text-cyan-400" />
+                <span>Story Graph</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab("claims")}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
                   activeTab === "claims"
@@ -664,6 +680,11 @@ export default function NerraDashboard() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* TAB 2.5: STORY GRAPH (MILESTONE 2.1) */}
+          {activeTab === "graph" && selectedProjectId && (
+            <StoryGraphView key={selectedProjectId} projectId={selectedProjectId} />
           )}
 
           {/* TAB 3: CLAIMS */}

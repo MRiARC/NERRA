@@ -40,7 +40,9 @@ class ExtractedRelationship(BaseModel):
     character_a: str
     character_b: str
     type: str = "unknown"  # family | friend | enemy | romantic | professional | mentor | unknown
+    sentiment: str = "neutral"  # positive | neutral | hostile | complex
     description: str | None = None
+    evidence_quote: str | None = None
 
 
 class ExtractedLocation(BaseModel):
@@ -285,10 +287,10 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             _index_char(new_char)
 
-    # 2. Relationships
+    # 2. Relationships (with evolution tracking across chapters)
     existing_rels = db.query(Relationship).filter(Relationship.project_id == project_id).all()
     rel_set = {
-        (r.character_a_id, r.character_b_id, r.type)
+        (r.character_a_id, r.character_b_id, r.type, r.sentiment)
         for r in existing_rels
     }
 
@@ -299,19 +301,39 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             continue
         ca_id = ca.id if ca else cb.id
         cb_id = cb.id if cb else ca.id
-        rel_key = (ca_id, cb_id, r.type)
+        sentiment = (r.sentiment or "neutral").strip().lower()
+        rel_key = (ca_id, cb_id, r.type, sentiment)
         if rel_key in rel_set:
             continue
+
+        # Close any earlier open relationship state for this same character pair if evolved
+        for prev in existing_rels:
+            same_pair = (
+                (prev.character_a_id == ca_id and prev.character_b_id == cb_id)
+                or (prev.character_a_id == cb_id and prev.character_b_id == ca_id)
+            )
+            if (
+                same_pair
+                and prev.until_chapter is None
+                and prev.chapter is not None
+                and chapter_number > prev.chapter
+                and (prev.type != r.type or prev.sentiment != sentiment)
+            ):
+                prev.until_chapter = chapter_number
+
         rel_set.add(rel_key)
         new_rel = Relationship(
             project_id=project_id,
             character_a_id=ca_id,
             character_b_id=cb_id,
             type=r.type,
+            sentiment=sentiment,
             description=r.description,
+            evidence_quote=r.evidence_quote,
             chapter=chapter_number,
         )
         db.add(new_rel)
+        existing_rels.append(new_rel)
 
     # 3. Locations
     existing_locs = db.query(Location).filter(Location.project_id == project_id).all()

@@ -156,7 +156,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
     `from app.services.extractor import extract_chapter`. The tests (and the
     lead's code review) rely on this style.
     """
-    from app.services import consistency, extractor, splitter
+    from app.services import consistency, extractor, graph, splitter
     from app.services.extractor import ExtractionPayload
 
     manuscript = db.get(Manuscript, manuscript_id)
@@ -192,6 +192,10 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         db.commit()
 
     consistency.run_consistency_pass(db, manuscript.project_id)
+    try:
+        graph.sync_project_graph(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Graph sync skipped: %s", exc)
     _set_status(db, manuscript, "ready")
 
 
@@ -203,7 +207,7 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     for just that chapter, then re-run the consistency pass.
     """
     from app.models import Chunk
-    from app.services import consistency, extractor, splitter
+    from app.services import consistency, extractor, graph, splitter
 
     chapters = splitter.split_chapters(manuscript.raw_text)
     target = next((c for c in chapters if c.number == chapter_number), None)
@@ -232,3 +236,7 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     _embed_and_store_chunk(db, manuscript, target.number, target.content)
 
     consistency.run_consistency_pass(db, manuscript.project_id)
+    try:
+        graph.sync_project_graph(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Graph sync skipped on reanalyze: %s", exc)
