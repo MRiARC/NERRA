@@ -347,3 +347,26 @@ class BibleExportOut(BaseModel):
     project_title: str
     markdown: str
     generated_at: str
+
+
+class ValidationCandidateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    manuscript_id: uuid.UUID | None
+    chapter: int
+    candidate_type: str
+    payload: dict
+    confidence: float
+    route: str
+    ambiguity_reason: str | None = None
+    evidence_quote: str | None = None
+    status: str
+    created_at: datetime
+
+
+class CandidateResolveIn(BaseModel):
+    action: Literal["approve", "reject", "merge", "split"]
+    target_character_id: uuid.UUID | None = None
+    split_name: str | None = None

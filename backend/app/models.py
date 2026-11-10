@@ -294,6 +294,35 @@ class ManuscriptVersion(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class ValidationCandidate(Base):
+    """Pre-graph validation gate staging table (Milestone 3.2).
+
+    Enforces `LLM proposes -> Validator decides`:
+      - auto_accepted (0.90-1.00): written straight into Story Graph
+      - human_review  (0.40-0.89): awaits author confirmation/merge/split
+      - reject_hold   (0.00-0.39): quarantined without polluting canon
+    """
+
+    __tablename__ = "validation_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    manuscript_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("manuscripts.id", ondelete="CASCADE"), nullable=True
+    )
+
+    chapter: Mapped[int]
+    candidate_type: Mapped[str]  # character | alias | claim | relationship | location
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    route: Mapped[str] = mapped_column(default="human_review", index=True)  # auto_accepted | human_review | reject_hold
+    ambiguity_reason: Mapped[str | None] = None
+    source_paragraph_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    evidence_quote: Mapped[str | None] = None
+    status: Mapped[str] = mapped_column(default="pending", index=True)  # pending | approved | rejected | merged | split
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class WorldRule(Base):
     """Author-defined or extracted world-building rules (magic, physics, setting)."""
 

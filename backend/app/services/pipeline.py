@@ -121,6 +121,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         signal_scanner,
         splitter,
         timeline,
+        validator,
     )
     from app.services.extractor import ExtractionPayload
 
@@ -171,7 +172,15 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
 
-        extractor.persist_extraction(db, manuscript.project_id, chapter.number, payload)
+        validator.gate_and_commit_extraction(
+            db,
+            manuscript.project_id,
+            manuscript.id,
+            chapter.number,
+            chapter.content,
+            payload,
+            use_llm=not extract_is_mocked,
+        )
         _embed_and_store_chunk(db, manuscript, chapter.number, chapter.content)
         manuscript.chapters_done += 1
         db.commit()
@@ -205,6 +214,7 @@ def append_chapter_to_manuscript(
         signal_scanner,
         splitter,
         timeline,
+        validator,
     )
 
     existing_chapters = splitter.split_chapters(manuscript.raw_text)
@@ -232,7 +242,15 @@ def append_chapter_to_manuscript(
     payload = extractor.validate_payload(payload, body)
 
     content_hash = _content_hash(body)
-    extractor.persist_extraction(db, manuscript.project_id, next_num, payload)
+    validator.gate_and_commit_extraction(
+        db,
+        manuscript.project_id,
+        manuscript.id,
+        next_num,
+        body,
+        payload,
+        use_llm=not extract_is_mocked,
+    )
     _save_analysis(db, manuscript.id, next_num, content_hash, payload.model_dump())
     _embed_and_store_chunk(db, manuscript, next_num, body)
 

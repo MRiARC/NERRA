@@ -253,6 +253,21 @@ export interface ManuscriptSummary {
   created_at: string;
 }
 
+export interface ValidationCandidate {
+  id: string;
+  project_id: string;
+  manuscript_id: string | null;
+  chapter: number;
+  candidate_type: string;
+  payload: Record<string, unknown>;
+  confidence: number;
+  route: string;
+  ambiguity_reason: string | null;
+  evidence_quote: string | null;
+  status: string;
+  created_at: string;
+}
+
 export interface BibleExport {
   project_title: string;
   markdown: string;
@@ -440,4 +455,24 @@ export const api = {
     apiFetch<ManuscriptVersion[]>(`/projects/${projectId}/versions`),
   exportBible: (projectId: string) =>
     apiFetch<BibleExport>(`/projects/${projectId}/export/bible`),
+  getCandidates: (projectId: string, status: string = "pending") =>
+    apiFetch<ValidationCandidate[]>(
+      `/projects/${projectId}/candidates?status=${encodeURIComponent(status)}`
+    ),
+  resolveCandidate: (
+    projectId: string,
+    candidateId: string,
+    body: {
+      action: "approve" | "reject" | "merge" | "split";
+      target_character_id?: string | null;
+      split_name?: string | null;
+    }
+  ) =>
+    apiFetch<ValidationCandidate>(
+      `/projects/${projectId}/candidates/${candidateId}/resolve`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      }
+    ),
 };

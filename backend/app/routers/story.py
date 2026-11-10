@@ -19,10 +19,12 @@ from app.models import (
     StoryEvent,
     StoryObject,
     User,
+    ValidationCandidate,
     WorldRule,
 )
 from app.schemas import (
     BibleExportOut,
+    CandidateResolveIn,
     CharacterMergeIn,
     CharacterOut,
     ClaimOut,
@@ -37,11 +39,12 @@ from app.schemas import (
     RelationshipOut,
     StoryGraphOut,
     TimelineOut,
+    ValidationCandidateOut,
     WorldOut,
     WorldRuleCreate,
     WorldRuleOut,
 )
-from app.services import consistency, exporter, graph, knowledge, timeline
+from app.services import consistency, exporter, graph, knowledge, timeline, validator
 
 router = APIRouter(tags=["story"])
 
@@ -420,3 +423,44 @@ def export_story_bible(
 ) -> dict:
     """Compile and return the full project Story Bible in Markdown."""
     return exporter.export_story_bible_markdown(db, project.id)
+
+
+@router.get("/projects/{project_id}/candidates", response_model=list[ValidationCandidateOut])
+def list_candidates(
+    project_id: uuid.UUID,
+    status: str | None = None,
+    route: str | None = None,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """List pre-graph staged validation candidates (human_review and reject_hold)."""
+    query = db.query(ValidationCandidate).filter(ValidationCandidate.project_id == project.id)
+    if status:
+        query = query.filter(ValidationCandidate.status == status)
+    if route:
+        query = query.filter(ValidationCandidate.route == route)
+    return query.order_by(ValidationCandidate.chapter.asc(), ValidationCandidate.created_at.desc()).all()
+
+
+@router.post("/projects/{project_id}/candidates/{candidate_id}/resolve", response_model=ValidationCandidateOut)
+def resolve_validation_candidate(
+    project_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    payload: CandidateResolveIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Approve, reject, merge, or split a staged pre-graph validation candidate."""
+    try:
+        return validator.resolve_candidate(
+            db,
+            project.id,
+            candidate_id,
+            action=payload.action,
+            target_character_id=payload.target_character_id,
+            split_name=payload.split_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

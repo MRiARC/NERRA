@@ -24,6 +24,7 @@ import {
   Wand2,
   Download,
   History,
+  ShieldCheck,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
 import TimelineView from "@/components/TimelineView";
@@ -41,6 +42,7 @@ import {
   ManuscriptStatus,
   ManuscriptVersion,
   ManuscriptSummary,
+  ValidationCandidate,
 } from "@/lib/api";
 
 function getErrorMessage(err: unknown): string {
@@ -95,6 +97,13 @@ export default function NerraDashboard() {
   const [appendTitle, setAppendTitle] = useState("");
   const [appendText, setAppendText] = useState("");
   const [appendingChapter, setAppendingChapter] = useState(false);
+
+  // M3.2 Validation Gate state
+  const [candidates, setCandidates] = useState<ValidationCandidate[]>([]);
+  const [isCandidatesOpen, setIsCandidatesOpen] = useState(false);
+  const [resolvingCandidateId, setResolvingCandidateId] = useState<string | null>(null);
+  const [candidateMergeTargets, setCandidateMergeTargets] = useState<Record<string, string>>({});
+  const [candidateSplitNames, setCandidateSplitNames] = useState<Record<string, string>>({});
 
   // Filter state
   const [issueFilter, setIssueFilter] = useState<
@@ -174,12 +183,13 @@ export default function NerraDashboard() {
   async function loadProjectData(projectId: string) {
     setLoading(true);
     try {
-      const [iss, chars, world, clms, rules] = await Promise.all([
+      const [iss, chars, world, clms, rules, cands] = await Promise.all([
         api.getIssues(projectId),
         api.getCharacters(projectId),
         api.getWorld(projectId),
         api.getClaims(projectId),
         api.getWorldRules(projectId),
+        api.getCandidates(projectId, "pending").catch(() => []),
       ]);
       setIssues(iss);
       setCharacters(chars);
@@ -188,6 +198,7 @@ export default function NerraDashboard() {
       setCustodyByObj({});
       setClaims(clms);
       setWorldRules(rules);
+      setCandidates(cands);
     } catch (err) {
       console.error("Failed to load project details:", err);
     } finally {
@@ -397,6 +408,37 @@ export default function NerraDashboard() {
     }
   }
 
+  async function handleOpenCandidates() {
+    if (!selectedProjectId) return;
+    try {
+      const list = await api.getCandidates(selectedProjectId, "pending");
+      setCandidates(list);
+      setIsCandidatesOpen(true);
+    } catch (err: unknown) {
+      alert("Failed to load validation candidates: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleResolveCandidate(
+    candidateId: string,
+    action: "approve" | "reject" | "merge" | "split"
+  ) {
+    if (!selectedProjectId) return;
+    setResolvingCandidateId(candidateId);
+    try {
+      await api.resolveCandidate(selectedProjectId, candidateId, {
+        action,
+        target_character_id: action === "merge" ? candidateMergeTargets[candidateId] || null : null,
+        split_name: action === "split" ? candidateSplitNames[candidateId] || null : null,
+      });
+      await loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Failed to resolve candidate: " + getErrorMessage(err));
+    } finally {
+      setResolvingCandidateId(null);
+    }
+  }
+
   async function handleExportBible() {
     if (!selectedProjectId || exportingBible) return;
     setExportingBible(true);
@@ -508,6 +550,21 @@ export default function NerraDashboard() {
           >
             <Plus className="w-3.5 h-3.5 text-sky-400" />
             <span className="hidden lg:inline">Append Ch</span>
+          </button>
+
+          <button
+            onClick={handleOpenCandidates}
+            disabled={!selectedProjectId}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="Inspect pre-graph quarantined & review candidates"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-rose-400" />
+            <span className="hidden md:inline">Gate Queue</span>
+            {candidates.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                {candidates.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -1616,6 +1673,146 @@ export default function NerraDashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* M3.2 VALIDATION GATE QUEUE MODAL */}
+      {isCandidatesOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-rose-400" />
+                Pre-Graph Validation Gate Queue ({candidates.length} pending)
+              </h3>
+              <button
+                onClick={() => setIsCandidatesOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
+
+            {candidates.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">
+                No quarantined or ambiguous candidates awaiting review.
+              </p>
+            ) : (
+              <div className="max-h-[28rem] overflow-y-auto space-y-3 pr-1">
+                {candidates.map((cand) => {
+                  const isChar = cand.candidate_type === "character";
+                  const label = isChar
+                    ? String(cand.payload?.name || "Unknown")
+                    : `${String(cand.payload?.subject || "?")} · ${String(cand.payload?.attribute || "?")} = ${String(cand.payload?.value || "?")}`;
+                  return (
+                    <div
+                      key={cand.id}
+                      className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase bg-slate-800 text-slate-300">
+                              Ch {cand.chapter} · {cand.candidate_type}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                                cand.route === "reject_hold"
+                                  ? "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                                  : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                              }`}
+                            >
+                              {cand.route} ({Math.round(cand.confidence * 100)}%)
+                            </span>
+                            <span className="text-sm font-semibold text-white">{label}</span>
+                          </div>
+                          {cand.ambiguity_reason && (
+                            <p className="text-xs text-slate-300">{cand.ambiguity_reason}</p>
+                          )}
+                          {cand.evidence_quote && (
+                            <p className="text-xs italic text-slate-400">
+                              &ldquo;{cand.evidence_quote}&rdquo;
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-800/80">
+                        <button
+                          disabled={resolvingCandidateId === cand.id}
+                          onClick={() => handleResolveCandidate(cand.id, "approve")}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white font-medium disabled:opacity-50"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          disabled={resolvingCandidateId === cand.id}
+                          onClick={() => handleResolveCandidate(cand.id, "reject")}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-600/70 hover:bg-rose-500 text-white font-medium disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+
+                        {isChar && (
+                          <>
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              <select
+                                value={candidateMergeTargets[cand.id] || ""}
+                                onChange={(e) =>
+                                  setCandidateMergeTargets((prev) => ({
+                                    ...prev,
+                                    [cand.id]: e.target.value,
+                                  }))
+                                }
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200"
+                              >
+                                <option value="">Merge into...</option>
+                                {characters.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                disabled={
+                                  resolvingCandidateId === cand.id || !candidateMergeTargets[cand.id]
+                                }
+                                onClick={() => handleResolveCandidate(cand.id, "merge")}
+                                className="text-xs px-2.5 py-1.5 rounded-lg bg-indigo-600/80 hover:bg-indigo-500 text-white font-medium disabled:opacity-40"
+                              >
+                                Merge
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                placeholder="Split as new name..."
+                                value={candidateSplitNames[cand.id] || ""}
+                                onChange={(e) =>
+                                  setCandidateSplitNames((prev) => ({
+                                    ...prev,
+                                    [cand.id]: e.target.value,
+                                  }))
+                                }
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 w-36"
+                              />
+                              <button
+                                disabled={resolvingCandidateId === cand.id}
+                                onClick={() => handleResolveCandidate(cand.id, "split")}
+                                className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white font-medium disabled:opacity-40"
+                              >
+                                Split
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
