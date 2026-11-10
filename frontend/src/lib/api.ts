@@ -227,6 +227,28 @@ export interface StoryGraph {
   max_chapter: number;
 }
 
+export interface TimelineEvent {
+  id: string;
+  chapter_number: number;
+  scene_order: number;
+  story_time_order: number;
+  temporal_anchor?: string | null;
+  is_flashback: boolean;
+  is_flashforward: boolean;
+  summary: string;
+  participants: string[];
+  location?: string | null;
+}
+
+export interface TimelineData {
+  order: "chronological" | "narrative";
+  events: TimelineEvent[];
+  characters: string[];
+  flashback_count: number;
+  flashforward_count: number;
+  spatiotemporal_conflict_chapters: number[];
+}
+
 export const api = {
   getProjects: () => apiFetch<Project[]>("/projects"),
   createProject: (title: string, description?: string) =>
@@ -288,5 +310,14 @@ export const api = {
     if (refresh) params.set("refresh", "true");
     const qs = params.toString();
     return apiFetch<StoryGraph>(`/projects/${projectId}/graph${qs ? `?${qs}` : ""}`);
+  },
+  getTimeline: (
+    projectId: string,
+    order: "chronological" | "narrative" = "chronological",
+    character?: string
+  ) => {
+    const params = new URLSearchParams({ order });
+    if (character) params.set("character", character);
+    return apiFetch<TimelineData>(`/projects/${projectId}/timeline?${params.toString()}`);
   },
 };

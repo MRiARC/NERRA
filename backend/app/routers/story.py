@@ -38,9 +38,10 @@ from app.schemas import (
     KnowledgeOut,
     RelationshipOut,
     StoryGraphOut,
+    TimelineOut,
     WorldOut,
 )
-from app.services import graph
+from app.services import graph, timeline
 
 router = APIRouter(tags=["story"])
 
@@ -188,6 +189,21 @@ def list_events(
             if any(target == p.strip().lower() for p in (e.participants or []))
         ]
     return events
+
+
+@router.get("/projects/{project_id}/timeline", response_model=TimelineOut)
+def get_project_timeline(
+    project_id: uuid.UUID,
+    order: str = "chronological",
+    character: str | None = None,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TimelineOut:
+    """Dual Timeline Engine (Milestone 2.2): chronological vs narrative order."""
+    timeline.compute_story_chronology(db, project.id)
+    data = timeline.get_project_timeline(db, project.id, order=order, character=character)
+    return TimelineOut(**data)
 
 
 @router.get("/projects/{project_id}/world", response_model=WorldOut)

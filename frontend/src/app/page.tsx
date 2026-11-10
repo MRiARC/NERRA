@@ -16,8 +16,10 @@ import {
   ShieldAlert,
   Check,
   Network,
+  Clock,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
+import TimelineView from "@/components/TimelineView";
 import {
   api,
   Project,
@@ -52,7 +54,7 @@ export default function NerraDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<
-    "issues" | "characters" | "graph" | "locations" | "claims" | "chat"
+    "issues" | "characters" | "graph" | "timeline" | "locations" | "claims" | "chat"
   >("issues");
   const [loading, setLoading] = useState(false);
 
@@ -378,6 +380,18 @@ export default function NerraDashboard() {
               </button>
 
               <button
+                onClick={() => setActiveTab("timeline")}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+                  activeTab === "timeline"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>Timeline</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab("claims")}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
                   activeTab === "claims"
@@ -685,6 +699,11 @@ export default function NerraDashboard() {
           {/* TAB 2.5: STORY GRAPH (MILESTONE 2.1) */}
           {activeTab === "graph" && selectedProjectId && (
             <StoryGraphView key={selectedProjectId} projectId={selectedProjectId} />
+          )}
+
+          {/* TAB 2.6: DUAL TIMELINE (MILESTONE 2.2) */}
+          {activeTab === "timeline" && selectedProjectId && (
+            <TimelineView key={selectedProjectId} projectId={selectedProjectId} />
           )}
 
           {/* TAB 3: CLAIMS */}

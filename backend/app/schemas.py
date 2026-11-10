@@ -148,9 +148,23 @@ class EventOut(BaseModel):
 
     id: uuid.UUID
     chapter_number: int
+    scene_order: int = 1
+    story_time_order: int = 1
+    temporal_anchor: str | None = None
+    is_flashback: bool = False
+    is_flashforward: bool = False
     summary: str
     participants: list[str]
     location: str | None
+
+
+class TimelineOut(BaseModel):
+    order: str
+    events: list[EventOut]
+    characters: list[str]
+    flashback_count: int
+    flashforward_count: int
+    spatiotemporal_conflict_chapters: list[int] = Field(default_factory=list)
 
 
 class LocationOut(BaseModel):

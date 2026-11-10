@@ -233,6 +233,57 @@ def detect_continuity_notes(claims: list) -> list[IssueDraft]:
     return drafts
 
 
+def detect_spatiotemporal_conflicts(events: list) -> list[IssueDraft]:
+    """Flag characters appearing in two distinct locations at the same story time."""
+    drafts: list[IssueDraft] = []
+    seen_pairs: set[tuple[str, int, str, str]] = set()
+
+    # Bucket events by story_time_order (or chapter+scene_order fallback)
+    by_slot: dict[int, list] = {}
+    for ev in events:
+        if not ev.location or not ev.participants:
+            continue
+        slot = getattr(ev, "story_time_order", None)
+        if slot is None:
+            slot = ev.chapter_number * 100 + getattr(ev, "scene_order", 1)
+        by_slot.setdefault(slot, []).append(ev)
+
+    for slot, slot_events in by_slot.items():
+        if len(slot_events) < 2:
+            continue
+        for i in range(len(slot_events)):
+            for j in range(i + 1, len(slot_events)):
+                a, b = slot_events[i], slot_events[j]
+                if _same_entity(a.location, b.location):
+                    continue
+                pa = {_norm(p): p for p in (a.participants or []) if p.strip()}
+                pb = {_norm(p): p for p in (b.participants or []) if p.strip()}
+                for p_norm, p_orig in pa.items():
+                    if p_norm in pb:
+                        loc_pair = tuple(sorted([_norm(a.location), _norm(b.location)]))
+                        dedupe_key = (p_norm, slot, loc_pair[0], loc_pair[1])
+                        if dedupe_key in seen_pairs:
+                            continue
+                        seen_pairs.add(dedupe_key)
+                        drafts.append(
+                            IssueDraft(
+                                type="spatiotemporal_conflict",
+                                severity="red",
+                                description=(
+                                    f'{p_orig} appears simultaneously in "{a.location}" '
+                                    f'(chapter {a.chapter_number}) and "{b.location}" '
+                                    f'(chapter {b.chapter_number}) at story time {slot}'
+                                ),
+                                evidence=[
+                                    {"chapter": a.chapter_number, "quote": a.summary},
+                                    {"chapter": b.chapter_number, "quote": b.summary},
+                                ],
+                            )
+                        )
+
+    return drafts
+
+
 def run_consistency_pass(db, project_id) -> int:
     """Load this project's story data, run all detectors, persist issues.
 
@@ -240,7 +291,7 @@ def run_consistency_pass(db, project_id) -> int:
     generated deterministically from the data, so identical findings always
     produce identical text. Returns the number of NEW issues created.
     """
-    from app.models import Claim, Issue, KnowledgeUpdate, StoryObject
+    from app.models import Claim, Issue, KnowledgeUpdate, StoryEvent, StoryObject
 
     claims = (
         db.query(Claim)
@@ -249,12 +300,14 @@ def run_consistency_pass(db, project_id) -> int:
     )
     knowledge = db.query(KnowledgeUpdate).filter(KnowledgeUpdate.project_id == project_id).all()
     objects = db.query(StoryObject).filter(StoryObject.project_id == project_id).all()
+    events = db.query(StoryEvent).filter(StoryEvent.project_id == project_id).all()
 
     drafts = (
         detect_contradictions(claims)
         + detect_knowledge_violations(claims, knowledge)
         + detect_dangling_objects(objects)
         + detect_continuity_notes(claims)
+        + detect_spatiotemporal_conflicts(events)
     )
 
     existing = {
