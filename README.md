@@ -274,13 +274,22 @@ The goal is to make the entire story **queryable, explainable, and structurally 
 
 ---
 
+## 📚 Documentation (Sources of Truth)
+
+All repository architecture, pipeline, validation, and roadmap specs live in `docs/`:
+
+- **[System Architecture](docs/ARCHITECTURE.md)** & **[Architecture Diagram (draw.io XML)](docs/architecture.drawio.xml)**
+- **[Processing Pipeline, Incremental Rules & Validation Layer](docs/PIPELINE_AND_VALIDATION.md)**
+- **[Product Vision, Feature Universe & Open Research Problems](docs/FEATURES_AND_VISION.md)**
+- **[Roadmap & Current Implementation Status](docs/ROADMAP.md)**
+
+---
+
 ## 🚧 Project Status
 
-**Early-stage / Active Development**
-
-The architecture and core concepts are currently being explored and implemented incrementally.
-
-Technology choices are intentionally being evaluated as the system evolves.
+- **Phase 1 (Core MVP):** Complete (`PR #1` merged into `main`)
+- **Phase 2 (Graph DB, Dual Timeline, Knowledge Matrix, Custody, Intent Reasoner, Graph RAG & Export):** Implemented across stacked PRs `#12`–`#16`
+- **Phases 3–5 (Incremental `Change Detector`/`Cheap Scanner`, Pre-Graph Confidence Validation & `Feedback Loop`, Full `Plot Thread Tracker`, `Live Writing Mode`, `Series Support`):** Tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 ---
 
