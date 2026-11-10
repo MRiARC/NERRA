@@ -17,15 +17,20 @@ import {
   Check,
   Network,
   Clock,
+  Eye,
+  Package,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
 import TimelineView from "@/components/TimelineView";
+import KnowledgeMatrixView from "@/components/KnowledgeMatrixView";
 import {
   api,
   Project,
   Issue,
   Character,
   Location,
+  StoryObject,
+  ObjectCustodyEvent,
   Claim,
   ManuscriptStatus,
 } from "@/lib/api";
@@ -54,7 +59,7 @@ export default function NerraDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<
-    "issues" | "characters" | "graph" | "timeline" | "locations" | "claims" | "chat"
+    "issues" | "characters" | "graph" | "timeline" | "knowledge" | "locations" | "claims" | "chat"
   >("issues");
   const [loading, setLoading] = useState(false);
 
@@ -62,6 +67,8 @@ export default function NerraDashboard() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [storyObjects, setStoryObjects] = useState<StoryObject[]>([]);
+  const [custodyByObj, setCustodyByObj] = useState<Record<string, ObjectCustodyEvent[]>>({});
   const [claims, setClaims] = useState<Claim[]>([]);
 
   // Filter state
@@ -129,20 +136,40 @@ export default function NerraDashboard() {
   async function loadProjectData(projectId: string) {
     setLoading(true);
     try {
-      const [iss, chars, locs, clms] = await Promise.all([
+      const [iss, chars, world, clms] = await Promise.all([
         api.getIssues(projectId),
         api.getCharacters(projectId),
-        api.getLocations(projectId),
+        api.getWorld(projectId),
         api.getClaims(projectId),
       ]);
       setIssues(iss);
       setCharacters(chars);
-      setLocations(locs);
+      setLocations(world.locations);
+      setStoryObjects(world.objects);
+      setCustodyByObj({});
       setClaims(clms);
     } catch (err) {
       console.error("Failed to load project details:", err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleInspectCustody(objectId: string) {
+    if (!selectedProjectId) return;
+    if (custodyByObj[objectId]) {
+      setCustodyByObj((prev) => {
+        const copy = { ...prev };
+        delete copy[objectId];
+        return copy;
+      });
+      return;
+    }
+    try {
+      const list = await api.getObjectCustody(selectedProjectId, objectId);
+      setCustodyByObj((prev) => ({ ...prev, [objectId]: list }));
+    } catch (err) {
+      console.error("Failed to load custody log:", err);
     }
   }
 
@@ -389,6 +416,18 @@ export default function NerraDashboard() {
               >
                 <Clock className="w-4 h-4 text-amber-400" />
                 <span>Timeline</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("knowledge")}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+                  activeTab === "knowledge"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Eye className="w-4 h-4 text-sky-400" />
+                <span>Knowledge Matrix</span>
               </button>
 
               <button
@@ -745,27 +784,87 @@ export default function NerraDashboard() {
             </div>
           )}
 
-          {/* TAB 4: LOCATIONS */}
+          {/* TAB 2.7: KNOWLEDGE MATRIX (MILESTONE 2.3) */}
+          {activeTab === "knowledge" && selectedProjectId && (
+            <KnowledgeMatrixView key={selectedProjectId} projectId={selectedProjectId} />
+          )}
+
+          {/* TAB 4: WORLD LOCATIONS & OBJECT CUSTODY */}
           {activeTab === "locations" && (
-            <div className="p-8 max-w-7xl w-full mx-auto space-y-6">
-              <div>
-                <h3 className="text-lg font-bold text-white">World Locations</h3>
-                <p className="text-xs text-slate-400">Key places registered in the story world.</p>
+            <div className="p-8 max-w-7xl w-full mx-auto space-y-8">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">World Locations</h3>
+                  <p className="text-xs text-slate-400">Key places registered in the story world.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {locations.map((loc) => (
+                    <div key={loc.id} className="border border-slate-800 bg-slate-900/40 rounded-xl p-5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-emerald-400" />
+                        <h4 className="text-sm font-bold text-white">{loc.name}</h4>
+                      </div>
+                      {loc.description && <p className="text-xs text-slate-400">{loc.description}</p>}
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        First appearance: Ch. {loc.first_chapter ?? 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {locations.map((loc) => (
-                  <div key={loc.id} className="border border-slate-800 bg-slate-900/40 rounded-xl p-5 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-emerald-400" />
-                      <h4 className="text-sm font-bold text-white">{loc.name}</h4>
-                    </div>
-                    {loc.description && <p className="text-xs text-slate-400">{loc.description}</p>}
-                    <div className="text-[10px] text-slate-500 font-mono">
-                      First appearance: Ch. {loc.first_chapter ?? 1}
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Package className="w-4 h-4 text-amber-400" />
+                    Story Objects &amp; Chain of Custody
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Inspect tracked artifacts and click to view possession transfers across chapters.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {storyObjects.map((obj) => {
+                    const logs = custodyByObj[obj.id];
+                    return (
+                      <div key={obj.id} className="border border-slate-800 bg-slate-900/40 rounded-xl p-5 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-4 h-4 text-amber-400" />
+                            <h4 className="text-sm font-bold text-white">{obj.name}</h4>
+                          </div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                            Ch. {(obj.mention_chapters || []).join(", ") || obj.first_chapter || 1}
+                          </span>
+                        </div>
+                        {obj.description && <p className="text-xs text-slate-400">{obj.description}</p>}
+                        <button
+                          onClick={() => handleInspectCustody(obj.id)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-medium"
+                        >
+                          {logs ? "Hide Custody Log" : "Inspect Chain of Custody"}
+                        </button>
+                        {logs && (
+                          <div className="pt-2 border-t border-slate-800/70 space-y-1.5">
+                            {logs.length === 0 ? (
+                              <p className="text-[11px] text-slate-500">No custody transfers logged yet.</p>
+                            ) : (
+                              logs.map((ev) => (
+                                <div key={ev.id} className="text-[11px] bg-slate-950/60 border border-slate-800 rounded p-2">
+                                  <span className="font-mono text-amber-300 mr-1.5">Ch. {ev.chapter}</span>
+                                  <span className="font-semibold text-slate-200">{ev.action}</span>
+                                  <span className="text-slate-400"> → {ev.holder_name}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}

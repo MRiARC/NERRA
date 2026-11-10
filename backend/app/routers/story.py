@@ -22,6 +22,7 @@ from app.models import (
     Issue,
     KnowledgeUpdate,
     Location,
+    ObjectCustodyEvent,
     Relationship,
     StoryEvent,
     StoryObject,
@@ -35,13 +36,15 @@ from app.schemas import (
     IssueOut,
     IssuePatchIn,
     IssueStatus,
+    KnowledgeMatrixOut,
     KnowledgeOut,
+    ObjectCustodyOut,
     RelationshipOut,
     StoryGraphOut,
     TimelineOut,
     WorldOut,
 )
-from app.services import graph, timeline
+from app.services import graph, knowledge, timeline
 
 router = APIRouter(tags=["story"])
 
@@ -217,6 +220,42 @@ def get_world(
     locations = db.query(Location).filter(Location.project_id == project.id).all()
     objects = db.query(StoryObject).filter(StoryObject.project_id == project.id).all()
     return WorldOut(locations=locations, objects=objects)
+
+
+@router.get("/projects/{project_id}/objects/{object_id}/custody", response_model=list[ObjectCustodyOut])
+def get_object_custody(
+    project_id: uuid.UUID,
+    object_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """Chain-of-custody transfers for a specific story object."""
+    obj = db.get(StoryObject, object_id)
+    if obj is None or obj.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Object not found")
+    return (
+        db.query(ObjectCustodyEvent)
+        .filter(
+            ObjectCustodyEvent.project_id == project.id,
+            ObjectCustodyEvent.object_id == object_id,
+        )
+        .order_by(ObjectCustodyEvent.chapter.asc(), ObjectCustodyEvent.created_at.asc())
+        .all()
+    )
+
+
+@router.get("/projects/{project_id}/knowledge-matrix", response_model=KnowledgeMatrixOut)
+def get_knowledge_matrix(
+    project_id: uuid.UUID,
+    chapter: int | None = None,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> KnowledgeMatrixOut:
+    """Epistemic Knowledge Matrix (Characters x Key Facts, with multi-hop propagation)."""
+    data = knowledge.build_knowledge_matrix(db, project.id, up_to_chapter=chapter)
+    return KnowledgeMatrixOut(**data)
 
 
 @router.get("/projects/{project_id}/knowledge", response_model=list[KnowledgeOut])

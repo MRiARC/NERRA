@@ -186,6 +186,18 @@ class ObjectOut(BaseModel):
     mention_chapters: list[int]
 
 
+class ObjectCustodyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    object_id: uuid.UUID
+    chapter: int
+    holder_type: str
+    holder_name: str
+    action: str
+    evidence_quote: str | None = None
+
+
 class WorldOut(BaseModel):
     locations: list[LocationOut]
     objects: list[ObjectOut]
@@ -199,6 +211,24 @@ class KnowledgeOut(BaseModel):
     fact: str
     chapter: int
     how_learned: str
+    source_character: str | None = None
+
+
+class KnowledgeMatrixCellOut(BaseModel):
+    character: str
+    fact: str
+    knows: bool
+    since_chapter: int | None = None
+    how_learned: str | None = None
+    source_character: str | None = None
+    propagated: bool = False
+
+
+class KnowledgeMatrixOut(BaseModel):
+    characters: list[str]
+    facts: list[str]
+    cells: list[KnowledgeMatrixCellOut]
+    max_chapter: int = 1
 
 
 class ClaimOut(BaseModel):
