@@ -156,7 +156,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
     `from app.services.extractor import extract_chapter`. The tests (and the
     lead's code review) rely on this style.
     """
-    from app.services import consistency, extractor, graph, splitter
+    from app.services import consistency, extractor, graph, splitter, timeline
     from app.services.extractor import ExtractionPayload
 
     manuscript = db.get(Manuscript, manuscript_id)
@@ -191,6 +191,10 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         manuscript.chapters_done += 1
         db.commit()
 
+    try:
+        timeline.compute_story_chronology(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Timeline chronology computation skipped: %s", exc)
     consistency.run_consistency_pass(db, manuscript.project_id)
     try:
         graph.sync_project_graph(db, manuscript.project_id)
@@ -207,7 +211,7 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     for just that chapter, then re-run the consistency pass.
     """
     from app.models import Chunk
-    from app.services import consistency, extractor, graph, splitter
+    from app.services import consistency, extractor, graph, splitter, timeline
 
     chapters = splitter.split_chapters(manuscript.raw_text)
     target = next((c for c in chapters if c.number == chapter_number), None)
@@ -235,6 +239,10 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     _save_analysis(db, manuscript.id, target.number, content_hash, payload.model_dump())
     _embed_and_store_chunk(db, manuscript, target.number, target.content)
 
+    try:
+        timeline.compute_story_chronology(db, manuscript.project_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Timeline chronology computation skipped on reanalyze: %s", exc)
     consistency.run_consistency_pass(db, manuscript.project_id)
     try:
         graph.sync_project_graph(db, manuscript.project_id)

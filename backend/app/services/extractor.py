@@ -59,6 +59,9 @@ class ExtractedEvent(BaseModel):
     summary: str
     participants: list[str] = Field(default_factory=list)
     location: str | None = None
+    temporal_anchor: str | None = None
+    is_flashback: bool = False
+    is_flashforward: bool = False
 
 
 class ExtractedClaim(BaseModel):
@@ -373,11 +376,24 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             obj_map[obj_key] = new_obj
 
-    # 5. Events
-    for ev in payload.events:
+    # 5. Events (with scene_order & flashback/temporal marker detection)
+    from app.services import timeline
+
+    for idx, ev in enumerate(payload.events, start=1):
+        anchor, fb, ff = timeline.detect_temporal_markers(
+            ev.summary,
+            explicit_anchor=ev.temporal_anchor,
+            explicit_flashback=ev.is_flashback,
+            explicit_flashforward=ev.is_flashforward,
+        )
         new_ev = StoryEvent(
             project_id=project_id,
             chapter_number=chapter_number,
+            scene_order=idx,
+            story_time_order=chapter_number * 100 + idx,
+            temporal_anchor=anchor,
+            is_flashback=fb,
+            is_flashforward=ff,
             summary=ev.summary,
             participants=ev.participants,
             location=ev.location,

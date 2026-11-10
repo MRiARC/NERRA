@@ -203,6 +203,11 @@ class StoryEvent(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
 
     chapter_number: Mapped[int]
+    scene_order: Mapped[int] = mapped_column(default=1)
+    story_time_order: Mapped[int] = mapped_column(default=1)
+    temporal_anchor: Mapped[str | None] = None
+    is_flashback: Mapped[bool] = mapped_column(default=False)
+    is_flashforward: Mapped[bool] = mapped_column(default=False)
     summary: Mapped[str]
     participants: Mapped[list[str]] = mapped_column(JSONB, default=list)  # character names
     location: Mapped[str | None] = None
