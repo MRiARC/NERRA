@@ -76,6 +76,13 @@ class ExtractedCustodyEvent(BaseModel):
     evidence_quote: str | None = None
 
 
+class ExtractedWorldRule(BaseModel):
+    """Magic, physics, society, or setting rule stated in prose."""
+
+    category: str = "setting"  # magic | physics | society | setting
+    rule_text: str
+
+
 class ExtractionPayload(BaseModel):
     characters: list[ExtractedCharacter] = Field(default_factory=list)
     relationships: list[ExtractedRelationship] = Field(default_factory=list)
@@ -85,41 +92,42 @@ class ExtractionPayload(BaseModel):
     claims: list[ExtractedClaim] = Field(default_factory=list)
     knowledge: list[ExtractedKnowledge] = Field(default_factory=list)
     custody_events: list[ExtractedCustodyEvent] = Field(default_factory=list)
+    world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# The prompt — defined for you. Keep context SMALL (mvp_blueprint.md §5.2):
-# chapter text + character roster only, never the whole manuscript.
-# ---------------------------------------------------------------------------
+EXTRACTION_PROMPT_TEMPLATE = """You are analyzing chapter {chapter_number} of a novel to build a complete, high-precision story-memory graph.
 
-EXTRACTION_PROMPT_TEMPLATE = """You are analyzing chapter {chapter_number} of a novel to build a story-memory database.
-
-Known characters so far (name — aliases): {roster}
+EXISTING STORY WORLD CONTEXT:
+{roster}
 
 CHAPTER TEXT:
 ---
 {chapter_text}
 ---
 
-Extract structured data. Rules:
-- "claims": factual assertions the text makes about the world — physical traits
-  (eye_color, hair_color, age), possessions, and who-knows-what (use the
-  attribute "knows_about", e.g. subject="Park", attribute="knows_about",
-  value="the murder"). Quote the EXACT sentence in evidence_quote.
-- "knowledge": facts a character LEARNS in THIS chapter (not earlier).
-- Use character names from the roster where possible.
-- Do not invent anything not present in the text. If a category has nothing,
-  return an empty list.
+Extract structured story data thoroughly without omitting subtle narrative details. Rules:
+- "claims": factual assertions made by the prose — physical traits (eye_color, hair_color, age, scars), possessions, locations, behavioral constraints, and character knowledge references (use attribute "knows_about", e.g. subject="Park", attribute="knows_about", value="the murder"). Include the EXACT verbatim sentence in evidence_quote.
+- "knowledge": facts a character LEARNS in THIS chapter (witnessed | told | deduced | overheard), with source_character if told by someone.
+- "events": distinct scenes/beats with participants, location, temporal_anchor (if any time shift/clue appears), and is_flashback / is_flashforward flags.
+- "custody_events": physical transfers, acquisition, locking, hiding, loss, destruction, or use of plot-significant objects (ignore generic architecture/scenery like windows or drainpipes).
+- "world_rules": ONLY invariant universe-level rules (magic laws, physics constraints, supernatural properties, strict institutional laws) — NOT ordinary single-scene plot events or mystery facts.
+- Coreference & Aliases: resolve pronouns ("he", "she", "the captain", titles) back to canonical character names from the story context whenever unambiguous, and record newly discovered aliases/nicknames.
+- Never invent facts or quotes absent from the chapter text. If a category has nothing, return an empty list.
 """
 
 
 def get_roster(db, project_id) -> str:
-    """One-line-per-character summary for the prompt (built for you).
-
-    After Task 03, this reads real Character rows; it returns 'None yet' for
-    a fresh project. Kept trivial so the pipeline stays readable.
-    """
-    from app.models import Character
+    """Build a rich cross-chapter Story Context Packet for accurate entity/coreference/world continuity."""
+    from app.models import (
+        Character,
+        Claim,
+        Location,
+        ObjectCustodyEvent,
+        Relationship,
+        StoryEvent,
+        StoryObject,
+        WorldRule,
+    )
 
     characters = (
         db.query(Character)
@@ -129,10 +137,69 @@ def get_roster(db, project_id) -> str:
     )
     if not characters:
         return "None yet — this is an early chapter."
-    return "\n".join(
-        f"- {c.name}" + (f" (aliases: {', '.join(c.aliases)})" if c.aliases else "")
-        for c in characters
+
+    char_by_id = {c.id: c.name for c in characters}
+    sections: list[str] = ["Characters:"]
+    for c in characters:
+        traits = ", ".join(f"{k}={v}" for k, v in (c.physical_traits or {}).items())
+        alias_part = f" (aliases: {', '.join(c.aliases)})" if c.aliases else ""
+        trait_part = f" [traits: {traits}]" if traits else ""
+        sections.append(f"- {c.name}{alias_part} ({getattr(c, 'status', 'unknown')}){trait_part}")
+
+    rels = db.query(Relationship).filter(Relationship.project_id == project_id).limit(40).all()
+    if rels:
+        sections.append("\nActive Relationships:")
+        for r in rels:
+            ca = char_by_id.get(r.character_a_id, str(r.character_a_id))
+            cb = char_by_id.get(r.character_b_id, str(r.character_b_id))
+            sections.append(f"- {ca} --[{r.type}, {getattr(r, 'sentiment', 'neutral')}]--> {cb}")
+
+    locs = db.query(Location).filter(Location.project_id == project_id).limit(30).all()
+    if locs:
+        sections.append("\nLocations: " + ", ".join(l.name for l in locs))
+
+    objs = db.query(StoryObject).filter(StoryObject.project_id == project_id).limit(30).all()
+    if objs:
+        latest_holder: dict[str, str] = {}
+        for ce in db.query(ObjectCustodyEvent).filter(ObjectCustodyEvent.project_id == project_id).order_by(ObjectCustodyEvent.chapter.asc()).all():
+            latest_holder[str(ce.object_id)] = f"{ce.action} -> {ce.holder_name} (ch.{ce.chapter})"
+        sections.append("\nTracked Objects:")
+        for o in objs:
+            cust = f" [{latest_holder[str(o.id)]}]" if str(o.id) in latest_holder else ""
+            sections.append(f"- {o.name}{cust}")
+
+    rules = db.query(WorldRule).filter(WorldRule.project_id == project_id, WorldRule.status == "active").all()
+    if rules:
+        sections.append("\nWorld Rules:")
+        for wr in rules:
+            sections.append(f"- [{wr.category}] {wr.rule_text}")
+
+    recent_events = (
+        db.query(StoryEvent)
+        .filter(StoryEvent.project_id == project_id)
+        .order_by(StoryEvent.chapter_number.desc(), StoryEvent.scene_order.desc())
+        .limit(12)
+        .all()
     )
+    if recent_events:
+        sections.append("\nRecent Events:")
+        for ev in reversed(recent_events):
+            loc_str = f" @ {ev.location}" if ev.location else ""
+            sections.append(f"- Ch.{ev.chapter_number}{loc_str}: {ev.summary}")
+
+    recent_claims = (
+        db.query(Claim)
+        .filter(Claim.project_id == project_id, Claim.status == "active")
+        .order_by(Claim.chapter.desc())
+        .limit(20)
+        .all()
+    )
+    if recent_claims:
+        sections.append("\nEstablished Facts:")
+        for cl in reversed(recent_claims):
+            sections.append(f"- {cl.subject}.{cl.attribute}={cl.value} (ch.{cl.chapter})")
+
+    return "\n".join(sections)
 
 
 def get_anthropic_client():
@@ -143,7 +210,7 @@ def get_anthropic_client():
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    kwargs = {"api_key": settings.anthropic_api_key}
+    kwargs = {"api_key": settings.anthropic_api_key, "timeout": 60.0}
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
     return anthropic.Anthropic(**kwargs)
@@ -182,7 +249,7 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
     )
     response = client.messages.create(
         model=settings.extraction_model,
-        max_tokens=4096,
+        max_tokens=settings.extraction_max_tokens,
         tools=[{
             "name": "save_extraction",
             "description": "Save the extracted story data",
@@ -215,6 +282,10 @@ def validate_payload(payload: ExtractionPayload, chapter_text: str) -> Extractio
         obj for obj in payload.objects
         if obj.name and obj.name.strip()
     ]
+    valid_rules = [
+        wr for wr in getattr(payload, "world_rules", [])
+        if wr.rule_text and wr.rule_text.strip()
+    ]
 
     return ExtractionPayload(
         characters=valid_characters,
@@ -225,6 +296,7 @@ def validate_payload(payload: ExtractionPayload, chapter_text: str) -> Extractio
         claims=valid_claims,
         knowledge=payload.knowledge,
         custody_events=payload.custody_events,
+        world_rules=valid_rules,
     )
 
 
@@ -239,6 +311,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
         Relationship,
         StoryEvent,
         StoryObject,
+        WorldRule,
     )
 
     # 1. Characters: dedupe / update or insert
@@ -451,6 +524,26 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 holder_name=ce.holder_name.strip(),
                 action=ce.action,
                 evidence_quote=ce.evidence_quote,
+            )
+        )
+
+    # 9. Discovered World Rules
+    existing_rules = {
+        r.rule_text.strip().lower()
+        for r in db.query(WorldRule).filter(WorldRule.project_id == project_id).all()
+    }
+    for wr in getattr(payload, "world_rules", []):
+        rtext = wr.rule_text.strip()
+        if not rtext or rtext.lower() in existing_rules:
+            continue
+        existing_rules.add(rtext.lower())
+        db.add(
+            WorldRule(
+                project_id=project_id,
+                category=wr.category if wr.category in ("magic", "physics", "society", "setting") else "setting",
+                rule_text=rtext,
+                source_chapter=chapter_number,
+                is_author_defined=False,
             )
         )
 

@@ -12,10 +12,10 @@
 Every major NERRA capability follows the same 9-stage backbone so the codebase stays modular rather than becoming 20 disconnected LLM prompts:
 
 1. **Trigger** — Starts the run (`Import Manuscript`, `New Chapter Added`, `Paragraph Edited`, `Live Writing Pause`, `User Asks Story Question`, `User Corrects AI Mistake`, plus user actions like character merge or marking an issue intentional).
-2. **Data Collection** — Identifies changed spans via the **Change Detector** and runs the lightweight deterministic **Cheap Scanner** (capitalized names, dialogue speakers, dates, temporal markers, locations, repeated nouns/objects) to decide which memory to fetch.
-3. **Context Builder** — Fetches only relevant memory (not *"all facts about Sarah from 100 chapters"*): relevant characters & aliases, recent events, related objects, timeline anchors, open plot threads, active world rules, and prior user correction rules.
-4. **AI Processing** — LLM receives `{target_text, compact_memory_packet, schema, instructions}` and proposes structured candidate updates. **The LLM never mutates the graph directly.**
-5. **Validation Layer** — Combines algorithmic checks + targeted AI checks + confidence routing to decide `Accept`, `Human Review`, or `Reject / Hold`.
+2. **Data Collection** — Identifies changed spans via the **Change Detector** and runs a fast **LLM Signal & Coreference Pre-Scanner** (`claude-haiku-4.5` / `claude-sonnet-4.5` combined with regex anchors) to catch capitalized names, lowercase epithets (*"the innkeeper"*), implicit dialogue speakers, temporal shifts, and objects so no relevant memory is missed.
+3. **Context Builder** — Fetches complete, relevant story memory (without artificial token starvation, leveraging `200K` context): multi-hop Neo4j entity/relationship neighborhoods, full prior chapter summaries, established claims/custody states, timeline anchors, open plot threads, active world rules, and all author correction rules.
+4. **AI Processing** — **Multi-pass specialized LLM agents** (`claude-sonnet-4.5`, `64K` output) receive `{target_text, story_memory_packet, schemas}` and propose candidate updates. Dividing extraction into focused passes (Entities/Coreference, Events/Chronology, Claims/Knowledge/Custody, World Rules/Plot Threads) prevents subtle drops. **The LLM never mutates the graph directly.**
+5. **Validation Layer** — Enforces deterministic structure checks (`quote_in_text` verbatim provenance, schema) **plus mandatory LLM semantic validation** (`Pronoun Resolution`, `Entity Split/Merge Judge`, `Unreliable Narrator Guard`) and confidence routing to decide `Accept`, `Human Review`, or `Reject / Hold`.
 6. **Graph Update** — Persists only validated updates (`create/update/merge node`, `create/update edge`, `attach source_chapter/scene/paragraph + confidence`), keeping provenance intact.
 7. **Reasoning Layer** — Runs cross-story reasoning checks over the updated graph (contradictions, knowledge violations, timeline/spatiotemporal conflicts, object custody paradoxes, world rules, plot thread state).
 8. **User Output** — Updates UI views (Character Cards, Relationship Graph, Dual Timeline, Knowledge Matrix, Issues/Review Queue, Plot Threads, Story Chat).
@@ -30,11 +30,11 @@ Full manuscript processing runs **only on initial import**. All subsequent edits
 | Case | Input Event | Required Pipeline Behavior |
 |---|---|---|
 | **Case 1: First Import** | Full manuscript uploaded | Split books → chapters → scenes → paragraphs → extract initial entities/facts → generate embeddings → build story memory |
-| **Case 2: New Chapter Added** | Chapter appended | Detect chapter → Cheap Scan → fetch relevant character/world memory → extract → validate → update graph → embed **new chapter only** |
-| **Case 3: Paragraph Edited** | Paragraph updated | Diff changed paragraph → locate affected scene/chapter → version or supersede old facts linked to `source_paragraph_id` → extract & validate new facts → re-embed affected chunk only |
-| **Case 4: Large Chapter Rewrite** | Whole chapter rewritten | Mark previously extracted chapter facts stale → reprocess chapter cleanly → diff old graph facts vs. new graph facts → ask author review on major structural contradictions |
+| **Case 2: New Chapter Added** | Chapter appended | Detect chapter → LLM Signal Pre-Scan → fetch full relevant graph/world memory → Multi-Pass Sonnet extraction → LLM + Structural Validation → update graph → embed new chapter |
+| **Case 3: Paragraph Edited** | Paragraph updated | Diff changed paragraph → locate affected scene/chapter → version or supersede old facts linked to `source_paragraph_id` → re-extract with full chapter context → validate & re-audit downstream chapters semantically affected → re-embed affected chunk |
+| **Case 4: Large Chapter Rewrite** | Whole chapter rewritten | Mark old chapter facts stale → reprocess chapter + generate **LLM Semantic Diff Summary** (`manuscript_versions`) → trace & re-evaluate downstream chapters impacted by changed facts/events → surface structural diffs for author review |
 | **Case 5: Character Rename** | e.g., `"Sarah"` → `"Mira"` | Update canonical name, keep old name in aliases, update labels, **preserve graph node UUIDs** so entity history is never lost |
-| **Case 6: User Correction** | e.g., *"Miss Mitchell is Sarah's mother"* | Split or merge entity nodes safely, update aliases & validation memory, re-evaluate affected scenes, and persist a reusable correction rule |
+| **Case 6: User Correction** | e.g., *"Miss Mitchell is Sarah's mother"* | Split or merge entity nodes safely, update aliases & validation memory, persist a reusable `CorrectionRule`, and run an **LLM downstream re-audit** across all scenes referencing the corrected entity |
 
 **Versioning Principle:** *Never overwrite story memory blindly.* Every extracted fact should carry provenance (`source_chapter`, `source_scene`, `source_paragraph`, `extraction_version`, `confidence`, `validation_status`): `version → compare → validate → update`.
 

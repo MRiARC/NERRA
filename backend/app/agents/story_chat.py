@@ -26,8 +26,49 @@ class ChatState(TypedDict, total=False):
     citations: list[dict]  # [{chapter, excerpt}]
 
 
-def classify_query_intent(question: str) -> str:
-    """Classify the story question to guide Graph RAG retrieval."""
+def classify_query_intent(question: str, use_llm: bool = True) -> str:
+    """Classify the story question via Claude (with deterministic keyword fallback)."""
+    if use_llm and question and question.strip():
+        try:
+            from pydantic import BaseModel
+
+            from app.config import settings
+            from app.services.extractor import get_anthropic_client
+
+            if settings.anthropic_api_key:
+                class IntentChoice(BaseModel):
+                    intent: str  # epistemic | relational | chronological | factual | semantic
+
+                client = get_anthropic_client()
+                res = client.messages.create(
+                    model=settings.chat_model,
+                    max_tokens=128,
+                    tools=[
+                        {
+                            "name": "set_intent",
+                            "description": "Classify query intent",
+                            "input_schema": IntentChoice.model_json_schema(),
+                        }
+                    ],
+                    tool_choice={"type": "tool", "name": "set_intent"},
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": (
+                                "Classify this story question into one of: epistemic, relational, "
+                                f"chronological, factual, semantic.\nQuestion: {question}"
+                            ),
+                        }
+                    ],
+                )
+                for block in res.content:
+                    if getattr(block, "type", None) == "tool_use" and block.name == "set_intent":
+                        choice = IntentChoice.model_validate(block.input).intent.strip().lower()
+                        if choice in ("epistemic", "relational", "chronological", "factual", "semantic"):
+                            return choice
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("LLM intent classification fallback: %s", exc)
+
     q = (question or "").lower()
     if any(k in q for k in ("know", "knew", "knows", "secret", "aware", "suspect", "learned", "discovered", "told")):
         return "epistemic"
@@ -40,15 +81,94 @@ def classify_query_intent(question: str) -> str:
     return "semantic"
 
 
-def grade_contexts(question: str, contexts: list[dict]) -> bool:
-    """Grade whether retrieved contexts provide grounding for the question."""
+def grade_contexts(question: str, contexts: list[dict], use_llm: bool = True) -> bool:
+    """Grade whether retrieved contexts provide sufficient grounding for the question."""
     if not contexts:
         return False
+    if use_llm:
+        try:
+            from pydantic import BaseModel
+
+            from app.config import settings
+            from app.services.extractor import get_anthropic_client
+
+            if settings.anthropic_api_key:
+                class GradeResult(BaseModel):
+                    sufficient: bool
+
+                preview = "\n".join(
+                    f"[Ch.{c.get('chapter', 0)}] {c.get('content', '')[:300]}"
+                    for c in contexts[:8]
+                )
+                client = get_anthropic_client()
+                res = client.messages.create(
+                    model=settings.chat_model,
+                    max_tokens=128,
+                    tools=[
+                        {
+                            "name": "grade",
+                            "description": "Grade retrieval sufficiency",
+                            "input_schema": GradeResult.model_json_schema(),
+                        }
+                    ],
+                    tool_choice={"type": "tool", "name": "grade"},
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f"Is this context sufficient to answer '{question}'?\n\n{preview}",
+                        }
+                    ],
+                )
+                for block in res.content:
+                    if getattr(block, "type", None) == "tool_use" and block.name == "grade":
+                        return bool(GradeResult.model_validate(block.input).sufficient)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("LLM context grading fallback: %s", exc)
+
     has_chapter = any(int(ctx.get("chapter", 0) or 0) > 0 for ctx in contexts)
     q_tokens = {w for w in re.findall(r"[a-z]{4,}", (question or "").lower())}
     combined = " ".join(ctx.get("content", "").lower() for ctx in contexts)
     overlap = any(tok in combined for tok in q_tokens) if q_tokens else True
     return has_chapter and overlap
+
+
+def rewrite_query_for_retrieval(question: str) -> list[str]:
+    """Generate focused fallback search keywords/terms via Claude when initial RAG recall is weak."""
+    try:
+        from pydantic import BaseModel
+
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if settings.anthropic_api_key:
+            class SearchTerms(BaseModel):
+                terms: list[str]
+
+            client = get_anthropic_client()
+            res = client.messages.create(
+                model=settings.chat_model,
+                max_tokens=128,
+                tools=[
+                    {
+                        "name": "search_terms",
+                        "description": "Extract high-signal search keywords",
+                        "input_schema": SearchTerms.model_json_schema(),
+                    }
+                ],
+                tool_choice={"type": "tool", "name": "search_terms"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"Extract 2-4 exact entity/topic keywords to search a novel for: {question}",
+                    }
+                ],
+            )
+            for block in res.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "search_terms":
+                    return [t.strip() for t in SearchTerms.model_validate(block.input).terms if t.strip()]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("LLM query rewrite fallback: %s", exc)
+    return re.findall(r"[A-Za-z]{4,}", question)[:3]
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +208,7 @@ def retrieve_node(state: ChatState) -> dict:
                 .filter(Manuscript.project_id == project_id)
                 .filter(Chunk.embedding.isnot(None))
                 .order_by(Chunk.embedding.cosine_distance(vec))
-                .limit(4)
+                .limit(8)
                 .all()
             )
             for chunk in chunks:
@@ -147,11 +267,11 @@ def retrieve_node(state: ChatState) -> dict:
                         + (f": {r.description}" if r.description else "")
                     )
 
-        for entity_name in matched_entities[:3]:
+        for entity_name in matched_entities[:8]:
             graph_entities.append(entity_name)
             try:
                 neighbors = graph.get_entity_neighborhood(db, project_id, entity_name, hops=2)
-                for nbr in neighbors[:8]:
+                for nbr in neighbors[:15]:
                     labels = ", ".join(nbr.get("labels") or ["Entity"])
                     graph_notes.append(
                         f"Neighbor of {entity_name}: {nbr.get('name')} ({labels}, ch.{nbr.get('chapter') or '?'})"
@@ -185,14 +305,14 @@ def retrieve_node(state: ChatState) -> dict:
         if graph_notes:
             contexts.append({
                 "chapter": 0,
-                "content": f"Graph & Timeline Context ({intent}): " + "; ".join(graph_notes[:12]),
+                "content": f"Graph & Timeline Context ({intent}): " + "; ".join(graph_notes[:30]),
             })
 
         # 3. Structured Claims facts
         claims = (
             db.query(Claim)
             .filter(Claim.project_id == project_id, Claim.status == "active")
-            .limit(12)
+            .limit(30)
             .all()
         )
         claim_facts = [
@@ -202,14 +322,14 @@ def retrieve_node(state: ChatState) -> dict:
         facts_summary = f"Characters: {', '.join(char_names)}. Claims: {'; '.join(claim_facts)}."
         contexts.append({"chapter": 0, "content": f"Known facts: {facts_summary}"})
 
-        # 4. Self-correction retry: if context grading fails, fetch entity keyword chunks
+        # 4. Self-correction retry: if context grading fails, rewrite search terms & retrieve additional chunks
         if not grade_contexts(question, contexts):
-            for tok in re.findall(r"[A-Za-z]{4,}", question)[:2]:
+            for tok in rewrite_query_for_retrieval(question)[:3]:
                 extra = (
                     db.query(Chunk)
                     .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
                     .filter(Manuscript.project_id == project_id, Chunk.content.ilike(f"%{tok}%"))
-                    .limit(2)
+                    .limit(3)
                     .all()
                 )
                 for ch_row in extra:
@@ -265,7 +385,7 @@ QUESTION:
     client = get_anthropic_client()
     response = client.messages.create(
         model=settings.chat_model,
-        max_tokens=1024,
+        max_tokens=settings.chat_max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
     answer = response.content[0].text

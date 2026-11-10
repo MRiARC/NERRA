@@ -31,8 +31,12 @@ class Settings(BaseSettings):
     # --- LLMs (Anthropic Claude or compatible proxy) ---
     anthropic_base_url: str = ""
     anthropic_api_key: str = ""
-    extraction_model: str = "claude-haiku-4-5"  # fast + cheap: per-chapter extraction
-    chat_model: str = "claude-sonnet-4-5"       # stronger reasoning: story chat agent
+    extraction_model: str = "claude-sonnet-4.5"
+    fast_model: str = "claude-haiku-4.5"
+    chat_model: str = "claude-sonnet-4.5"
+    extraction_max_tokens: int = 16384
+    chat_max_tokens: int = 4096
+    use_llm_consistency: bool = True
 
     # --- Embeddings (computed locally, no API key) ---
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"

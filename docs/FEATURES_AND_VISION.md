@@ -17,7 +17,7 @@ Unlike manual organization tools (**Scrivener**, **Notion**, **Plottr**) or plai
 ### Design Philosophy
 1. **Incremental:** Full processing happens only once; afterward only changed chapters, scenes, or paragraphs reprocess.
 2. **Graph-First:** Structured world memory (`Character`, `Event`, `Relationship`, `Location`, `Object`, `Knowledge`, `PlotThread`, `WorldRule`) powers reasoning and Q&A rather than raw text lookup alone.
-3. **LLM-Assisted, Not LLM-Only:** LLMs interpret prose; deterministic graph algorithms validate structure; authors confirm ambiguity.
+3. **Quality-First AI + Deterministic Guardrails:** Use full LLM reasoning (`claude-sonnet-4.5`) wherever narrative nuance matters—never replace semantic understanding with brittle keyword/regex shortcuts—while deterministic algorithms strictly enforce quote provenance and graph invariants.
 4. **Human-Correctable:** Authors can always resolve ambiguity or override AI mistakes, and corrections improve future passes.
 5. **Privacy-Aware:** Unpublished fiction is sensitive IP — strict data isolation, no training on private manuscripts, encryption, and optional local processing are first-class constraints.
 

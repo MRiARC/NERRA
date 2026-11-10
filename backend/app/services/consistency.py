@@ -65,19 +65,37 @@ def _group_claims(claims: list) -> dict[tuple[str, str], list]:
 # ---------------------------------------------------------------------------
 
 
+_MULTI_VALUE_ATTRIBUTES = {
+    "knows_about",
+    "possession",
+    "possesses",
+    "owns",
+    "has",
+    "carries",
+    "holds",
+    "skill",
+    "ability",
+    "language",
+    "ally",
+    "behavior",
+    "action",
+}
+
+
 def detect_contradictions(claims: list) -> list[IssueDraft]:
     """Find contradicting claim pairs.
 
-    1. Group claims by (_norm(subject), _norm(attribute)).
-    2. Inside a group, keep the FIRST claim per distinct normalized value
+    1. Skip multi-valued accumulative attributes (`knows_about`, `possession`, etc.).
+    2. Group claims by (_norm(subject), _norm(attribute)).
+    3. Inside a group, keep the FIRST claim per distinct normalized value
        (lowest chapter wins — that's the earlier statement).
-    3. Every pair of distinct values -> one red IssueDraft carrying both
+    4. Every pair of distinct values -> one red IssueDraft carrying both
        citations and both claim ids.
     """
     drafts: list[IssueDraft] = []
 
     for (_subject, attribute), group in _group_claims(claims).items():
-        if len(group) < 2:
+        if attribute in _MULTI_VALUE_ATTRIBUTES or len(group) < 2:
             continue
 
         first_by_value: dict[str, object] = {}
@@ -110,23 +128,42 @@ def detect_contradictions(claims: list) -> list[IssueDraft]:
     return drafts
 
 
-def detect_knowledge_violations(claims: list, knowledge_updates: list) -> list[IssueDraft]:
+def detect_knowledge_violations(
+    claims: list, knowledge_updates: list, events: list | None = None
+) -> list[IssueDraft]:
     """Find characters acting on facts before they learned them.
 
-    Only claims with attribute 'knows_about' count as references. A
-    violation fires when the same character's knowledge update for a
-    matching fact comes at a LATER chapter than the reference.
+    Uses story-chronological ordering (`story_time_order`) when StoryEvents are
+    supplied so flashbacks do not cause false positives or missed leaks; falls
+    back to narrative chapter order otherwise.
     """
     drafts: list[IssueDraft] = []
+
+    chapter_min_time: dict[int, int] = {}
+    for ev in (events or []):
+        slot = getattr(ev, "story_time_order", None)
+        ch = getattr(ev, "chapter_number", None)
+        if isinstance(slot, int) and isinstance(ch, int):
+            prev = chapter_min_time.get(ch)
+            if prev is None or slot < prev:
+                chapter_min_time[ch] = slot
+
+    def _time_pos(chapter: int) -> int:
+        return chapter_min_time.get(chapter, chapter * 100)
 
     for claim in claims:
         if _norm(claim.attribute) != "knows_about":
             continue
         for update in knowledge_updates:
+            learned_later = (
+                _time_pos(update.chapter) > _time_pos(claim.chapter)
+                if chapter_min_time
+                else update.chapter > claim.chapter
+            )
             if (
                 _same_entity(claim.subject, update.character)
                 and _facts_match(claim.value, update.fact)
-                and update.chapter > claim.chapter
+                and learned_later
             ):
                 drafts.append(
                     IssueDraft(
@@ -365,15 +402,193 @@ def detect_world_rule_violations(claims: list, rules: list) -> list[IssueDraft]:
     return drafts
 
 
-def run_consistency_pass(db, project_id) -> int:
-    """Load this project's story data, run all detectors, persist issues.
+def detect_world_rule_violations_llm(
+    rules: list, claims: list, events: list, use_llm: bool = True
+) -> list[IssueDraft]:
+    """Semantically audit ALL active world rules (positive + negative) against events & claims."""
+    active_rules = [r for r in rules if (getattr(r, "status", None) or "active") == "active"]
+    if not use_llm or not active_rules or (not claims and not events):
+        return []
 
-    De-dupes against open issues by (type, description) — descriptions are
-    generated deterministically from the data, so identical findings always
-    produce identical text. Returns the number of NEW issues created.
-    """
+    try:
+        from pydantic import BaseModel, Field
+
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return []
+
+        class RuleViolationItem(BaseModel):
+            rule_text: str
+            chapter: int
+            description: str
+            evidence_quote: str
+            severity: str = "yellow"
+
+        class RuleViolationBatch(BaseModel):
+            violations: list[RuleViolationItem] = Field(default_factory=list)
+
+        rules_txt = "\n".join(f"- [{r.category}] {r.rule_text}" for r in active_rules)
+        events_txt = "\n".join(
+            f"- Ch.{ev.chapter_number} (story_order={getattr(ev, 'story_time_order', ev.chapter_number)}): {ev.summary}"
+            for ev in events[:60]
+        )
+        claims_txt = "\n".join(
+            f"- Ch.{c.chapter}: {c.subject}.{c.attribute}={c.value} (\"{c.evidence_quote}\")"
+            for c in claims[:60]
+        )
+
+        prompt = f"""Audit these fictional World Rules against the extracted events and claims.
+Check BOTH positive requirements (e.g. "requires a full moon", "only bloodline X can Y") and prohibitions ("cannot teleport").
+
+WORLD RULES:
+{rules_txt}
+
+EVENTS:
+{events_txt}
+
+CLAIMS:
+{claims_txt}
+
+Return ONLY real, concrete violations supported by the evidence. If none violate the rules, return an empty list."""
+
+        client = get_anthropic_client()
+        response = client.messages.create(
+            model=settings.chat_model,
+            max_tokens=2048,
+            tools=[
+                {
+                    "name": "save_rule_violations",
+                    "description": "Save detected semantic world rule violations",
+                    "input_schema": RuleViolationBatch.model_json_schema(),
+                }
+            ],
+            tool_choice={"type": "tool", "name": "save_rule_violations"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "save_rule_violations":
+                parsed = RuleViolationBatch.model_validate(block.input)
+                return [
+                    IssueDraft(
+                        type="world_rule_violation",
+                        severity=v.severity if v.severity in ("red", "yellow") else "yellow",
+                        description=v.description,
+                        evidence=[{"chapter": v.chapter, "quote": v.evidence_quote, "rule": v.rule_text}],
+                    )
+                    for v in parsed.violations
+                ]
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("LLM world rule audit fallback/skipped: %s", exc)
+    return []
+
+
+def detect_semantic_inconsistencies_llm(
+    claims: list, events: list, knowledge_matrix: dict | None = None, use_llm: bool = True
+) -> list[IssueDraft]:
+    """Detect paraphrased contradictions and story-chronological epistemic leaks via Claude."""
+    if not use_llm or (not claims and not events):
+        return []
+
+    try:
+        from pydantic import BaseModel, Field
+
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return []
+
+        class SemanticIssueItem(BaseModel):
+            type: str = "contradiction"  # contradiction | knowledge_violation
+            severity: str = "red"
+            description: str
+            chapter_a: int
+            quote_a: str
+            chapter_b: int | None = None
+            quote_b: str | None = None
+
+        class SemanticIssueBatch(BaseModel):
+            issues: list[SemanticIssueItem] = Field(default_factory=list)
+
+        claims_txt = "\n".join(
+            f"- Ch.{c.chapter}: {c.subject} {c.attribute}={c.value} (\"{c.evidence_quote}\")"
+            for c in claims[:80]
+        )
+        events_txt = "\n".join(
+            f"- Ch.{ev.chapter_number} (story_order={getattr(ev, 'story_time_order', ev.chapter_number)}, "
+            f"flashback={getattr(ev, 'is_flashback', False)}): {ev.summary} [loc={ev.location}]"
+            for ev in events[:60]
+        )
+        km_cells = [
+            f"- {cell['character']} knows '{cell['fact']}' since Ch.{cell['since_chapter']} ({cell['how_learned']})"
+            for cell in (knowledge_matrix or {}).get("cells", [])
+            if cell.get("knows")
+        ][:60]
+        km_txt = "\n".join(km_cells)
+
+        prompt = f"""Review these story facts, chronological events, and character knowledge states for IMPLICIT or PARAPHRASED continuity issues that exact string matching misses:
+1. Paraphrased/behavioral contradictions (e.g. "terrified of heights" vs "casually perched on the cathedral spire").
+2. Chronology-aware epistemic leaks (using `story_order`, NOT raw chapter number alone, when flashbacks exist).
+
+CLAIMS:
+{claims_txt}
+
+CHRONOLOGICAL EVENTS:
+{events_txt}
+
+EPISTEMIC KNOWLEDGE MATRIX:
+{km_txt}
+
+Return ONLY high-confidence genuine contradictions or knowledge violations."""
+
+        client = get_anthropic_client()
+        response = client.messages.create(
+            model=settings.chat_model,
+            max_tokens=2048,
+            tools=[
+                {
+                    "name": "save_semantic_issues",
+                    "description": "Save implicit semantic contradictions and epistemic leaks",
+                    "input_schema": SemanticIssueBatch.model_json_schema(),
+                }
+            ],
+            tool_choice={"type": "tool", "name": "save_semantic_issues"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "save_semantic_issues":
+                parsed = SemanticIssueBatch.model_validate(block.input)
+                out: list[IssueDraft] = []
+                for item in parsed.issues:
+                    ev_list = [{"chapter": item.chapter_a, "quote": item.quote_a}]
+                    if item.chapter_b is not None and item.quote_b:
+                        ev_list.append({"chapter": item.chapter_b, "quote": item.quote_b})
+                    out.append(
+                        IssueDraft(
+                            type=item.type if item.type in ("contradiction", "knowledge_violation") else "contradiction",
+                            severity=item.severity if item.severity in ("red", "yellow", "blue") else "yellow",
+                            description=item.description,
+                            evidence=ev_list,
+                        )
+                    )
+                return out
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).warning("LLM semantic inconsistency audit skipped: %s", exc)
+    return []
+
+
+def run_consistency_pass(db, project_id) -> int:
+    """Load this project's story data, run deterministic + LLM semantic detectors, and persist issues."""
     from app.agents import contradiction_reasoner
+    from app.config import settings
     from app.models import Claim, Issue, KnowledgeUpdate, ObjectCustodyEvent, StoryEvent, StoryObject, WorldRule
+    from app.services import knowledge as knowledge_svc
 
     claims = (
         db.query(Claim)
@@ -390,16 +605,22 @@ def run_consistency_pass(db, project_id) -> int:
     )
     rules = db.query(WorldRule).filter(WorldRule.project_id == project_id, WorldRule.status == "active").all()
     objects_by_id = {str(o.id): o for o in objects}
+    llm_enabled = bool(getattr(settings, "use_llm_consistency", True) and settings.anthropic_api_key)
 
     drafts = (
         detect_contradictions(claims)
-        + detect_knowledge_violations(claims, knowledge)
+        + detect_knowledge_violations(claims, knowledge, events=events)
         + detect_dangling_objects(objects)
         + detect_continuity_notes(claims)
         + detect_spatiotemporal_conflicts(events)
         + detect_custody_paradoxes(custody_events, objects_by_id)
-        + detect_world_rule_violations(claims, rules)
     )
+    if llm_enabled:
+        km = knowledge_svc.build_knowledge_matrix(db, project_id)
+        drafts.extend(detect_world_rule_violations_llm(rules, claims, events, use_llm=True))
+        drafts.extend(detect_semantic_inconsistencies_llm(claims, events, km, use_llm=True))
+    else:
+        drafts.extend(detect_world_rule_violations(claims, rules))
 
     existing = {
         (issue.type, issue.description)
@@ -408,17 +629,43 @@ def run_consistency_pass(db, project_id) -> int:
         .all()
     }
 
-    created = 0
+    to_persist: list[IssueDraft] = []
     for draft in drafts:
         if (draft.type, draft.description) in existing:
             continue
-        reason = contradiction_reasoner.analyze_issue_intent(
-            project_id=project_id,
-            issue_type=draft.type,
-            description=draft.description,
-            evidence=draft.evidence,
-            use_llm=False,
-        )
+        existing.add((draft.type, draft.description))
+        to_persist.append(draft)
+
+    _CONFLICT_TYPES = {
+        "contradiction",
+        "knowledge_violation",
+        "spatiotemporal_conflict",
+        "custody_paradox",
+        "world_rule_violation",
+    }
+
+    reasons_by_idx: dict[int, dict] = {}
+    if to_persist:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _reason_for(idx_draft: tuple[int, IssueDraft]) -> tuple[int, dict]:
+            idx, d = idx_draft
+            should_llm = llm_enabled and d.type in _CONFLICT_TYPES
+            return idx, contradiction_reasoner.analyze_issue_intent(
+                project_id=project_id,
+                issue_type=d.type,
+                description=d.description,
+                evidence=d.evidence,
+                use_llm=should_llm,
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for idx, res in pool.map(_reason_for, enumerate(to_persist)):
+                reasons_by_idx[idx] = res
+
+    created = 0
+    for idx, draft in enumerate(to_persist):
+        reason = reasons_by_idx[idx]
         db.add(
             Issue(
                 project_id=project_id,
