@@ -12,6 +12,7 @@ from app.services import (
     consistency,
     context_builder,
     extractor,
+    llm_budget,
     pipeline,
     plot_threads,
     signal_scanner,
@@ -20,17 +21,25 @@ from app.services import (
 
 
 def test_timeout_config_and_transient_backoff_retry(monkeypatch):
-    assert settings.llm_timeout_seconds >= 300.0
+    assert settings.llm_timeout_seconds is None
+    assert llm_budget.compute_dynamic_timeout_seconds(1000, 1024) < llm_budget.compute_dynamic_timeout_seconds(90000, 16384)
     monkeypatch.setattr("app.config.settings.anthropic_api_key", "test-key")
 
     attempts = {"n": 0}
+    seen_timeouts: list[float | None] = []
+    slept: list[float] = []
 
     class _FakeMsgs:
         @staticmethod
-        def create(**_kw):
+        def create(**kwargs):
             attempts["n"] += 1
-            if attempts["n"] < 3:
+            seen_timeouts.append(kwargs.get("timeout"))
+            if attempts["n"] == 1:
                 raise anthropic.APITimeoutError(request=None)
+            if attempts["n"] == 2:
+                exc = anthropic.APITimeoutError(request=None)
+                exc.response = types.SimpleNamespace(headers={"Retry-After": "3.5"})
+                raise exc
             return types.SimpleNamespace(content=[types.SimpleNamespace(type="text", text="ok")])
 
     class _FakeAnthropic:
@@ -38,12 +47,32 @@ def test_timeout_config_and_transient_backoff_retry(monkeypatch):
             self.messages = _FakeMsgs()
 
     monkeypatch.setattr(anthropic, "Anthropic", _FakeAnthropic)
-    monkeypatch.setattr("time.sleep", lambda _s: None)
+    monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
 
     client = extractor.get_anthropic_client()
-    res = client.messages.create(model="claude-sonnet-4.5", max_tokens=16, messages=[{"role": "user", "content": "hi"}])
+    res = client.messages.create(model="claude-sonnet-4.5", max_tokens=16384, messages=[{"role": "user", "content": "x" * 60000}])
     assert attempts["n"] == 3
     assert res.content[0].text == "ok"
+    assert seen_timeouts[0] is not None and seen_timeouts[0] > 300.0
+    assert 3.5 in slept
+
+
+def test_dynamic_llm_budget_models_and_windowing():
+    assert llm_budget.get_model_limits("deepseek-3.2") == (164_000, 64_000)
+    assert llm_budget.get_model_limits("qwen3-coder-next") == (256_000, 64_000)
+    assert llm_budget.get_model_limits("simple-task") == (200_000, 4_000)
+    assert llm_budget.compute_input_char_budget("deepseek-3.2", 4096) < llm_budget.compute_input_char_budget("qwen3-coder-next", 4096)
+
+    assert llm_budget.compute_context_char_budget("claude-sonnet-4.5", 50_000) == 64_000
+    assert llm_budget.compute_event_beat_range("word " * 600) < llm_budget.compute_event_beat_range("word " * 8000)
+    assert 4 <= llm_budget.compute_intent_batch_size(2048) <= 16
+
+    # Paragraph window splitting retains every piece cleanly without clipping
+    para_text = "\n\n".join(f"Paragraph {i} content with important lore detail." for i in range(12))
+    windows = llm_budget.split_text_windows(para_text, max_chars=140, overlap_paragraphs=1)
+    assert len(windows) > 1
+    assert "Paragraph 0" in windows[0]
+    assert "Paragraph 11" in windows[-1]
 
 
 def test_multivalue_has_feature_skip_and_batched_intent_classification(db_session, client, auth_headers, monkeypatch):
@@ -180,5 +209,6 @@ def test_idempotent_chunk_upsert_candidate_dedupe_and_pronoun_alias_strip(db_ses
     )
     db_session.commit()
     packet = context_builder.build_story_context_packet(db_session, pid, 2, "Sarah entered chapter 2.")
-    assert len(packet["prompt_text"]) <= settings.max_context_chars
+    dyn_budget = llm_budget.compute_context_char_budget(settings.extraction_model, len("Sarah entered chapter 2."), settings.extraction_max_tokens)
+    assert len(packet["prompt_text"]) <= dyn_budget
     assert "Always preserve green eyes for Sarah." in packet["prompt_text"]

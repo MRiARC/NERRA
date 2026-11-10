@@ -54,6 +54,7 @@ def _evaluate_entities_and_claims_llm(
 
     try:
         from app.config import settings
+        from app.services import llm_budget
         from app.services.extractor import get_anthropic_client
 
         if not settings.anthropic_api_key:
@@ -87,7 +88,14 @@ def _evaluate_entities_and_claims_llm(
             for cl in payload.claims
         )
 
-        prompt = f"""Act as NERRA's pre-graph Validation Judge.
+        budget = llm_budget.compute_input_char_budget(
+            settings.chat_model, max_output_tokens=2048, overhead_tokens=4000
+        )
+        windows = llm_budget.split_text_windows(chapter_text, budget)
+        client = get_anthropic_client()
+
+        for win in windows:
+            prompt = f"""Act as NERRA's pre-graph Validation Judge.
 Inspect candidate characters and claims before committing to the canon Story Graph:
 1. Junk Entities (`confidence <= 0.35`): calendar days ("Monday"), months, pronouns ("She"), or generic nouns misclassified as Characters.
 2. Ambiguous Entity Collisions (`0.45 - 0.75`): e.g. a title+surname ("Miss Mitchell") when "Sarah Mitchell" already exists AND the passage hints they might be two different family members (mother/daughter) or ambiguous alias.
@@ -100,40 +108,46 @@ CANDIDATE CLAIMS:
 {claims_str}
 
 CHAPTER TEXT:
-{chapter_text[:120000]}"""
+{win}"""
 
-        client = get_anthropic_client()
-        response = client.messages.create(
-            model=settings.chat_model,
-            max_tokens=2048,
-            tools=[
-                {
-                    "name": "save_validation_judgments",
-                    "description": "Record pre-graph validation confidence & ambiguity reasons",
-                    "input_schema": ValidationJudgments.model_json_schema(),
-                }
-            ],
-            tool_choice={"type": "tool", "name": "save_validation_judgments"},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        for block in response.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == "save_validation_judgments":
-                parsed = ValidationJudgments.model_validate(block.input)
-                result["narrator_unreliable"] = parsed.narrator_unreliable
-                for ej in parsed.entity_judgments:
-                    result["character_judgments"][ej.name.strip().lower()] = {
-                        "confidence": ej.confidence,
-                        "ambiguity_reason": ej.ambiguity_reason,
-                        "resolved_to": ej.resolved_to,
+            response = client.messages.create(
+                model=settings.chat_model,
+                max_tokens=2048,
+                tools=[
+                    {
+                        "name": "save_validation_judgments",
+                        "description": "Record pre-graph validation confidence & ambiguity reasons",
+                        "input_schema": ValidationJudgments.model_json_schema(),
                     }
-                for cj in parsed.claim_judgments:
-                    key = (cj.subject.strip().lower(), cj.attribute.strip().lower(), cj.value.strip().lower())
-                    result["claim_judgments"][key] = {
-                        "confidence": cj.confidence,
-                        "ambiguity_reason": cj.ambiguity_reason,
-                        "resolved_subject": cj.resolved_subject,
-                    }
-                break
+                ],
+                tool_choice={"type": "tool", "name": "save_validation_judgments"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in response.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "save_validation_judgments":
+                    parsed = ValidationJudgments.model_validate(block.input)
+                    result["narrator_unreliable"] = bool(
+                        result["narrator_unreliable"] or parsed.narrator_unreliable
+                    )
+                    for ej in parsed.entity_judgments:
+                        ek = ej.name.strip().lower()
+                        prev_ej = result["character_judgments"].get(ek)
+                        if prev_ej is None or ej.confidence < prev_ej["confidence"]:
+                            result["character_judgments"][ek] = {
+                                "confidence": ej.confidence,
+                                "ambiguity_reason": ej.ambiguity_reason,
+                                "resolved_to": ej.resolved_to,
+                            }
+                    for cj in parsed.claim_judgments:
+                        key = (cj.subject.strip().lower(), cj.attribute.strip().lower(), cj.value.strip().lower())
+                        prev_cj = result["claim_judgments"].get(key)
+                        if prev_cj is None or cj.confidence > prev_cj["confidence"]:
+                            result["claim_judgments"][key] = {
+                                "confidence": cj.confidence,
+                                "ambiguity_reason": cj.ambiguity_reason,
+                                "resolved_subject": cj.resolved_subject,
+                            }
+                    break
     except Exception as exc:  # noqa: BLE001
         logger.debug("LLM validation judge skipped/fallback: %s", exc)
 

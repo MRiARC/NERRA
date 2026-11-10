@@ -260,7 +260,7 @@ def analyze_issues_batch_intent(
     project_id,
     drafts: list,
     conflict_types: set[str] | None = None,
-    batch_size: int = 12,
+    batch_size: int | None = None,
     use_llm: bool = True,
 ) -> list[dict]:
     """Classify a batch of IssueDraft objects sharing context to prevent O(N) LLM bursts."""
@@ -293,6 +293,7 @@ def analyze_issues_batch_intent(
 
     try:
         from app.config import settings
+        from app.services import llm_budget
         from app.services.extractor import get_anthropic_client
 
         if not settings.anthropic_api_key:
@@ -319,7 +320,9 @@ def analyze_issues_batch_intent(
             "evidence": [{"chapter": ch} for ch in all_chapters[:6]],
         }
     )
-    shared_ctx = (ctx_state.get("surrounding_context") or "")[:18000]
+    shared_limit = llm_budget.compute_shared_context_budget(settings.chat_model, max_output_tokens=2048)
+    shared_ctx = (ctx_state.get("surrounding_context") or "")[:shared_limit]
+    eff_batch_size = batch_size if batch_size is not None else llm_budget.compute_intent_batch_size(2048)
 
     class BatchIntentItem(BaseModel):
         index: int
@@ -331,8 +334,8 @@ def analyze_issues_batch_intent(
         items: list[BatchIntentItem] = Field(default_factory=list)
 
     client = get_anthropic_client()
-    for start in range(0, len(conflict_indices), batch_size):
-        chunk_idxs = conflict_indices[start : start + batch_size]
+    for start in range(0, len(conflict_indices), eff_batch_size):
+        chunk_idxs = conflict_indices[start : start + eff_batch_size]
         issues_block = "\n".join(
             f"[{i}] ({drafts[i].type}) {drafts[i].description} | Quotes: "
             + "; ".join(str(e.get("quote") or e.get("fact") or "") for e in (drafts[i].evidence or []))

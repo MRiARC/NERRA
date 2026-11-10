@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     chat_model: str = "claude-sonnet-4.5"
     extraction_max_tokens: int = 16384
     chat_max_tokens: int = 4096
-    llm_timeout_seconds: float = 300.0
-    max_context_chars: int = 24000
+    llm_timeout_seconds: float | None = None
+    max_context_chars: int | None = None
     use_llm_consistency: bool = True
 
     # --- Embeddings (computed locally, no API key) ---

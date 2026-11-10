@@ -203,18 +203,23 @@ def get_roster(db, project_id) -> str:
 
 
 def get_anthropic_client():
-    """Shared Anthropic client with 300s timeout and transient 429/5xx/timeout backoff."""
+    """Shared Anthropic client with dynamic payload timeout and Retry-After backoff."""
     import random
     import time
 
     import anthropic
 
+    from app.services import llm_budget
+
     if not settings.anthropic_api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    timeout_val = float(getattr(settings, "llm_timeout_seconds", 300.0) or 300.0)
-    kwargs = {"api_key": settings.anthropic_api_key, "timeout": timeout_val}
+    explicit_timeout = getattr(settings, "llm_timeout_seconds", None)
+    kwargs = {
+        "api_key": settings.anthropic_api_key,
+        "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
+    }
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
     raw_client = anthropic.Anthropic(**kwargs)
@@ -224,6 +229,13 @@ def get_anthropic_client():
             self._inner = inner
 
         def create(self, **call_kwargs):
+            if explicit_timeout is None and "timeout" not in call_kwargs:
+                in_chars = sum(
+                    len(str(m.get("content", ""))) for m in (call_kwargs.get("messages") or [])
+                )
+                max_toks = int(call_kwargs.get("max_tokens") or 4096)
+                call_kwargs["timeout"] = llm_budget.compute_dynamic_timeout_seconds(in_chars, max_toks)
+
             delay = 2.0
             for attempt in range(4):
                 try:
@@ -239,7 +251,9 @@ def get_anthropic_client():
                     )
                     if not is_transient or attempt == 3:
                         raise
-                    time.sleep(delay + random.uniform(0.2, 1.2))
+                    retry_after = llm_budget.parse_retry_after_seconds(exc)
+                    wait_s = retry_after if retry_after is not None else (delay + random.uniform(0.2, 1.2))
+                    time.sleep(wait_s)
                     delay *= 2.0
 
     class _ResilientClient:
@@ -352,6 +366,9 @@ def extract_chapter_multipass(
         raw = next(block.input for block in res.content if getattr(block, "type", None) == "tool_use")
         return schema_cls.model_validate(raw)
 
+    from app.services import llm_budget
+
+    low_beats, high_beats = llm_budget.compute_event_beat_range(chapter_text)
     passes = [
         (
             "save_entities",
@@ -362,8 +379,8 @@ def extract_chapter_multipass(
         (
             "save_timeline_custody",
             TimelineCustodyPassPayload,
-            "Extract SIGNIFICANT narrative scene beats, plot reveals, state transitions, and confrontations "
-            "(group closely connected paragraph actions into ~8-20 key events per chapter rather than micro-movements; include participants, location, temporal_anchor, "
+            f"Extract SIGNIFICANT narrative scene beats, plot reveals, state transitions, and confrontations "
+            f"(group closely connected paragraph actions into ~{low_beats}-{high_beats} key events for this chapter rather than micro-movements; include participants, location, temporal_anchor, "
             "is_flashback/is_flashforward), knowledge acquisition ('witnessed'|'told'|'deduced'|'overheard' with source_character), "
             "and object custody transfers.",
         ),

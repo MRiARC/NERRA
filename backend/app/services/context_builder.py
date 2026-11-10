@@ -106,8 +106,18 @@ def build_story_context_packet(
 
     prompt_text = "\n".join(parts)
     from app.config import settings
+    from app.services import llm_budget
 
-    max_chars = int(getattr(settings, "max_context_chars", 24000) or 24000)
+    explicit_max = getattr(settings, "max_context_chars", None)
+    max_chars = (
+        int(explicit_max)
+        if explicit_max
+        else llm_budget.compute_context_char_budget(
+            settings.extraction_model,
+            chapter_chars=len(chapter_text or ""),
+            max_output_tokens=settings.extraction_max_tokens,
+        )
+    )
     if len(prompt_text) > max_chars:
         # Preserve critical roster/custom/threads/corrections prefix; trim long semantic passages tail cleanly
         core_parts = [p for p in parts if not p.startswith("\nSemantically Related Prior Passages:")]
