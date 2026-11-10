@@ -156,7 +156,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
     `from app.services.extractor import extract_chapter`. The tests (and the
     lead's code review) rely on this style.
     """
-    from app.services import consistency, extractor, graph, splitter, timeline
+    from app.services import consistency, exporter, extractor, graph, splitter, timeline
     from app.services.extractor import ExtractionPayload
 
     manuscript = db.get(Manuscript, manuscript_id)
@@ -200,6 +200,10 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         graph.sync_project_graph(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Graph sync skipped: %s", exc)
+    try:
+        exporter.record_manuscript_version(db, manuscript)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Version snapshot skipped: %s", exc)
     _set_status(db, manuscript, "ready")
 
 

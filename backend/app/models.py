@@ -276,6 +276,22 @@ class KnowledgeUpdate(Base):
     source_character: Mapped[str | None] = None
 
 
+class ManuscriptVersion(Base):
+    """Immutable draft snapshot + structural diff summary (Milestone 2.5)."""
+
+    __tablename__ = "manuscript_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    manuscript_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("manuscripts.id", ondelete="CASCADE"), index=True)
+
+    version_number: Mapped[int] = mapped_column(default=1)
+    content_hash: Mapped[str]
+    raw_text: Mapped[str]
+    diff_summary: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class WorldRule(Base):
     """Author-defined or extracted world-building rules (magic, physics, setting)."""
 

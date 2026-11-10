@@ -22,6 +22,8 @@ import {
   BookMarked,
   Trash2,
   Wand2,
+  Download,
+  History,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
 import TimelineView from "@/components/TimelineView";
@@ -37,6 +39,7 @@ import {
   WorldRule,
   Claim,
   ManuscriptStatus,
+  ManuscriptVersion,
 } from "@/lib/api";
 
 function getErrorMessage(err: unknown): string {
@@ -81,6 +84,11 @@ export default function NerraDashboard() {
   const [newRuleCategory, setNewRuleCategory] = useState<WorldRule["category"]>("setting");
   const [reasoningIssueId, setReasoningIssueId] = useState<string | null>(null);
 
+  // Versioning & export state
+  const [versions, setVersions] = useState<ManuscriptVersion[]>([]);
+  const [isVersionsOpen, setIsVersionsOpen] = useState(false);
+  const [exportingBible, setExportingBible] = useState(false);
+
   // Filter state
   const [issueFilter, setIssueFilter] = useState<
     | "all"
@@ -107,7 +115,13 @@ export default function NerraDashboard() {
 
   // Chat state
   const [chatMessages, setChatMessages] = useState<
-    Array<{ role: "user" | "assistant"; text: string; citations?: Array<{ chapter: number; excerpt: string }> }>
+    Array<{
+      role: "user" | "assistant";
+      text: string;
+      citations?: Array<{ chapter: number; excerpt: string }>;
+      intent?: string;
+      graph_entities?: string[];
+    }>
   >([
     {
       role: "assistant",
@@ -319,6 +333,8 @@ export default function NerraDashboard() {
           role: "assistant",
           text: res.answer,
           citations: res.citations,
+          intent: res.intent,
+          graph_entities: res.graph_entities,
         },
       ]);
     } catch (err: unknown) {
@@ -331,6 +347,38 @@ export default function NerraDashboard() {
       ]);
     } finally {
       setChatLoading(false);
+    }
+  }
+
+  async function handleOpenVersions() {
+    if (!selectedProjectId) return;
+    try {
+      const list = await api.getVersions(selectedProjectId);
+      setVersions(list);
+      setIsVersionsOpen(true);
+    } catch (err: unknown) {
+      alert("Failed to load draft versions: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleExportBible() {
+    if (!selectedProjectId || exportingBible) return;
+    setExportingBible(true);
+    try {
+      const exported = await api.exportBible(selectedProjectId);
+      const blob = new Blob([exported.markdown], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${exported.project_title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-story-bible.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      alert("Story Bible export failed: " + getErrorMessage(err));
+    } finally {
+      setExportingBible(false);
     }
   }
 
@@ -414,6 +462,26 @@ export default function NerraDashboard() {
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Import Manuscript</span>
+          </button>
+
+          <button
+            onClick={handleOpenVersions}
+            disabled={!selectedProjectId}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="View draft snapshots & diff summary"
+          >
+            <History className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden md:inline">Versions</span>
+          </button>
+
+          <button
+            onClick={handleExportBible}
+            disabled={!selectedProjectId || exportingBible}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="Download full Living Story Bible (.md)"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">{exportingBible ? "Exporting..." : "Export Bible"}</span>
           </button>
 
           <button
@@ -1068,6 +1136,25 @@ export default function NerraDashboard() {
                     >
                       <div className="whitespace-pre-wrap">{msg.text}</div>
 
+                      {msg.role === "assistant" &&
+                        (msg.intent || (msg.graph_entities && msg.graph_entities.length > 0)) && (
+                          <div className="mt-2.5 flex items-center flex-wrap gap-1.5 text-[10px]">
+                            {msg.intent && (
+                              <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25 uppercase tracking-wider font-semibold">
+                                Intent: {msg.intent}
+                              </span>
+                            )}
+                            {msg.graph_entities?.map((ent) => (
+                              <span
+                                key={ent}
+                                className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-medium"
+                              >
+                                Graph: {ent}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                       {/* Citations */}
                       {msg.citations && msg.citations.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-1.5">
@@ -1351,6 +1438,71 @@ export default function NerraDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DRAFT VERSIONS MODAL */}
+      {isVersionsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <History className="w-4 h-4 text-amber-400" />
+                Draft Version History & Diffs
+              </h3>
+              <button
+                onClick={() => setIsVersionsOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
+
+            {versions.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">
+                No manuscript snapshots recorded yet. Import a manuscript draft to capture v1.
+              </p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto space-y-3 pr-1">
+                {versions.map((ver) => (
+                  <div
+                    key={ver.id}
+                    className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-xs font-bold">
+                          v{ver.version_number}
+                        </span>
+                        <span className="text-sm font-semibold text-white">
+                          {ver.diff_summary.title || "Manuscript Snapshot"}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-500">
+                          #{ver.content_hash.slice(0, 8)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        {ver.diff_summary.chapters_total ?? 0} chapters ·{" "}
+                        {ver.diff_summary.characters_count ?? 0} characters ·{" "}
+                        {ver.diff_summary.claims_count ?? 0} claims ·{" "}
+                        {ver.diff_summary.open_issues_count ?? 0} open issues
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0 text-xs font-mono space-y-1">
+                      <div>
+                        <span className="text-emerald-400">+{ver.diff_summary.lines_added ?? 0}</span>{" "}
+                        <span className="text-rose-400">-{ver.diff_summary.lines_removed ?? 0}</span>{" "}
+                        <span className="text-slate-500">lines</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {new Date(ver.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
