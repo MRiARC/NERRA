@@ -125,6 +125,10 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     throw new Error(detail || `API error: ${res.status}`);
   }
 
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
   return res.json();
 }
 
@@ -137,13 +141,32 @@ export interface Project {
 
 export interface Issue {
   id: string;
-  type: "contradiction" | "knowledge_violation" | "unresolved_thread" | "continuity_note";
+  type:
+    | "contradiction"
+    | "knowledge_violation"
+    | "unresolved_thread"
+    | "continuity_note"
+    | "spatiotemporal_conflict"
+    | "custody_paradox"
+    | "world_rule_violation";
   severity: "red" | "yellow" | "green" | "blue";
   description: string;
   evidence: Array<{ chapter: number; quote?: string; fact?: string }>;
+  confidence?: number;
+  ai_reasoning?: string | null;
+  intent_classification?: string;
   claim_a_id?: string;
   claim_b_id?: string;
   status: "open" | "accepted" | "rejected" | "intentional";
+}
+
+export interface WorldRule {
+  id: string;
+  category: "magic" | "physics" | "society" | "setting";
+  rule_text: string;
+  source_chapter?: number | null;
+  is_author_defined: boolean;
+  status: string;
 }
 
 export interface Character {
@@ -353,4 +376,18 @@ export const api = {
   },
   getObjectCustody: (projectId: string, objectId: string) =>
     apiFetch<ObjectCustodyEvent[]>(`/projects/${projectId}/objects/${objectId}/custody`),
+  reasonAboutIssue: (projectId: string, issueId: string) =>
+    apiFetch<Issue>(`/projects/${projectId}/issues/${issueId}/reason`, { method: "POST" }),
+  getWorldRules: (projectId: string) => apiFetch<WorldRule[]>(`/projects/${projectId}/world-rules`),
+  createWorldRule: (
+    projectId: string,
+    category: WorldRule["category"],
+    ruleText: string
+  ) =>
+    apiFetch<WorldRule>(`/projects/${projectId}/world-rules`, {
+      method: "POST",
+      body: JSON.stringify({ category, rule_text: ruleText }),
+    }),
+  deleteWorldRule: (projectId: string, ruleId: string) =>
+    apiFetch<void>(`/projects/${projectId}/world-rules/${ruleId}`, { method: "DELETE" }),
 };

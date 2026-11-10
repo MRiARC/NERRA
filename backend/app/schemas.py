@@ -245,6 +245,23 @@ class ClaimOut(BaseModel):
     status: str
 
 
+class WorldRuleCreate(BaseModel):
+    category: Literal["magic", "physics", "society", "setting"] = "setting"
+    rule_text: str = Field(min_length=3, max_length=1000)
+    source_chapter: int | None = None
+
+
+class WorldRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    category: str
+    rule_text: str
+    source_chapter: int | None
+    is_author_defined: bool
+    status: str
+
+
 class IssueOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -254,6 +271,10 @@ class IssueOut(BaseModel):
     status: str
     description: str
     evidence: list[dict]
+    confidence: float = 0.9
+    ai_reasoning: str | None = None
+    intent_classification: str = "error"
+    related_entities: list[str] = Field(default_factory=list)
     claim_a_id: uuid.UUID | None
     claim_b_id: uuid.UUID | None
 

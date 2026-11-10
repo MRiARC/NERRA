@@ -337,6 +337,56 @@ def detect_custody_paradoxes(custody_events: list, objects_by_id: dict) -> list[
     return drafts
 
 
+_RULE_NEGATIONS = {"cannot", "never", "no", "forbidden", "prohibited", "impossible", "not", "without"}
+_STOPWORDS = {"the", "a", "an", "in", "on", "at", "to", "of", "and", "or", "is", "are", "was", "were", "by", "must"}
+
+
+def detect_world_rule_violations(claims: list, rules: list) -> list[IssueDraft]:
+    """Check active WorldRules against extracted claims for potential violations."""
+    drafts: list[IssueDraft] = []
+    for rule in rules:
+        if (getattr(rule, "status", None) or "active") != "active":
+            continue
+        rule_tokens = _tokens(rule.rule_text)
+        has_prohibition = bool(rule_tokens & _RULE_NEGATIONS)
+        if not has_prohibition:
+            continue
+        # Meaningful content tokens (drop negation words and stopwords)
+        subject_tokens = {
+            t[:-1] if len(t) > 4 and t.endswith(("d", "s")) else t
+            for t in (rule_tokens - _RULE_NEGATIONS - _STOPWORDS)
+            if len(t) >= 3
+        }
+        if len(subject_tokens) < 2:
+            continue
+
+        for claim in claims:
+            claim_text = f"{claim.subject} {claim.attribute} {claim.value} {claim.evidence_quote}"
+            raw_claim_tokens = _tokens(claim_text)
+            # If the claim itself reiterates the prohibition (e.g. "cannot revive"), it's confirming the rule, not violating it
+            if raw_claim_tokens & _RULE_NEGATIONS:
+                continue
+            norm_claim_tokens = {
+                t[:-1] if len(t) > 4 and t.endswith(("d", "s")) else t
+                for t in raw_claim_tokens
+            }
+            overlap = subject_tokens & norm_claim_tokens
+            if len(overlap) >= 2:
+                drafts.append(
+                    IssueDraft(
+                        type="world_rule_violation",
+                        severity="yellow",
+                        description=(
+                            f'Possible world rule violation in chapter {claim.chapter}: '
+                            f'"{claim.value}" vs rule "{rule.rule_text}"'
+                        ),
+                        evidence=[{"chapter": claim.chapter, "quote": claim.evidence_quote}],
+                        claim_a_id=str(claim.id),
+                    )
+                )
+    return drafts
+
+
 def run_consistency_pass(db, project_id) -> int:
     """Load this project's story data, run all detectors, persist issues.
 
@@ -344,7 +394,8 @@ def run_consistency_pass(db, project_id) -> int:
     generated deterministically from the data, so identical findings always
     produce identical text. Returns the number of NEW issues created.
     """
-    from app.models import Claim, Issue, KnowledgeUpdate, ObjectCustodyEvent, StoryEvent, StoryObject
+    from app.agents import contradiction_reasoner
+    from app.models import Claim, Issue, KnowledgeUpdate, ObjectCustodyEvent, StoryEvent, StoryObject, WorldRule
 
     claims = (
         db.query(Claim)
@@ -359,6 +410,7 @@ def run_consistency_pass(db, project_id) -> int:
         .filter(ObjectCustodyEvent.project_id == project_id)
         .all()
     )
+    rules = db.query(WorldRule).filter(WorldRule.project_id == project_id, WorldRule.status == "active").all()
     objects_by_id = {str(o.id): o for o in objects}
 
     drafts = (
@@ -368,6 +420,7 @@ def run_consistency_pass(db, project_id) -> int:
         + detect_continuity_notes(claims)
         + detect_spatiotemporal_conflicts(events)
         + detect_custody_paradoxes(custody_events, objects_by_id)
+        + detect_world_rule_violations(claims, rules)
     )
 
     existing = {
@@ -381,6 +434,13 @@ def run_consistency_pass(db, project_id) -> int:
     for draft in drafts:
         if (draft.type, draft.description) in existing:
             continue
+        reason = contradiction_reasoner.analyze_issue_intent(
+            project_id=project_id,
+            issue_type=draft.type,
+            description=draft.description,
+            evidence=draft.evidence,
+            use_llm=False,
+        )
         db.add(
             Issue(
                 project_id=project_id,
@@ -388,6 +448,9 @@ def run_consistency_pass(db, project_id) -> int:
                 severity=draft.severity,
                 description=draft.description,
                 evidence=draft.evidence,
+                confidence=reason["confidence"],
+                ai_reasoning=reason["ai_reasoning"],
+                intent_classification=reason["intent_classification"],
                 claim_a_id=draft.claim_a_id,
                 claim_b_id=draft.claim_b_id,
             )

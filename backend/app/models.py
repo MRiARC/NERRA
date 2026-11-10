@@ -276,10 +276,27 @@ class KnowledgeUpdate(Base):
     source_character: Mapped[str | None] = None
 
 
+class WorldRule(Base):
+    """Author-defined or extracted world-building rules (magic, physics, setting)."""
+
+    __tablename__ = "world_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+
+    category: Mapped[str] = mapped_column(default="setting")  # magic | physics | society | setting
+    rule_text: Mapped[str]
+    source_chapter: Mapped[int | None] = None
+    is_author_defined: Mapped[bool] = mapped_column(default=True)
+    status: Mapped[str] = mapped_column(default="active")  # active | deprecated
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class Issue(Base):
     """Output of the consistency engine — the author's to-do list.
 
-    type:     contradiction | knowledge_violation | unresolved_thread | continuity_note
+    type:     contradiction | knowledge_violation | unresolved_thread | continuity_note |
+              spatiotemporal_conflict | custody_paradox | world_rule_violation
     severity: red | yellow | green | blue
     status:   open | accepted | rejected | intentional
     """
@@ -295,6 +312,9 @@ class Issue(Base):
     description: Mapped[str]
     evidence: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # [{chapter, quote}, ...]
     confidence: Mapped[float] = mapped_column(default=0.9)
+    ai_reasoning: Mapped[str | None] = None
+    intent_classification: Mapped[str] = mapped_column(default="error")  # error | intentional | ambiguous
+    related_entities: Mapped[list[str]] = mapped_column(JSONB, default=list)
     claim_a_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     claim_b_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

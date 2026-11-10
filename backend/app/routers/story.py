@@ -27,6 +27,7 @@ from app.models import (
     StoryEvent,
     StoryObject,
     User,
+    WorldRule,
 )
 from app.schemas import (
     CharacterMergeIn,
@@ -43,8 +44,10 @@ from app.schemas import (
     StoryGraphOut,
     TimelineOut,
     WorldOut,
+    WorldRuleCreate,
+    WorldRuleOut,
 )
-from app.services import graph, knowledge, timeline
+from app.services import consistency, graph, knowledge, timeline
 
 router = APIRouter(tags=["story"])
 
@@ -324,3 +327,75 @@ def update_issue(
     db.commit()
     db.refresh(issue)
     return issue
+
+
+@router.post("/projects/{project_id}/issues/{issue_id}/reason", response_model=IssueOut)
+def reason_about_issue(
+    project_id: uuid.UUID,
+    issue_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Issue:
+    """Run the LangGraph Contradiction Intent Reasoner on an open issue."""
+    from app.agents import contradiction_reasoner
+
+    issue = db.get(Issue, issue_id)
+    if issue is None or issue.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return contradiction_reasoner.evaluate_issue_in_db(db, issue, use_llm=True)
+
+
+@router.get("/projects/{project_id}/world-rules", response_model=list[WorldRuleOut])
+def list_world_rules(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """List all active/deprecated world rules for a project."""
+    return (
+        db.query(WorldRule)
+        .filter(WorldRule.project_id == project.id)
+        .order_by(WorldRule.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/projects/{project_id}/world-rules", response_model=WorldRuleOut, status_code=201)
+def create_world_rule(
+    project_id: uuid.UUID,
+    payload: WorldRuleCreate,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> WorldRule:
+    """Add an author-defined world constraint and re-evaluate consistency rules."""
+    rule = WorldRule(
+        project_id=project.id,
+        category=payload.category,
+        rule_text=payload.rule_text.strip(),
+        source_chapter=payload.source_chapter,
+        is_author_defined=True,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    consistency.run_consistency_pass(db, project.id)
+    return rule
+
+
+@router.delete("/projects/{project_id}/world-rules/{rule_id}", status_code=204)
+def delete_world_rule(
+    project_id: uuid.UUID,
+    rule_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Delete a world rule."""
+    rule = db.get(WorldRule, rule_id)
+    if rule is None or rule.project_id != project.id:
+        raise HTTPException(status_code=404, detail="World rule not found")
+    db.delete(rule)
+    db.commit()
