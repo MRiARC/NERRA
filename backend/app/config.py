@@ -1,30 +1,35 @@
 """Application configuration.
 
 Everything configurable lives in environment variables (see .env.example at
-the repo root). `pydantic-settings` reads a `.env` file if present and falls
+the repo root). `pydantic-settings` reads `backend/.env` if present and falls
 back to the defaults below — so a fresh clone works out of the box.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=str(_ENV_PATH), env_file_encoding="utf-8", extra="ignore"
     )
 
     # --- Database ---
-    # Port 5433: the Docker container is mapped there because a locally
-    # installed Postgres usually owns 5432 (see docker-compose.yml).
-    database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@localhost:5433/nerra"
-    test_database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@localhost:5433/nerra_test"
+    # Port 5434: the Docker container is mapped there because other local
+    # Postgres instances may occupy 5432 or 5433 (see docker-compose.yml).
+    database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@127.0.0.1:5434/nerra"
+    test_database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@127.0.0.1:5434/nerra_test"
 
     # --- Auth ---
     jwt_secret: str = "dev-only-change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
-    # --- LLMs (Anthropic Claude) ---
+    # --- LLMs (Anthropic Claude or compatible proxy) ---
+    anthropic_base_url: str = ""
     anthropic_api_key: str = ""
     extraction_model: str = "claude-haiku-4-5"  # fast + cheap: per-chapter extraction
     chat_model: str = "claude-sonnet-4-5"       # stronger reasoning: story chat agent

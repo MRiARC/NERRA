@@ -93,8 +93,14 @@ class CharacterOut(BaseModel):
     aliases: list[str]
     description: str | None
     status: str
+    physical_traits: dict = Field(default_factory=dict)
     first_chapter: int | None
     last_chapter: int | None
+
+
+class CharacterMergeIn(BaseModel):
+    target_character_id: uuid.UUID
+    duplicate_character_id: uuid.UUID
 
 
 class RelationshipOut(BaseModel):
@@ -150,6 +156,20 @@ class KnowledgeOut(BaseModel):
     fact: str
     chapter: int
     how_learned: str
+
+
+class ClaimOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    subject: str
+    attribute: str
+    value: str
+    chapter: int
+    evidence_quote: str
+    confidence: float
+    validation_state: str
+    status: str
 
 
 class IssueOut(BaseModel):

@@ -12,7 +12,7 @@ import os
 
 TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+psycopg://nerra:nerra_dev_password@localhost:5433/nerra_test",
+    "postgresql+psycopg://nerra:nerra_dev_password@127.0.0.1:5434/nerra_test",
 )
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
