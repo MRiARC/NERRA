@@ -1,13 +1,4 @@
-"""Story-world read views — also part of Task 01.
-
-These endpoints read what the AI pipeline (Tasks 03–05) will have written
-into the story tables: characters, relationships, events (timeline), world
-(locations + objects), knowledge states, and issues.
-
-They are all the SAME exercise: filter rows by project_id, return them.
-Do them right after the projects CRUD — the repetition is how the pattern
-sticks. One new idea per endpoint is marked in its docstring.
-"""
+"""Story-world read & analysis views (characters, graph, timeline, knowledge, world rules, issues, export)."""
 
 import uuid
 

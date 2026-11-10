@@ -24,7 +24,7 @@ Brings the codebase into 1:1 structural parity with [`docs/architecture.drawio.x
    - Implement **Change Detector** and **Cheap Scanner** (`capitalized terms`, dialogue speakers, temporal phrases, candidate locations/objects) before LLM calls.
    - Implement compact-packet **Context Builder** drawing directly from Neo4j, `pgvector`, recent events, and feedback rules.
    - Add missing non-editor triggers: **`New Chapter Added`**, **`Large Rewrite Reprocessing`** (stale fact comparison), and **`Character Rename`** (preserving graph node IDs while appending aliases).
-   - Add `.docx` and `.pdf` manuscript ingestion alongside `.txt` / pasted prose.
+   - Add `.pdf` manuscript ingestion alongside `.txt` / `.md` / `.docx` and pasted prose.
 2. **Pre-Graph Validation Gate & Feedback Loop:**
    - Insert candidate staging + confidence routing **before** `Graph Update`:
      - **High (`0.90–1.00`)** → auto-commit to Postgres + Neo4j

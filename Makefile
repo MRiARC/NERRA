@@ -1,12 +1,12 @@
-.PHONY: up down logs reset-db install api test test-task help
+.PHONY: up down logs reset-db install api frontend test help
 
-# Start Postgres (pgvector) in Docker.
+# Start Postgres (pgvector) & Neo4j in Docker.
 up:
 	docker compose up -d
 	@echo ""
-	@echo "Postgres is starting:  localhost:5433 (user: nerra, db: nerra)"
+	@echo "Postgres: localhost:5434 (user: nerra, db: nerra) | Neo4j Browser: http://localhost:7474"
 	@echo "Next:  make install   (first time only)"
-	@echo "       make api       (run the backend -> http://localhost:8000/docs)"
+	@echo "       make api       (run the backend -> http://localhost:8001/docs)"
 
 down:
 	docker compose down
@@ -36,10 +36,6 @@ api:
 frontend:
 	cd frontend && npm run dev -- -p 3001
 
-# Run the full test suite (run `make up` first — tests need Postgres).
+# Run the full test suite (run `make up` first — tests need Postgres & Neo4j).
 test:
 	cd backend && ../.venv/bin/python -m pytest -q
-
-# Run only the tests for one task, e.g.:  make test-task TASK=tests/tasks/test_task05_consistency.py
-test-task:
-	cd backend && ../.venv/bin/python -m pytest $(TASK) -q
