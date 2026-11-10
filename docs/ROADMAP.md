@@ -8,33 +8,36 @@
 
 | Phase | Scope | Status | Reference |
 |---|---|---|---|
-| **Phase 1** | Core Story Ingestion, Extraction, Quote Guard, Pairwise Consistency, pgvector Story Chat, Dashboard UI | **Completed (Merged)** | PR `#1` |
-| **Phase 2 (M2.1–M2.5)** | Neo4j Graph DB, Relationship Evolution, Dual Timeline, Multi-Hop Epistemic Matrix, Object Custody, World Rules, Contradiction Intent Reasoner, Graph RAG Chat, Draft Snapshots & `.md` Bible Export | **Implemented (Open PRs)** | PR `#12` – PR `#16` |
-| **Phase 3** | True `Untitled Diagram` Pipeline & Incremental Core (`Change Detector`, `Cheap Scanner`, Graph `Context Builder`, Pre-Graph Validation Gate, `Feedback Loop`, `Plot Thread Tracker`, `Feature Customization`, `.docx`/`.pdf` Import) | **Remaining** | Below |
-| **Phase 4** | Live Writing Mode UI (`Paragraph Edited` / `Live Writing Pause`), Split Editor + Map Panels, Privacy-First Controls | **Remaining** | Below |
+| **Phase 1** | Core Story Ingestion, Extraction, Quote Guard, Pairwise Consistency, pgvector Story Chat, Test Dashboard UI | **Completed (Merged)** | PR `#1` |
+| **Phase 2 (M2.1–M2.5 + AI Quality Upgrade)** | Neo4j Graph DB, Relationship Evolution, Dual Timeline (LLM chronological), Knowledge Matrix, Custody, LLM World Rules & Semantic Contradictions, Auto Intent Reasoner, Graph RAG Chat, Draft Snapshots & `.md` Bible Export | **Merged (`#12`–`#19`) + AI Upgrade (`PR #21`)** | PRs `#12`, `#14`–`#19`, `#21` |
+| **Phase 3** | True `Untitled Diagram` Incremental Pipeline & Quality-First Reasoning (`Change Detector`, `LLM Signal Pre-Scanner`, Deep Graph `Context Builder`, Multi-Pass Extraction, Pre-Graph LLM Confidence Validation Gate, `Feedback Loop`, Full Cross-Chapter `Plot Thread Tracker`, `Feature Customization`, `.pdf` Import) | **Next** | Below |
+| **Phase 4** | Live Writing Mode UI (`Paragraph Edited` / `Live Writing Pause`), Full Author Dashboard Redesign, Privacy-First Controls | **Remaining** | Below |
 | **Phase 5** | Multi-Book Series Support, Cross-Book Canon Graph & Extended Exports (`.pdf` / `.docx`) | **Remaining** | Below |
+
+> **Frontend Testing Scope Note:** The current Next.js dashboard serves purely as an internal test harness while Phases 2–3 harden the AI & Graph intelligence core. A dedicated UI/UX overhaul is deferred until the core intelligence engine is complete.
 
 ---
 
 ## Remaining Phases (3 Phases Left)
 
 ### Phase 3 — True Incremental Pipeline, Pre-Graph Validation & Plot Thread Core
-Brings the codebase into 1:1 structural parity with [`docs/architecture.drawio.xml`](architecture.drawio.xml) and `Universal Processing Blueprint`:
+Brings the codebase into 1:1 parity with [`docs/architecture.drawio.xml`](architecture.drawio.xml) without LLM cost compromises:
 1. **Incremental Ingestion & Triggers:**
-   - Implement **Change Detector** and **Cheap Scanner** (`capitalized terms`, dialogue speakers, temporal phrases, candidate locations/objects) before LLM calls.
-   - Implement compact-packet **Context Builder** drawing directly from Neo4j, `pgvector`, recent events, and feedback rules.
-   - Add missing non-editor triggers: **`New Chapter Added`**, **`Large Rewrite Reprocessing`** (stale fact comparison), and **`Character Rename`** (preserving graph node IDs while appending aliases).
+   - Implement **Change Detector** and an **LLM Signal & Coreference Pre-Scanner** (`claude-haiku-4.5` / `claude-sonnet-4.5` + deterministic anchors) capturing both explicit names and lowercase/implicit references before context retrieval.
+   - Implement deep **Context Builder** (`200K`-window aware) drawing multi-hop Neo4j subgraphs, `pgvector` recall, prior chapter summaries, active world rules, open plot threads, and correction rules.
+   - Upgrade `AI Processing` to **multi-pass specialized `claude-sonnet-4.5` agents** (Entities/Coreference, Events/Chronology, Claims/Knowledge/Custody, World Rules/Plot Threads).
+   - Add missing non-editor triggers: **`New Chapter Added`**, **`Large Rewrite Reprocessing`** (stale fact comparison + LLM semantic draft diff + downstream re-audit), and **`Character Rename`** (preserving graph node IDs while appending aliases).
    - Add `.pdf` manuscript ingestion alongside `.txt` / `.md` / `.docx` and pasted prose.
 2. **Pre-Graph Validation Gate & Feedback Loop:**
-   - Insert candidate staging + confidence routing **before** `Graph Update`:
+   - Insert candidate staging + mandatory **LLM Semantic Validation + Confidence Routing** **before** `Graph Update`:
      - **High (`0.90–1.00`)** → auto-commit to Postgres + Neo4j
-     - **Medium (`0.40–0.89`)** → hold in **Human Review** queue (including entity split/merge confirmation prompts)
+     - **Medium (`0.40–0.89`)** → hold in **Human Review** queue (including LLM-explained entity split/merge confirmation prompts)
      - **Low (`0.00–0.39`)** → quarantine in **Reject / Hold**
-   - Build **`Pronoun Resolution`** and pre-commit **`Unreliable Narrator`** checks into the Validation Layer.
-   - Build **`Feedback Loop`** (`User Corrects AI Mistake` → entity merge/split + correction rules → re-check affected scenes & update future Context Builder packets).
+   - Build LLM-backed **`Pronoun Resolution`** and pre-commit **`Unreliable Narrator`** verification inside the Validation Layer.
+   - Build **`Feedback Loop`** (`User Corrects AI Mistake` → entity merge/split + `CorrectionRule`s → LLM downstream re-audit of affected chapters & Context Builder injection).
 3. **Complete Module & Customization Parity:**
-   - Build true **`Plot Thread Tracker`** (tracking narrative setups, promises, payoffs, and open vs. resolved vs. abandoned `PlotThread` nodes).
-   - Add **`Feature Customization`** hooks (`Custom Context`, `Custom Prompt`, `Custom Validation`, `Custom Graph Write`, `Custom UI Output`) per project.
+   - Build full cross-chapter LLM + Graph **`Plot Thread Tracker`** (linking setups, clues, and payoffs across the entire book as `PlotThread` nodes).
+   - Add **`Feature Customization`** hooks (`Custom Context`, `Custom Prompt`, `Custom Validation`, `Custom Graph Write`, `Custom UI Output`) per project, plus minimal test-harness controls in the Next.js UI.
 
 ---
 

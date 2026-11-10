@@ -17,14 +17,14 @@ Vector Store = fuzzy recall
 Frontend     = author interface
 ```
 
-**Core Principle:** The system never sends the full manuscript to the LLM on every change. Instead, it constructs a **compact context packet**:
+**Core Principle (Quality-First Context):** Instead of either truncating context to save tokens or dumping noisy unindexed prose, NERRA constructs a **complete, high-signal Story Memory Packet** backed by `claude-sonnet-4.5` (`200K` context / `64K` output):
 
 ```text
-New or changed text
-  + Relevant Graph Memory (entities, aliases, relationships, open threads)
-  + Recent Timeline & Epistemic Context
-  + Fuzzy Vector Recall
-  + Author Feedback / Correction Rules
+Target Text (Full chapter, scene, or changed span)
+  + Full Multi-Hop Graph Memory (all relevant entities, aliases, relationship evolution, object custody)
+  + Complete Timeline & Epistemic Knowledge Matrix Context
+  + High-Top-K Vector Recall (pgvector)
+  + Active World Rules, Open Plot Threads & Author Feedback / Correction Rules
 ```
 
 ---
@@ -45,16 +45,16 @@ flowchart TD
     end
 
     T1 & T2 & T3 & T4 & T5 & T6 --> TR["Trigger"]
-    TR --> DC["Data Collection\n(Change Detector + Cheap Scanner)"]
+    TR --> DC["Data Collection\n(Change Detector + LLM Entity/Coreference Signal Scanner)"]
     DC -->|"Chunk / Scene Embeddings"| VDB[("Vector Store\npgvector")]
-    DC --> CB["Context Builder"]
+    DC --> CB["Context Builder\n(Deep Graph + Vector + Rule Memory)"]
 
     VDB --> CB
     GDB[("Story Graph DB\nNeo4j + Postgres")] --> CB
     FB["Feedback Loop"] --> CB
 
-    CB --> AI["AI Processing\n(LLM Extraction / Synthesis)"]
-    AI --> VL["Validation Layer"]
+    CB --> AI["AI Processing\n(Multi-Pass Parallel Claude Sonnet 4.5 Agents)"]
+    AI --> VL["Validation Layer\n(Verbatim Quote Guard + LLM Pronoun/Entity/Intent Judges)"]
     VL --> CONF{"Confidence?"}
 
     CONF -- "High (0.90–1.00)" --> GU["Graph Update"]
@@ -107,10 +107,10 @@ flowchart TD
 
 | Architectural Block | Current Implementation Path | Current Maturity |
 |---|---|---|
-| **Triggers & Ingestion API** | `backend/app/routers/manuscripts.py`, `backend/app/services/splitter.py` | Batch manuscript import + SHA-256 chapter cache implemented; paragraph-diff & live triggers planned in Phase 3–4 |
-| **LLM Interpreter** | `backend/app/services/extractor.py`, `backend/app/services/pipeline.py` | Chapter extraction with quote provenance + Neo4j/SQL sync; `Change Detector`, `Cheap Scanner`, and Graph `Context Builder` planned in Phase 3 |
-| **Validation & Intent Gate** | `backend/app/services/extractor.py`, `backend/app/agents/contradiction_reasoner.py` | Verbatim-quote validation + LangGraph intent reasoner (`error` vs `intentional`); pre-graph confidence quarantine (`High`/`Medium`/`Reject-Hold`) planned in Phase 3 |
+| **Triggers & Ingestion API** | `backend/app/routers/manuscripts.py`, `backend/app/services/splitter.py` | Batch import + SHA-256 chapter cache + LLM section/POV splitter implemented; chapter/paragraph-diff & live triggers in Phase 3–4 |
+| **LLM Interpreter** | `backend/app/services/extractor.py`, `backend/app/services/pipeline.py` | `claude-sonnet-4.5` extraction with rich continuity context + auto World Rule discovery; multi-pass specialized agents, `Change Detector`, & LLM Signal Pre-Scanner in Phase 3 |
+| **Validation & Intent Gate** | `backend/app/services/extractor.py`, `backend/app/agents/contradiction_reasoner.py` | Verbatim-quote guard + auto-enabled Sonnet intent reasoner; pre-graph confidence quarantine & mandatory LLM pronoun/entity judges in Phase 3 |
 | **Graph & Vector Memory** | `backend/app/models.py`, `backend/app/services/graph.py`, `backend/app/services/embedder.py` | Postgres + `pgvector` + Neo4j `StoryEntity` graph projection implemented |
-| **Reasoning Modules** | `backend/app/services/{consistency,timeline,knowledge,exporter}.py` | Character, Relationship, Dual Timeline, Epistemic Knowledge Matrix, Custody, World Rules, Contradictions implemented; full `Plot Thread Tracker` & `Feature Customization` planned in Phase 3 |
-| **Story Chat (Graph RAG)** | `backend/app/agents/story_chat.py` | Intent routing, `pgvector` + Neo4j neighborhood + timeline/knowledge retrieval, context grading retry, verbatim chapter citations |
-| **Author Interface** | `frontend/src/app/page.tsx`, `frontend/src/components/` | Next.js dashboard (Issues & Review Queue, Characters & Merge, Story Graph, Dual Timeline, Knowledge Matrix, World & Custody, Claims, Versions, Story Bible Export, Chat) |
+| **Reasoning Modules** | `backend/app/services/{consistency,timeline,knowledge,exporter}.py` | Character, Relationship, Dual Timeline (LLM chronological), Knowledge Matrix, Custody, LLM World Rules & Semantic Contradictions implemented; full `Plot Thread Tracker` & `Feature Customization` in Phase 3 |
+| **Story Chat (Graph RAG)** | `backend/app/agents/story_chat.py` | LLM intent routing, `pgvector` + Neo4j neighborhood + timeline/knowledge retrieval, LLM context grading + query-rewrite retry, verbatim citations |
+| **Author Interface** | `frontend/src/app/page.tsx`, `frontend/src/components/` | Next.js verification/test harness dashboard (full UI redesign deferred until core engine Phases 3+ are solid) |
