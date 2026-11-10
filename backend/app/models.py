@@ -194,6 +194,23 @@ class StoryObject(Base):
     mention_chapters: Mapped[list[int]] = mapped_column(JSONB, default=list)
 
 
+class ObjectCustodyEvent(Base):
+    """Tracks who holds an object and how custody changes across chapters."""
+
+    __tablename__ = "object_custody_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    object_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("objects.id", ondelete="CASCADE"), index=True)
+
+    chapter: Mapped[int]
+    holder_type: Mapped[str] = mapped_column(default="character")  # character | location | unknown
+    holder_name: Mapped[str]
+    action: Mapped[str] = mapped_column(default="acquired")  # acquired | lost | moved | locked | destroyed | used
+    evidence_quote: Mapped[str | None] = None
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
 class StoryEvent(Base):
     """One plot event — the rows the timeline view is built from."""
 
@@ -256,6 +273,7 @@ class KnowledgeUpdate(Base):
     fact: Mapped[str]
     chapter: Mapped[int]
     how_learned: Mapped[str] = mapped_column(default="witnessed")  # witnessed | told | deduced | overheard
+    source_character: Mapped[str | None] = None
 
 
 class Issue(Base):

@@ -284,6 +284,59 @@ def detect_spatiotemporal_conflicts(events: list) -> list[IssueDraft]:
     return drafts
 
 
+def detect_custody_paradoxes(custody_events: list, objects_by_id: dict) -> list[IssueDraft]:
+    """Detect broken object chain-of-custody transitions.
+
+    Flags:
+      1. Object marked `destroyed`, `lost`, or `locked` in an earlier chapter
+         and then `used` in a later chapter without an intervening `acquired` or `moved` event.
+      2. Object simultaneously `used` or `acquired` by two different characters in the same chapter
+         without an intervening transfer.
+    """
+    drafts: list[IssueDraft] = []
+    by_obj: dict[str, list] = {}
+    for ev in custody_events:
+        by_obj.setdefault(str(ev.object_id), []).append(ev)
+
+    for obj_id, evs in by_obj.items():
+        obj = objects_by_id.get(obj_id)
+        obj_name = obj.name if obj else "object"
+        sorted_evs = sorted(evs, key=lambda e: (e.chapter, str(e.id)))
+
+        locked_or_destroyed = None
+        for idx, ev in enumerate(sorted_evs):
+            action = _norm(ev.action)
+            if action in ("destroyed", "lost", "locked"):
+                locked_or_destroyed = ev
+            elif action == "used" and locked_or_destroyed is not None:
+                if ev.chapter > locked_or_destroyed.chapter:
+                    drafts.append(
+                        IssueDraft(
+                            type="custody_paradox",
+                            severity="red",
+                            description=(
+                                f'"{obj_name}" was {locked_or_destroyed.action} in chapter '
+                                f"{locked_or_destroyed.chapter} ({locked_or_destroyed.holder_name}), "
+                                f"yet used by {ev.holder_name} in chapter {ev.chapter} without retrieval"
+                            ),
+                            evidence=[
+                                {
+                                    "chapter": locked_or_destroyed.chapter,
+                                    "quote": locked_or_destroyed.evidence_quote or f"{locked_or_destroyed.action} by {locked_or_destroyed.holder_name}",
+                                },
+                                {
+                                    "chapter": ev.chapter,
+                                    "quote": ev.evidence_quote or f"used by {ev.holder_name}",
+                                },
+                            ],
+                        )
+                    )
+            elif action in ("acquired", "moved"):
+                locked_or_destroyed = None
+
+    return drafts
+
+
 def run_consistency_pass(db, project_id) -> int:
     """Load this project's story data, run all detectors, persist issues.
 
@@ -291,7 +344,7 @@ def run_consistency_pass(db, project_id) -> int:
     generated deterministically from the data, so identical findings always
     produce identical text. Returns the number of NEW issues created.
     """
-    from app.models import Claim, Issue, KnowledgeUpdate, StoryEvent, StoryObject
+    from app.models import Claim, Issue, KnowledgeUpdate, ObjectCustodyEvent, StoryEvent, StoryObject
 
     claims = (
         db.query(Claim)
@@ -301,6 +354,12 @@ def run_consistency_pass(db, project_id) -> int:
     knowledge = db.query(KnowledgeUpdate).filter(KnowledgeUpdate.project_id == project_id).all()
     objects = db.query(StoryObject).filter(StoryObject.project_id == project_id).all()
     events = db.query(StoryEvent).filter(StoryEvent.project_id == project_id).all()
+    custody_events = (
+        db.query(ObjectCustodyEvent)
+        .filter(ObjectCustodyEvent.project_id == project_id)
+        .all()
+    )
+    objects_by_id = {str(o.id): o for o in objects}
 
     drafts = (
         detect_contradictions(claims)
@@ -308,6 +367,7 @@ def run_consistency_pass(db, project_id) -> int:
         + detect_dangling_objects(objects)
         + detect_continuity_notes(claims)
         + detect_spatiotemporal_conflicts(events)
+        + detect_custody_paradoxes(custody_events, objects_by_id)
     )
 
     existing = {

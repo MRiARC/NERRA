@@ -80,6 +80,17 @@ class ExtractedKnowledge(BaseModel):
     character: str
     fact: str
     how_learned: str = "witnessed"  # witnessed | told | deduced | overheard
+    source_character: str | None = None
+
+
+class ExtractedCustodyEvent(BaseModel):
+    """Object possession / custody transfer event."""
+
+    object_name: str
+    holder_type: str = "character"  # character | location | unknown
+    holder_name: str
+    action: str = "acquired"  # acquired | lost | moved | locked | destroyed | used
+    evidence_quote: str | None = None
 
 
 class ExtractionPayload(BaseModel):
@@ -90,6 +101,7 @@ class ExtractionPayload(BaseModel):
     events: list[ExtractedEvent] = Field(default_factory=list)
     claims: list[ExtractedClaim] = Field(default_factory=list)
     knowledge: list[ExtractedKnowledge] = Field(default_factory=list)
+    custody_events: list[ExtractedCustodyEvent] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +241,7 @@ def validate_payload(payload: ExtractionPayload, chapter_text: str) -> Extractio
         events=payload.events,
         claims=valid_claims,
         knowledge=payload.knowledge,
+        custody_events=payload.custody_events,
     )
 
 
@@ -239,6 +252,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
         Claim,
         KnowledgeUpdate,
         Location,
+        ObjectCustodyEvent,
         Relationship,
         StoryEvent,
         StoryObject,
@@ -422,7 +436,39 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             fact=kn.fact.strip(),
             chapter=chapter_number,
             how_learned=kn.how_learned,
+            source_character=kn.source_character.strip() if kn.source_character else None,
         )
         db.add(new_kn)
+
+    # 8. Object Custody Events
+    for ce in payload.custody_events:
+        obj_key = ce.object_name.strip().lower()
+        matched_obj = obj_map.get(obj_key)
+        if not matched_obj:
+            matched_obj = StoryObject(
+                project_id=project_id,
+                name=ce.object_name.strip(),
+                first_chapter=chapter_number,
+                mention_chapters=[chapter_number],
+            )
+            db.add(matched_obj)
+            db.flush()
+            obj_map[obj_key] = matched_obj
+        else:
+            mentions = set(matched_obj.mention_chapters or [])
+            mentions.add(chapter_number)
+            matched_obj.mention_chapters = sorted(list(mentions))
+
+        db.add(
+            ObjectCustodyEvent(
+                project_id=project_id,
+                object_id=matched_obj.id,
+                chapter=chapter_number,
+                holder_type=ce.holder_type,
+                holder_name=ce.holder_name.strip(),
+                action=ce.action,
+                evidence_quote=ce.evidence_quote,
+            )
+        )
 
     db.commit()

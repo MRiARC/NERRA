@@ -249,6 +249,33 @@ export interface TimelineData {
   spatiotemporal_conflict_chapters: number[];
 }
 
+export interface ObjectCustodyEvent {
+  id: string;
+  object_id: string;
+  chapter: number;
+  holder_type: string;
+  holder_name: string;
+  action: string;
+  evidence_quote?: string | null;
+}
+
+export interface KnowledgeMatrixCell {
+  character: string;
+  fact: string;
+  knows: boolean;
+  since_chapter?: number | null;
+  how_learned?: string | null;
+  source_character?: string | null;
+  propagated: boolean;
+}
+
+export interface KnowledgeMatrix {
+  characters: string[];
+  facts: string[];
+  cells: KnowledgeMatrixCell[];
+  max_chapter: number;
+}
+
 export const api = {
   getProjects: () => apiFetch<Project[]>("/projects"),
   createProject: (title: string, description?: string) =>
@@ -320,4 +347,10 @@ export const api = {
     if (character) params.set("character", character);
     return apiFetch<TimelineData>(`/projects/${projectId}/timeline?${params.toString()}`);
   },
+  getKnowledgeMatrix: (projectId: string, chapter?: number | null) => {
+    const qs = chapter !== undefined && chapter !== null ? `?chapter=${chapter}` : "";
+    return apiFetch<KnowledgeMatrix>(`/projects/${projectId}/knowledge-matrix${qs}`);
+  },
+  getObjectCustody: (projectId: string, objectId: string) =>
+    apiFetch<ObjectCustodyEvent[]>(`/projects/${projectId}/objects/${objectId}/custody`),
 };
