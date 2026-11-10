@@ -2,26 +2,18 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import {
-  AlertTriangle,
-  BookOpen,
   CheckCircle2,
-  ChevronRight,
   GitMerge,
   MapPin,
-  MessageSquare,
   Plus,
   RefreshCw,
   Search,
   Sparkles,
   Upload,
-  User,
   Users,
-  XCircle,
-  FileText,
   Send,
   Layers,
   ShieldAlert,
-  Flame,
   Check,
 } from "lucide-react";
 import {
@@ -32,8 +24,11 @@ import {
   Location,
   Claim,
   ManuscriptStatus,
-  ChatResponse,
 } from "@/lib/api";
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 const SAMPLE_STORY = `Chapter 1 - The Arrival at Ashford
 
@@ -95,7 +90,22 @@ export default function NerraDashboard() {
 
   // Initialize projects
   useEffect(() => {
-    loadProjects();
+    let active = true;
+    (async () => {
+      try {
+        const data = await api.getProjects();
+        if (!active) return;
+        setProjects(data);
+        if (data.length > 0) {
+          setSelectedProjectId((prev) => prev || data[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to load projects:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
   }, []);
 
   // When project changes, load its data
@@ -109,18 +119,6 @@ export default function NerraDashboard() {
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, chatLoading]);
-
-  async function loadProjects() {
-    try {
-      const data = await api.getProjects();
-      setProjects(data);
-      if (data.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(data[0].id);
-      }
-    } catch (err) {
-      console.error("Failed to load projects:", err);
-    }
-  }
 
   async function loadProjectData(projectId: string) {
     setLoading(true);
@@ -151,8 +149,8 @@ export default function NerraDashboard() {
       setSelectedProjectId(proj.id);
       setIsNewProjectOpen(false);
       setNewProjectTitle("");
-    } catch (err: any) {
-      alert("Error creating project: " + err.message);
+    } catch (err: unknown) {
+      alert("Error creating project: " + getErrorMessage(err));
     }
   }
 
@@ -181,12 +179,12 @@ export default function NerraDashboard() {
               setImportStatus(null);
             }, 1200);
           }
-        } catch (err) {
+        } catch {
           clearInterval(interval);
         }
       }, 1500);
-    } catch (err: any) {
-      alert("Import failed: " + err.message);
+    } catch (err: unknown) {
+      alert("Import failed: " + getErrorMessage(err));
     }
   }
 
@@ -198,8 +196,8 @@ export default function NerraDashboard() {
     try {
       const updated = await api.updateIssue(selectedProjectId, issueId, status);
       setIssues((prev) => prev.map((item) => (item.id === issueId ? updated : item)));
-    } catch (err: any) {
-      alert("Failed to update issue: " + err.message);
+    } catch (err: unknown) {
+      alert("Failed to update issue: " + getErrorMessage(err));
     }
   }
 
@@ -212,8 +210,8 @@ export default function NerraDashboard() {
       setMergeTargetId("");
       setMergeSourceId("");
       loadProjectData(selectedProjectId);
-    } catch (err: any) {
-      alert("Merge failed: " + err.message);
+    } catch (err: unknown) {
+      alert("Merge failed: " + getErrorMessage(err));
     }
   }
 
@@ -236,12 +234,12 @@ export default function NerraDashboard() {
           citations: res.citations,
         },
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: "Error querying story intelligence: " + (err.message || "Failed to reach backend"),
+          text: "Error querying story intelligence: " + (getErrorMessage(err) || "Failed to reach backend"),
         },
       ]);
     } finally {
@@ -486,7 +484,6 @@ export default function NerraDashboard() {
                   {filteredIssues.map((issue) => {
                     const isRed = issue.severity === "red";
                     const isGreen = issue.severity === "green";
-                    const isBlue = issue.severity === "blue";
 
                     return (
                       <div

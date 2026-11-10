@@ -30,7 +30,7 @@ install:
 
 # Run the backend with hot reload (run `make up` first).
 api:
-	cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
+	cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8001
 
 # Run the Next.js frontend on localhost:3001
 frontend:

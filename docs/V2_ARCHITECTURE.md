@@ -69,10 +69,10 @@ flowchart TD
         end
     end
 
-    subgraph Storage["Unified Postgres 16 Persistence Layer"]
-        RelDB["Relational Store\n(Claims, Characters, Events, Versions, Rules)"]
-        GraphDB["Graph Store (Apache AGE / Cypher)\n(story_graph: Entities, Custody, Propagation)"]
-        VecDB["Vector Store (pgvector)\n(384-dim Chunk Embeddings)"]
+    subgraph Storage["Hybrid Persistence Layer (Docker Compose)"]
+        RelDB["PostgreSQL 16 Relational Store\n(Source of Truth: Claims, Characters, Events, Versions, Rules)"]
+        GraphDB["Neo4j 5 Community Graph DB\n(Dedicated Docker Container: Cypher Multi-Hop Traversal)"]
+        VecDB["pgvector Vector Store\n(384-dim Chunk Embeddings)"]
     end
 
     IngestRouter --> RouterNode
@@ -109,15 +109,15 @@ flowchart TD
 
 ## 3. The 6 Architectural Pillars of Phase 2
 
-### Pillar 1: Unified Graph Layer (PostgreSQL + Apache AGE) & Relationship Evolution
-*Directly answers the transition from relational tables to true graph traversal.*
+### Pillar 1: Dedicated Graph Database (Neo4j 5 in Docker) & Relationship Evolution
+*Runs as a separate `neo4j:5-community` container inside `docker-compose.yml` alongside `postgres:pg16` (`pgvector`).*
 
-- **Why Apache AGE Inside Postgres 16:**
-  - Instead of operating a separate Neo4j cluster (which introduces dual-write sync issues when a chapter is re-analyzed or deleted), **Apache AGE** runs native **openCypher** queries directly inside PostgreSQL.
-  - Deleting or re-analyzing a chapter updates Relational rows, `pgvector` embeddings, and `story_graph` Cypher vertices/edges in a **single ACID transaction**.
-  - *(Fallback option if container image swap is deferred: A dedicated `GraphProjectionService` backed by `networkx` / recursive SQL CTEs exposing the exact same graph interface so the API and UI stay identical and swappable to AGE/Neo4j).*
-- **Graph Schema (`story_graph`):**
-  - **Vertices:** `(:Character)`, `(:Location)`, `(:Object)`, `(:Event)`, `(:Fact)`.
+- **Hybrid Source-of-Truth + Graph Projection Architecture:**
+  - **PostgreSQL 16 + pgvector** remains the ACID source of truth (raw manuscripts, verbatim quote spans, claims, auth, and vector chunks).
+  - **Neo4j 5 Community** runs as a dedicated Graph DB service (`bolt://localhost:7687`, Browser UI on `http://localhost:7474`) for native **Cypher** multi-hop traversals, path-finding, and live visual inspection.
+  - **Idempotent Project Sync:** Whenever a chapter is analyzed or re-analyzed in `pipeline.py`, `GraphService` executes an idempotent project-scoped Cypher `MERGE` / rebuild so Neo4j never drifts out of sync with Postgres (with a lightweight fallback for unit tests when Neo4j isn't running).
+- **Graph Schema (`Neo4j`):**
+  - **Vertices:** `(:Character)`, `(:Location)`, `(:Object)`, `(:Event)`, `(:Fact)` — all tagged with `project_id`.
   - **Temporal Edges:**
     - `(:Character)-[:RELATED_TO {type, sentiment, since_chapter, until_chapter}]->(:Character)`
     - `(:Character)-[:LOCATED_IN {chapter, scene_order, story_time}]->(:Location)`
@@ -234,9 +234,9 @@ erDiagram
 
 To keep velocity high and maintain 100% passing tests at every step, Phase 2 is broken into **5 vertical slices** (Backend + Unit/Integration Tests + Next.js UI View):
 
-### Milestone 2.1 — Parallel Extraction Pipeline & Relationship Evolution
-- **Backend:** Upgrade [`extractor.py`](file:///Users/adarshchauhan/Desktop/Desktop%20-%20Adarsh%E2%80%99s%20MacBook%20Pro/01_Projects/nerra/backend/app/services/extractor.py) + LangGraph fan-out extraction for temporal anchors, relationship sentiment/evolution, and object custody events.
-- **Graph Store:** Enable **Apache AGE** (or unified graph projection service) synced atomically in [`pipeline.py`](file:///Users/adarshchauhan/Desktop/Desktop%20-%20Adarsh%E2%80%99s%20MacBook%20Pro/01_Projects/nerra/backend/app/services/pipeline.py) and expose `GET /projects/{id}/graph`.
+### Milestone 2.1 — Neo4j Docker Graph DB & Relationship Evolution
+- **Infrastructure:** Add dedicated `neo4j:5-community` service to `docker-compose.yml` (`7474` Browser UI, `7687` Bolt protocol).
+- **Backend:** Upgrade [`extractor.py`](file:///Users/adarshchauhan/Desktop/Desktop%20-%20Adarsh%E2%80%99s%20MacBook%20Pro/01_Projects/nerra/backend/app/services/extractor.py) for relationship sentiment/evolution, build `app/services/graph.py` syncing story nodes/edges into Neo4j in [`pipeline.py`](file:///Users/adarshchauhan/Desktop/Desktop%20-%20Adarsh%E2%80%99s%20MacBook%20Pro/01_Projects/nerra/backend/app/services/pipeline.py), and expose `GET /projects/{id}/graph`.
 - **Frontend:** Add **Interactive Relationship & World Graph** tab using a force-directed SVG/Canvas or Cytoscape view with chapter slider filtering.
 
 ### Milestone 2.2 — Dual Timeline Engine & Spatiotemporal Checker
@@ -257,5 +257,5 @@ To keep velocity high and maintain 100% passing tests at every step, Phase 2 is 
 
 ---
 
-### Key Decision Before Starting Milestone 2.1
-1. **Graph Engine Choice:** Should we upgrade the Docker Postgres image (`docker-compose.yml`) to include **Apache AGE** (`pgvector + AGE` together inside Postgres for native Cypher queries), or use an **in-process Graph Projection Service** over our existing `pgvector/pgvector:pg16` container (preserving zero-friction setup while supporting multi-hop traversals)?
+### Confirmed Architecture Decisions
+- **Graph DB:** Dedicated `neo4j:5-community` Docker container (`bolt://localhost:7687`, Browser UI `http://localhost:7474`) running alongside `pgvector/pgvector:pg16` (`5434`), keeping Postgres as the ACID source of truth while powering native Cypher graph queries in Neo4j.
