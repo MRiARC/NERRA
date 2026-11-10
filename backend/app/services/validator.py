@@ -28,8 +28,8 @@ _NON_ENTITY_TOKENS = {
 _TITLES = {"mr", "mrs", "ms", "miss", "dr", "detective", "captain", "sir", "lord", "lady"}
 
 
-def _route_for_confidence(confidence: float) -> str:
-    if confidence >= 0.90:
+def _route_for_confidence(confidence: float, auto_threshold: float = 0.90) -> str:
+    if confidence >= auto_threshold:
         return "auto_accepted"
     if confidence >= 0.40:
         return "human_review"
@@ -156,10 +156,15 @@ def gate_and_commit_extraction(
     are stored cleanly in `validation_candidates`.
     """
     from app.models import Character, ValidationCandidate
-    from app.services import extractor
+    from app.services import extractor, plot_threads
     from app.services.extractor import ExtractionPayload
 
     pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
+    cust = plot_threads.get_customization(db, pid).get("custom_validation") or {}
+    auto_threshold = float(cust.get("auto_accept_threshold", 0.90))
+    extra_ignored = {str(t).strip().lower() for t in (cust.get("extra_ignored_tokens") or []) if str(t).strip()}
+    blocked_tokens = _NON_ENTITY_TOKENS | extra_ignored
+
     existing_chars = db.query(Character).filter(Character.project_id == pid).all()
     existing_exact = {c.name.strip().lower() for c in existing_chars}
     existing_aliases = {a.strip().lower() for c in existing_chars for a in (c.aliases or [])}
@@ -181,7 +186,7 @@ def gate_and_commit_extraction(
 
         conf = 0.95
         reason = None
-        if key in _NON_ENTITY_TOKENS or len(key) < 2:
+        if key in blocked_tokens or len(key) < 2:
             conf = 0.25
             reason = f'"{name_clean}" appears to be a calendar/pronoun/non-character token.'
         elif llm_j is not None:
@@ -202,7 +207,7 @@ def gate_and_commit_extraction(
                     "confirm whether this is an alias, same person, or distinct relative."
                 )
 
-        route = _route_for_confidence(conf)
+        route = _route_for_confidence(conf, auto_threshold=auto_threshold)
         if route == "auto_accepted":
             accepted_chars.append(ch)
         else:
@@ -245,7 +250,7 @@ def gate_and_commit_extraction(
             conf = 0.72
             reason = reason or "Extracted inside unreliable narrator / deception framing; held for review."
 
-        route = _route_for_confidence(conf)
+        route = _route_for_confidence(conf, auto_threshold=auto_threshold)
         if route == "auto_accepted":
             accepted_claims.append(cl)
         else:

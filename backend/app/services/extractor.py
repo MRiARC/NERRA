@@ -239,7 +239,9 @@ def quote_in_text(quote: str, chapter_text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> ExtractionPayload:
+def extract_chapter(
+    chapter_number: int, chapter_text: str, roster: str, custom_prompt: str = ""
+) -> ExtractionPayload:
     """Call Claude and return a validated ExtractionPayload."""
     client = get_anthropic_client()
     prompt = EXTRACTION_PROMPT_TEMPLATE.format(
@@ -247,6 +249,8 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
         roster=roster,
         chapter_text=chapter_text,
     )
+    if custom_prompt and custom_prompt.strip():
+        prompt += f"\n\nPROJECT CUSTOM EXTRACTION INSTRUCTIONS:\n{custom_prompt.strip()}"
     response = client.messages.create(
         model=settings.extraction_model,
         max_tokens=settings.extraction_max_tokens,
@@ -262,7 +266,9 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
     return ExtractionPayload.model_validate(raw)
 
 
-def extract_chapter_multipass(chapter_number: int, chapter_text: str, story_context: str) -> ExtractionPayload:
+def extract_chapter_multipass(
+    chapter_number: int, chapter_text: str, story_context: str, custom_prompt: str = ""
+) -> ExtractionPayload:
     """Run 3 focused parallel Claude Sonnet passes for high-recall chapter extraction."""
     from concurrent.futures import ThreadPoolExecutor
 
@@ -283,10 +289,16 @@ def extract_chapter_multipass(chapter_number: int, chapter_text: str, story_cont
 
     def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
         client = get_anthropic_client()
+        custom_note = (
+            f"\nPROJECT CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}\n"
+            if custom_prompt and custom_prompt.strip()
+            else ""
+        )
         prompt = (
             f"You are analyzing Chapter {chapter_number} of a novel.\n\n"
             f"EXISTING STORY CONTEXT:\n{story_context}\n\n"
-            f"FOCUS FOR THIS PASS:\n{focus_instructions}\n\n"
+            f"FOCUS FOR THIS PASS:\n{focus_instructions}\n"
+            f"{custom_note}\n"
             f"CHAPTER TEXT:\n---\n{chapter_text}\n---"
         )
         res = client.messages.create(

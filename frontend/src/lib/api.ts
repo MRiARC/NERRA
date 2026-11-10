@@ -287,6 +287,29 @@ export interface FeedbackActionResult {
   impact_notes: string[];
 }
 
+export interface PlotThread {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string;
+  setup_chapter: number;
+  payoff_chapter: number | null;
+  status: "open" | "resolved" | "abandoned" | "red_herring" | string;
+  related_entities: string[];
+  evidence_quote: string | null;
+  updated_at: string;
+}
+
+export interface ProjectCustomization {
+  project_id: string;
+  custom_context: string | null;
+  custom_prompt: string | null;
+  custom_validation: Record<string, unknown>;
+  custom_graph_write: Record<string, unknown>;
+  custom_ui_config: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
 export interface BibleExport {
   project_title: string;
   markdown: string;
@@ -526,4 +549,41 @@ export const api = {
     apiFetch<CorrectionRule[]>(`/projects/${projectId}/corrections`),
   deleteCorrection: (projectId: string, correctionId: string) =>
     apiFetch<void>(`/projects/${projectId}/corrections/${correctionId}`, { method: "DELETE" }),
+  getPlotThreads: (projectId: string) =>
+    apiFetch<PlotThread[]>(`/projects/${projectId}/plot-threads`),
+  syncPlotThreads: (projectId: string) =>
+    apiFetch<PlotThread[]>(`/projects/${projectId}/plot-threads/sync`, { method: "POST" }),
+  createPlotThread: (
+    projectId: string,
+    body: {
+      title: string;
+      description: string;
+      setup_chapter?: number;
+      status?: string;
+      related_entities?: string[];
+    }
+  ) =>
+    apiFetch<PlotThread>(`/projects/${projectId}/plot-threads`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchPlotThread: (
+    projectId: string,
+    threadId: string,
+    body: { status?: string; payoff_chapter?: number | null }
+  ) =>
+    apiFetch<PlotThread>(`/projects/${projectId}/plot-threads/${threadId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getCustomization: (projectId: string) =>
+    apiFetch<ProjectCustomization>(`/projects/${projectId}/customization`),
+  putCustomization: (
+    projectId: string,
+    body: Omit<ProjectCustomization, "project_id" | "updated_at">
+  ) =>
+    apiFetch<ProjectCustomization>(`/projects/${projectId}/customization`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
 };

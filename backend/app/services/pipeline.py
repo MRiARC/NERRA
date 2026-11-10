@@ -122,6 +122,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         splitter,
         timeline,
         validator,
+        plot_threads,
     )
     from app.services.extractor import ExtractionPayload
 
@@ -166,8 +167,12 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
                 ctx_packet = context_builder.build_story_context_packet(
                     db, manuscript.project_id, chapter.number, chapter.content, signals=signals
                 )
+                cust = plot_threads.get_customization(db, manuscript.project_id)
                 payload = extractor.extract_chapter_multipass(
-                    chapter.number, chapter.content, ctx_packet["prompt_text"]
+                    chapter.number,
+                    chapter.content,
+                    ctx_packet["prompt_text"],
+                    custom_prompt=cust.get("custom_prompt") or "",
                 )
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
@@ -189,6 +194,15 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         timeline.compute_story_chronology(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Timeline chronology computation skipped: %s", exc)
+    if not extract_is_mocked:
+        for ch_item in chapters:
+            plot_threads.extract_and_update_plot_threads_llm(
+                db,
+                manuscript.project_id,
+                ch_item.number,
+                ch_item.content,
+                use_llm=True,
+            )
     consistency.run_consistency_pass(db, manuscript.project_id)
     try:
         graph.sync_project_graph(db, manuscript.project_id)
@@ -215,6 +229,7 @@ def append_chapter_to_manuscript(
         splitter,
         timeline,
         validator,
+        plot_threads,
     )
 
     existing_chapters = splitter.split_chapters(manuscript.raw_text)
@@ -238,7 +253,13 @@ def append_chapter_to_manuscript(
     if extract_is_mocked:
         payload = extractor.extract_chapter(next_num, body, ctx_packet["prompt_text"])
     else:
-        payload = extractor.extract_chapter_multipass(next_num, body, ctx_packet["prompt_text"])
+        cust = plot_threads.get_customization(db, manuscript.project_id)
+        payload = extractor.extract_chapter_multipass(
+            next_num,
+            body,
+            ctx_packet["prompt_text"],
+            custom_prompt=cust.get("custom_prompt") or "",
+        )
     payload = extractor.validate_payload(payload, body)
 
     content_hash = _content_hash(body)
@@ -251,6 +272,10 @@ def append_chapter_to_manuscript(
         payload,
         use_llm=not extract_is_mocked,
     )
+    if not extract_is_mocked:
+        plot_threads.extract_and_update_plot_threads_llm(
+            db, manuscript.project_id, next_num, body, use_llm=True
+        )
     _save_analysis(db, manuscript.id, next_num, content_hash, payload.model_dump())
     _embed_and_store_chunk(db, manuscript, next_num, body)
 

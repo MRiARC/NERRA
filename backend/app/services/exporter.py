@@ -130,6 +130,7 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
         Issue,
         Location,
         ObjectCustodyEvent,
+        PlotThread,
         Project,
         Relationship,
         StoryEvent,
@@ -156,6 +157,7 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
     rules = db.query(WorldRule).filter(WorldRule.project_id == pid, WorldRule.status == "active").all()
     claims = db.query(Claim).filter(Claim.project_id == pid, Claim.status == "active").order_by(Claim.chapter.asc()).all()
     issues = db.query(Issue).filter(Issue.project_id == pid).order_by(Issue.severity.asc()).all()
+    threads = db.query(PlotThread).filter(PlotThread.project_id == pid).order_by(PlotThread.setup_chapter.asc()).all()
 
     now_iso = datetime.now(timezone.utc).isoformat()
     lines: list[str] = [
@@ -241,6 +243,15 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
     lines.extend(["## 7. Verified Factual Claims"])
     for cl in claims[:50]:
         lines.append(f"- Ch. {cl.chapter}: **{cl.subject}** `{cl.attribute}` = `{cl.value}` — *\"{cl.evidence_quote}\"*")
+    lines.append("")
+
+    lines.extend(["## 8. Plot Threads & Foreshadowing"])
+    if not threads:
+        lines.append("_No plot threads tracked._")
+    for th in threads:
+        payoff = f" → resolved Ch. {th.payoff_chapter}" if th.payoff_chapter else ""
+        ents = f" ({', '.join(th.related_entities)})" if th.related_entities else ""
+        lines.append(f"- **[{th.status.upper()}] {th.title}** (Setup Ch. {th.setup_chapter}{payoff}){ents}: {th.description}")
 
     return {
         "project_title": title,

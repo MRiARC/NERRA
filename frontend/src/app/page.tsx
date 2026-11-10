@@ -25,6 +25,8 @@ import {
   Download,
   History,
   ShieldCheck,
+  Sliders,
+  Bookmark,
 } from "lucide-react";
 import StoryGraphView from "@/components/StoryGraphView";
 import TimelineView from "@/components/TimelineView";
@@ -44,6 +46,7 @@ import {
   ManuscriptSummary,
   ValidationCandidate,
   CorrectionRule,
+  PlotThread,
 } from "@/lib/api";
 
 function getErrorMessage(err: unknown): string {
@@ -70,7 +73,7 @@ export default function NerraDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<
-    "issues" | "characters" | "graph" | "timeline" | "knowledge" | "locations" | "claims" | "chat"
+    "issues" | "characters" | "graph" | "timeline" | "knowledge" | "locations" | "claims" | "threads" | "chat"
   >("issues");
   const [loading, setLoading] = useState(false);
 
@@ -113,6 +116,20 @@ export default function NerraDashboard() {
   const [editingClaimValue, setEditingClaimValue] = useState("");
   const [renamingCharId, setRenamingCharId] = useState<string | null>(null);
   const [renameCharInput, setRenameCharInput] = useState("");
+
+  // M3.4 Plot Threads & Customization Hooks state
+  const [plotThreads, setPlotThreads] = useState<PlotThread[]>([]);
+  const [syncingThreads, setSyncingThreads] = useState(false);
+  const [newThreadTitle, setNewThreadTitle] = useState("");
+  const [newThreadDesc, setNewThreadDesc] = useState("");
+  const [newThreadChapter, setNewThreadChapter] = useState(1);
+  const [isCustomOpen, setIsCustomOpen] = useState(false);
+  const [customContextInput, setCustomContextInput] = useState("");
+  const [customPromptInput, setCustomPromptInput] = useState("");
+  const [customIgnoredTokensInput, setCustomIgnoredTokensInput] = useState("");
+  const [customGraphTagInput, setCustomGraphTagInput] = useState("");
+  const [customBannerInput, setCustomBannerInput] = useState("");
+  const [savingCustom, setSavingCustom] = useState(false);
 
   // Filter state
   const [issueFilter, setIssueFilter] = useState<
@@ -192,7 +209,7 @@ export default function NerraDashboard() {
   async function loadProjectData(projectId: string) {
     setLoading(true);
     try {
-      const [iss, chars, world, clms, rules, cands, corrs] = await Promise.all([
+      const [iss, chars, world, clms, rules, cands, corrs, ths, cust] = await Promise.all([
         api.getIssues(projectId),
         api.getCharacters(projectId),
         api.getWorld(projectId),
@@ -200,6 +217,8 @@ export default function NerraDashboard() {
         api.getWorldRules(projectId),
         api.getCandidates(projectId, "pending").catch(() => []),
         api.getCorrections(projectId).catch(() => []),
+        api.getPlotThreads(projectId).catch(() => []),
+        api.getCustomization(projectId).catch(() => null),
       ]);
       setIssues(iss);
       setCharacters(chars);
@@ -210,6 +229,15 @@ export default function NerraDashboard() {
       setWorldRules(rules);
       setCandidates(cands);
       setCorrections(corrs);
+      setPlotThreads(ths);
+      if (cust) {
+        setCustomContextInput(cust.custom_context || "");
+        setCustomPromptInput(cust.custom_prompt || "");
+        const ignored = cust.custom_validation?.extra_ignored_tokens;
+        setCustomIgnoredTokensInput(Array.isArray(ignored) ? ignored.join(", ") : "");
+        setCustomGraphTagInput(String(cust.custom_graph_write?.project_tag || ""));
+        setCustomBannerInput(String(cust.custom_ui_config?.banner || ""));
+      }
     } catch (err) {
       console.error("Failed to load project details:", err);
     } finally {
@@ -498,6 +526,74 @@ export default function NerraDashboard() {
     }
   }
 
+  async function handleSyncPlotThreads() {
+    if (!selectedProjectId || syncingThreads) return;
+    setSyncingThreads(true);
+    try {
+      const updated = await api.syncPlotThreads(selectedProjectId);
+      setPlotThreads(updated);
+    } catch (err: unknown) {
+      alert("Plot thread synthesis failed: " + getErrorMessage(err));
+    } finally {
+      setSyncingThreads(false);
+    }
+  }
+
+  async function handleCreatePlotThread(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProjectId || !newThreadTitle.trim()) return;
+    try {
+      await api.createPlotThread(selectedProjectId, {
+        title: newThreadTitle.trim(),
+        description: newThreadDesc.trim() || newThreadTitle.trim(),
+        setup_chapter: Math.max(1, Number(newThreadChapter) || 1),
+      });
+      setNewThreadTitle("");
+      setNewThreadDesc("");
+      const list = await api.getPlotThreads(selectedProjectId);
+      setPlotThreads(list);
+    } catch (err: unknown) {
+      alert("Create plot thread failed: " + getErrorMessage(err));
+    }
+  }
+
+  async function handlePatchThreadStatus(threadId: string, nextStatus: string) {
+    if (!selectedProjectId) return;
+    try {
+      const updated = await api.patchPlotThread(selectedProjectId, threadId, { status: nextStatus });
+      setPlotThreads((prev) => prev.map((t) => (t.id === threadId ? updated : t)));
+    } catch (err: unknown) {
+      alert("Failed to update plot thread: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleSaveCustomization(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedProjectId || savingCustom) return;
+    setSavingCustom(true);
+    try {
+      const ignored = customIgnoredTokensInput
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await api.putCustomization(selectedProjectId, {
+        custom_context: customContextInput.trim() || null,
+        custom_prompt: customPromptInput.trim() || null,
+        custom_validation: { auto_accept_threshold: 0.9, extra_ignored_tokens: ignored },
+        custom_graph_write: {
+          include_plot_threads: true,
+          ...(customGraphTagInput.trim() ? { project_tag: customGraphTagInput.trim() } : {}),
+        },
+        custom_ui_config: customBannerInput.trim() ? { banner: customBannerInput.trim() } : {},
+      });
+      setIsCustomOpen(false);
+    } catch (err: unknown) {
+      alert("Failed to save customization hooks: " + getErrorMessage(err));
+    } finally {
+      setSavingCustom(false);
+    }
+  }
+
   async function handleExportBible() {
     if (!selectedProjectId || exportingBible) return;
     setExportingBible(true);
@@ -609,6 +705,16 @@ export default function NerraDashboard() {
           >
             <Plus className="w-3.5 h-3.5 text-sky-400" />
             <span className="hidden lg:inline">Append Ch</span>
+          </button>
+
+          <button
+            onClick={() => setIsCustomOpen(true)}
+            disabled={!selectedProjectId}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="Configure 5 project feature customization hooks"
+          >
+            <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline">{customBannerInput || "Hooks"}</span>
           </button>
 
           <button
@@ -768,6 +874,19 @@ export default function NerraDashboard() {
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 <span>World Locations</span>
                 <span className="text-xs text-slate-500">({locations.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab("threads")}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition ${
+                  activeTab === "threads"
+                    ? "border-indigo-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Bookmark className="w-4 h-4 text-rose-400" />
+                <span>Plot Threads</span>
+                <span className="text-xs text-slate-500">({plotThreads.length})</span>
               </button>
 
               <button
@@ -1360,6 +1479,111 @@ export default function NerraDashboard() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* TAB 4.5: PLOT THREADS TRACKER (MILESTONE 3.4) */}
+          {activeTab === "threads" && (
+            <div className="p-8 max-w-6xl w-full mx-auto space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Cross-Chapter Plot Threads & Payoffs</h3>
+                  <p className="text-xs text-slate-400">
+                    Setups, foreshadowing, mysteries, and payoffs synthesized across chapters and synced into Neo4j.
+                  </p>
+                </div>
+                <button
+                  onClick={handleSyncPlotThreads}
+                  disabled={syncingThreads}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{syncingThreads ? "Synthesizing..." : "Sync Plot Threads (LLM)"}</span>
+                </button>
+              </div>
+
+              <form onSubmit={handleCreatePlotThread} className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-900/50 border border-slate-800 rounded-xl p-4">
+                <input
+                  type="text"
+                  placeholder="Thread title..."
+                  value={newThreadTitle}
+                  onChange={(e) => setNewThreadTitle(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Setup / mystery description..."
+                  value={newThreadDesc}
+                  onChange={(e) => setNewThreadDesc(e.target.value)}
+                  className="md:col-span-2 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                />
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={newThreadChapter}
+                    onChange={(e) => setNewThreadChapter(Number(e.target.value))}
+                    className="w-20 bg-slate-950 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white"
+                    title="Setup Chapter"
+                  />
+                  <button
+                    type="submit"
+                    className="flex-1 text-xs font-medium px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
+                  >
+                    Add Thread
+                  </button>
+                </div>
+              </form>
+
+              {plotThreads.length === 0 ? (
+                <p className="text-xs text-slate-400 py-8 text-center border border-slate-800/70 rounded-xl bg-slate-900/30">
+                  No plot threads tracked yet. Click &ldquo;Sync Plot Threads (LLM)&rdquo; or add one manually.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {plotThreads.map((th) => (
+                    <div
+                      key={th.id}
+                      className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-wrap items-start justify-between gap-4"
+                    >
+                      <div className="space-y-1 flex-1 min-w-[240px]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-white">{th.title}</span>
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                            Setup Ch. {th.setup_chapter}
+                            {th.payoff_chapter ? ` → Payoff Ch. ${th.payoff_chapter}` : ""}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300">{th.description}</p>
+                        {th.related_entities && th.related_entities.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                            {th.related_entities.map((ent, idx) => (
+                              <span
+                                key={idx}
+                                className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/25"
+                              >
+                                {ent}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <select
+                        value={th.status}
+                        onChange={(e) => handlePatchThreadStatus(th.id, e.target.value)}
+                        className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200"
+                      >
+                        <option value="open">open</option>
+                        <option value="resolved">resolved</option>
+                        <option value="abandoned">abandoned</option>
+                        <option value="red_herring">red_herring</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -2019,6 +2243,106 @@ export default function NerraDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* M3.4 FEATURE CUSTOMIZATION HOOKS MODAL */}
+      {isCustomOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-emerald-400" />
+                Project Feature Customization Hooks (5 Points)
+              </h3>
+              <button
+                onClick={() => setIsCustomOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleSaveCustomization} className="space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  1. custom_context (Injected into ContextBuilder)
+                </label>
+                <textarea
+                  rows={2}
+                  value={customContextInput}
+                  onChange={(e) => setCustomContextInput(e.target.value)}
+                  placeholder="World genre, magic constraints, timeline notes..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  2. custom_prompt (Appended to Extractor Agent Prompts)
+                </label>
+                <textarea
+                  rows={2}
+                  value={customPromptInput}
+                  onChange={(e) => setCustomPromptInput(e.target.value)}
+                  placeholder="Extra extraction instructions (e.g. track poison clues carefully)..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200"
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    3. custom_validation (Ignored Tokens)
+                  </label>
+                  <input
+                    type="text"
+                    value={customIgnoredTokensInput}
+                    onChange={(e) => setCustomIgnoredTokensInput(e.target.value)}
+                    placeholder="stranger, guard"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    4. custom_graph_write (Project Tag)
+                  </label>
+                  <input
+                    type="text"
+                    value={customGraphTagInput}
+                    onChange={(e) => setCustomGraphTagInput(e.target.value)}
+                    placeholder="victorian-noir"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    5. custom_ui_config (UI Label)
+                  </label>
+                  <input
+                    type="text"
+                    value={customBannerInput}
+                    onChange={(e) => setCustomBannerInput(e.target.value)}
+                    placeholder="Detective Edition"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomOpen(false)}
+                  className="text-xs px-4 py-2 rounded-lg bg-slate-800 text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCustom}
+                  className="text-xs px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium disabled:opacity-50"
+                >
+                  {savingCustom ? "Saving..." : "Save Customization"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
