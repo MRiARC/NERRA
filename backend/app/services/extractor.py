@@ -109,8 +109,8 @@ Extract structured story data thoroughly without omitting subtle narrative detai
 - "claims": factual assertions made by the prose — physical traits (eye_color, hair_color, age, scars), possessions, locations, behavioral constraints, and character knowledge references (use attribute "knows_about", e.g. subject="Park", attribute="knows_about", value="the murder"). Include the EXACT verbatim sentence in evidence_quote.
 - "knowledge": facts a character LEARNS in THIS chapter (witnessed | told | deduced | overheard), with source_character if told by someone.
 - "events": distinct scenes/beats with participants, location, temporal_anchor (if any time shift/clue appears), and is_flashback / is_flashforward flags.
-- "custody_events": every physical transfer, acquisition, locking, hiding, loss, destruction, or active use of important objects.
-- "world_rules": any invariant physical, magical, supernatural, social, or setting constraint introduced or reinforced in this chapter.
+- "custody_events": physical transfers, acquisition, locking, hiding, loss, destruction, or use of plot-significant objects (ignore generic architecture/scenery like windows or drainpipes).
+- "world_rules": ONLY invariant universe-level rules (magic laws, physics constraints, supernatural properties, strict institutional laws) — NOT ordinary single-scene plot events or mystery facts.
 - Coreference & Aliases: resolve pronouns ("he", "she", "the captain", titles) back to canonical character names from the story context whenever unambiguous, and record newly discovered aliases/nicknames.
 - Never invent facts or quotes absent from the chapter text. If a category has nothing, return an empty list.
 """
@@ -210,7 +210,7 @@ def get_anthropic_client():
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    kwargs = {"api_key": settings.anthropic_api_key}
+    kwargs = {"api_key": settings.anthropic_api_key, "timeout": 60.0}
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
     return anthropic.Anthropic(**kwargs)

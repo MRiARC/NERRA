@@ -65,19 +65,33 @@ def _group_claims(claims: list) -> dict[tuple[str, str], list]:
 # ---------------------------------------------------------------------------
 
 
+_MULTI_VALUE_ATTRIBUTES = {
+    "knows_about",
+    "possession",
+    "owns",
+    "skill",
+    "ability",
+    "language",
+    "ally",
+    "behavior",
+    "action",
+}
+
+
 def detect_contradictions(claims: list) -> list[IssueDraft]:
     """Find contradicting claim pairs.
 
-    1. Group claims by (_norm(subject), _norm(attribute)).
-    2. Inside a group, keep the FIRST claim per distinct normalized value
+    1. Skip multi-valued accumulative attributes (`knows_about`, `possession`, etc.).
+    2. Group claims by (_norm(subject), _norm(attribute)).
+    3. Inside a group, keep the FIRST claim per distinct normalized value
        (lowest chapter wins — that's the earlier statement).
-    3. Every pair of distinct values -> one red IssueDraft carrying both
+    4. Every pair of distinct values -> one red IssueDraft carrying both
        citations and both claim ids.
     """
     drafts: list[IssueDraft] = []
 
     for (_subject, attribute), group in _group_claims(claims).items():
-        if len(group) < 2:
+        if attribute in _MULTI_VALUE_ATTRIBUTES or len(group) < 2:
             continue
 
         first_by_value: dict[str, object] = {}
@@ -596,12 +610,13 @@ def run_consistency_pass(db, project_id) -> int:
         + detect_continuity_notes(claims)
         + detect_spatiotemporal_conflicts(events)
         + detect_custody_paradoxes(custody_events, objects_by_id)
-        + detect_world_rule_violations(claims, rules)
     )
     if llm_enabled:
         km = knowledge_svc.build_knowledge_matrix(db, project_id)
         drafts.extend(detect_world_rule_violations_llm(rules, claims, events, use_llm=True))
         drafts.extend(detect_semantic_inconsistencies_llm(claims, events, km, use_llm=True))
+    else:
+        drafts.extend(detect_world_rule_violations(claims, rules))
 
     existing = {
         (issue.type, issue.description)
@@ -610,18 +625,43 @@ def run_consistency_pass(db, project_id) -> int:
         .all()
     }
 
-    created = 0
+    to_persist: list[IssueDraft] = []
     for draft in drafts:
         if (draft.type, draft.description) in existing:
             continue
         existing.add((draft.type, draft.description))
-        reason = contradiction_reasoner.analyze_issue_intent(
-            project_id=project_id,
-            issue_type=draft.type,
-            description=draft.description,
-            evidence=draft.evidence,
-            use_llm=llm_enabled,
-        )
+        to_persist.append(draft)
+
+    _CONFLICT_TYPES = {
+        "contradiction",
+        "knowledge_violation",
+        "spatiotemporal_conflict",
+        "custody_paradox",
+        "world_rule_violation",
+    }
+
+    reasons_by_idx: dict[int, dict] = {}
+    if to_persist:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _reason_for(idx_draft: tuple[int, IssueDraft]) -> tuple[int, dict]:
+            idx, d = idx_draft
+            should_llm = llm_enabled and d.type in _CONFLICT_TYPES
+            return idx, contradiction_reasoner.analyze_issue_intent(
+                project_id=project_id,
+                issue_type=d.type,
+                description=d.description,
+                evidence=d.evidence,
+                use_llm=should_llm,
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for idx, res in pool.map(_reason_for, enumerate(to_persist)):
+                reasons_by_idx[idx] = res
+
+    created = 0
+    for idx, draft in enumerate(to_persist):
+        reason = reasons_by_idx[idx]
         db.add(
             Issue(
                 project_id=project_id,
