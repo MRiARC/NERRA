@@ -110,8 +110,37 @@ class RelationshipOut(BaseModel):
     character_a_id: uuid.UUID
     character_b_id: uuid.UUID
     type: str
+    sentiment: str = "neutral"
     description: str | None
+    evidence_quote: str | None = None
     chapter: int | None
+    until_chapter: int | None = None
+
+
+class GraphNodeOut(BaseModel):
+    id: str
+    label: str
+    kind: str  # character | location | object | event
+    chapter: int | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class GraphEdgeOut(BaseModel):
+    id: str
+    source: str
+    target: str
+    relation: str
+    sentiment: str = "neutral"
+    since_chapter: int | None = None
+    until_chapter: int | None = None
+    description: str | None = None
+
+
+class StoryGraphOut(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+    neo4j_connected: bool
+    max_chapter: int = 1
 
 
 class EventOut(BaseModel):

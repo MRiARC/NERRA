@@ -10,6 +10,7 @@ python-multipart>=0.0.9        # file uploads (manuscript import)
 sqlalchemy>=2.0.35
 psycopg[binary]>=3.2           # Postgres driver (SQLAlchemy: postgresql+psycopg://)
 pgvector>=0.3                  # Vector(384) column type + cosine_distance
+neo4j>=5.20                    # Neo4j Graph DB driver (Bolt protocol)
 
 # Settings & validation
 pydantic[email]>=2.9

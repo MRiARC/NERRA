@@ -201,6 +201,32 @@ export interface ChatResponse {
   citations: Array<{ chapter: number; excerpt: string }>;
 }
 
+export interface GraphNode {
+  id: string;
+  label: string;
+  kind: "character" | "location" | "object" | "event";
+  chapter?: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  sentiment: string;
+  since_chapter?: number | null;
+  until_chapter?: number | null;
+  description?: string | null;
+}
+
+export interface StoryGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  neo4j_connected: boolean;
+  max_chapter: number;
+}
+
 export const api = {
   getProjects: () => apiFetch<Project[]>("/projects"),
   createProject: (title: string, description?: string) =>
@@ -256,4 +282,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question }),
     }),
+  getGraph: (projectId: string, chapter?: number | null, refresh = false) => {
+    const params = new URLSearchParams();
+    if (chapter !== undefined && chapter !== null) params.set("chapter", String(chapter));
+    if (refresh) params.set("refresh", "true");
+    const qs = params.toString();
+    return apiFetch<StoryGraph>(`/projects/${projectId}/graph${qs ? `?${qs}` : ""}`);
+  },
 };

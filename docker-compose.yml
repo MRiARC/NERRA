@@ -1,6 +1,6 @@
 # NERRA development infrastructure.
-# Only Postgres runs in Docker — the FastAPI app runs on your machine
-# (make api) so you get hot reload and easy debugging.
+# Postgres (pgvector) + Neo4j Graph DB run in Docker — FastAPI and Next.js
+# run locally with hot reload.
 name: nerra
 
 services:
@@ -23,5 +23,24 @@ services:
       timeout: 3s
       retries: 12
 
+  neo4j:
+    image: neo4j:5-community
+    container_name: nerra-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/nerra_dev_password}
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      # Browser UI: http://localhost:7474 | Bolt protocol: bolt://localhost:7687
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - nerra_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p nerra_dev_password 'RETURN 1;' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   nerra_pgdata:
+  nerra_neo4j_data:

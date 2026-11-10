@@ -38,5 +38,11 @@ class Settings(BaseSettings):
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dim: int = 384
 
+    # --- Graph Database (Neo4j in Docker) ---
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "nerra_dev_password"
+    neo4j_enabled: bool = True
+
 
 settings = Settings()

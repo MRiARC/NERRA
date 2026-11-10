@@ -156,8 +156,12 @@ class Relationship(Base):
 
     # family | friend | enemy | romantic | professional | mentor | unknown
     type: Mapped[str] = mapped_column(default="unknown")
+    # positive | neutral | hostile | complex
+    sentiment: Mapped[str] = mapped_column(default="neutral")
     description: Mapped[str | None] = None
-    chapter: Mapped[int | None] = None  # where this relationship was established
+    evidence_quote: Mapped[str | None] = None
+    chapter: Mapped[int | None] = None  # where this relationship state started
+    until_chapter: Mapped[int | None] = None  # populated if superseded by evolution
 
 
 class Location(Base):
