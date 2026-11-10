@@ -84,7 +84,7 @@ def scan_chapter_signals(chapter_text: str, use_llm: bool | None = None) -> dict
                         "Scan this chapter text and extract ALL retrieval signals so our graph ContextBuilder "
                         "doesn't miss lowercase roles/epithets (e.g. 'the innkeeper', 'his young deputy'), "
                         "dialogue speakers, coreference hints ('she -> Sarah'), locations, objects, and time shifts.\n\n"
-                        + text[:20000]
+                        + text[:120000]
                     ),
                 }
             ],

@@ -105,6 +105,20 @@ def build_story_context_packet(
         parts.append("\nSemantically Related Prior Passages:\n" + "\n".join(similar_passages))
 
     prompt_text = "\n".join(parts)
+    from app.config import settings
+
+    max_chars = int(getattr(settings, "max_context_chars", 24000) or 24000)
+    if len(prompt_text) > max_chars:
+        # Preserve critical roster/custom/threads/corrections prefix; trim long semantic passages tail cleanly
+        core_parts = [p for p in parts if not p.startswith("\nSemantically Related Prior Passages:")]
+        core_text = "\n".join(core_parts)
+        remaining = max(0, max_chars - len(core_text) - 64)
+        if similar_passages and remaining > 200:
+            passages_block = "\nSemantically Related Prior Passages:\n" + "\n".join(similar_passages)
+            prompt_text = core_text + "\n" + passages_block[:remaining]
+        else:
+            prompt_text = core_text[:max_chars]
+
     return {
         "prompt_text": prompt_text,
         "signals": sig,

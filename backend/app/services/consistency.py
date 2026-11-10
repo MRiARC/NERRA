@@ -79,6 +79,17 @@ _MULTI_VALUE_ATTRIBUTES = {
     "ally",
     "behavior",
     "action",
+    "action_performed",
+    "has_feature",
+    "feature",
+    "appearance_note",
+    "observation",
+    "trait",
+    "role",
+    "activity",
+    "detail",
+    "characteristic",
+    "attribute",
 }
 
 
@@ -690,22 +701,14 @@ def run_consistency_pass(db, project_id) -> int:
 
     reasons_by_idx: dict[int, dict] = {}
     if to_persist:
-        from concurrent.futures import ThreadPoolExecutor
-
-        def _reason_for(idx_draft: tuple[int, IssueDraft]) -> tuple[int, dict]:
-            idx, d = idx_draft
-            should_llm = llm_enabled and d.type in _CONFLICT_TYPES
-            return idx, contradiction_reasoner.analyze_issue_intent(
-                project_id=project_id,
-                issue_type=d.type,
-                description=d.description,
-                evidence=d.evidence,
-                use_llm=should_llm,
-            )
-
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            for idx, res in pool.map(_reason_for, enumerate(to_persist)):
-                reasons_by_idx[idx] = res
+        batch_reasons = contradiction_reasoner.analyze_issues_batch_intent(
+            project_id=project_id,
+            drafts=to_persist,
+            conflict_types=_CONFLICT_TYPES,
+            use_llm=llm_enabled,
+        )
+        for idx, res in enumerate(batch_reasons):
+            reasons_by_idx[idx] = res
 
     created = 0
     for idx, draft in enumerate(to_persist):

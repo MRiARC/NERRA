@@ -100,7 +100,7 @@ CANDIDATE CLAIMS:
 {claims_str}
 
 CHAPTER TEXT:
-{chapter_text[:12000]}"""
+{chapter_text[:120000]}"""
 
         client = get_anthropic_client()
         response = client.messages.create(
@@ -166,6 +166,21 @@ def gate_and_commit_extraction(
     blocked_tokens = _NON_ENTITY_TOKENS | extra_ignored
 
     existing_chars = db.query(Character).filter(Character.project_id == pid).all()
+    existing_pending_sigs: set[tuple[str, str]] = set()
+    if manuscript_id is not None:
+        import json as _json
+
+        for prev in (
+            db.query(ValidationCandidate)
+            .filter(
+                ValidationCandidate.project_id == pid,
+                ValidationCandidate.manuscript_id == manuscript_id,
+                ValidationCandidate.chapter == chapter_number,
+                ValidationCandidate.status == "pending",
+            )
+            .all()
+        ):
+            existing_pending_sigs.add((prev.candidate_type, _json.dumps(prev.payload or {}, sort_keys=True)))
     existing_exact = {c.name.strip().lower() for c in existing_chars}
     existing_aliases = {a.strip().lower() for c in existing_chars for a in (c.aliases or [])}
     existing_surnames = {
@@ -211,19 +226,25 @@ def gate_and_commit_extraction(
         if route == "auto_accepted":
             accepted_chars.append(ch)
         else:
-            row = ValidationCandidate(
-                project_id=pid,
-                manuscript_id=manuscript_id,
-                chapter=chapter_number,
-                candidate_type="character",
-                payload=ch.model_dump(),
-                confidence=conf,
-                route=route,
-                ambiguity_reason=reason,
-                status="pending",
-            )
-            db.add(row)
-            staged_rows.append(row)
+            import json as _json
+
+            payload_dict = ch.model_dump()
+            sig = ("character", _json.dumps(payload_dict, sort_keys=True))
+            if sig not in existing_pending_sigs:
+                existing_pending_sigs.add(sig)
+                row = ValidationCandidate(
+                    project_id=pid,
+                    manuscript_id=manuscript_id,
+                    chapter=chapter_number,
+                    candidate_type="character",
+                    payload=payload_dict,
+                    confidence=conf,
+                    route=route,
+                    ambiguity_reason=reason,
+                    status="pending",
+                )
+                db.add(row)
+                staged_rows.append(row)
 
     accepted_claims = []
     for cl in payload.claims:
@@ -254,20 +275,26 @@ def gate_and_commit_extraction(
         if route == "auto_accepted":
             accepted_claims.append(cl)
         else:
-            row = ValidationCandidate(
-                project_id=pid,
-                manuscript_id=manuscript_id,
-                chapter=chapter_number,
-                candidate_type="claim",
-                payload=cl.model_dump(),
-                confidence=conf,
-                route=route,
-                ambiguity_reason=reason,
-                evidence_quote=cl.evidence_quote,
-                status="pending",
-            )
-            db.add(row)
-            staged_rows.append(row)
+            import json as _json
+
+            payload_dict = cl.model_dump()
+            sig = ("claim", _json.dumps(payload_dict, sort_keys=True))
+            if sig not in existing_pending_sigs:
+                existing_pending_sigs.add(sig)
+                row = ValidationCandidate(
+                    project_id=pid,
+                    manuscript_id=manuscript_id,
+                    chapter=chapter_number,
+                    candidate_type="claim",
+                    payload=payload_dict,
+                    confidence=conf,
+                    route=route,
+                    ambiguity_reason=reason,
+                    evidence_quote=cl.evidence_quote,
+                    status="pending",
+                )
+                db.add(row)
+                staged_rows.append(row)
 
     approved_payload = ExtractionPayload(
         characters=accepted_chars,

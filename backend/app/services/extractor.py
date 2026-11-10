@@ -203,17 +203,54 @@ def get_roster(db, project_id) -> str:
 
 
 def get_anthropic_client():
-    """Shared Anthropic client with a helpful error when the key is missing."""
+    """Shared Anthropic client with 300s timeout and transient 429/5xx/timeout backoff."""
+    import random
+    import time
+
     import anthropic
 
     if not settings.anthropic_api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    kwargs = {"api_key": settings.anthropic_api_key, "timeout": 60.0}
+    timeout_val = float(getattr(settings, "llm_timeout_seconds", 300.0) or 300.0)
+    kwargs = {"api_key": settings.anthropic_api_key, "timeout": timeout_val}
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
-    return anthropic.Anthropic(**kwargs)
+    raw_client = anthropic.Anthropic(**kwargs)
+
+    class _ResilientMessages:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def create(self, **call_kwargs):
+            delay = 2.0
+            for attempt in range(4):
+                try:
+                    return self._inner.create(**call_kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    status = getattr(exc, "status_code", None)
+                    msg = str(exc).lower()
+                    is_transient = (
+                        isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError, anthropic.InternalServerError))
+                        or (isinstance(status, int) and (status == 429 or status >= 500))
+                        or "quota exhausted" in msg
+                        or "timed out" in msg
+                    )
+                    if not is_transient or attempt == 3:
+                        raise
+                    time.sleep(delay + random.uniform(0.2, 1.2))
+                    delay *= 2.0
+
+    class _ResilientClient:
+        def __init__(self, inner):
+            self._inner = inner
+            self.messages = _ResilientMessages(inner.messages)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    return _ResilientClient(raw_client)
 
 
 # ---------------------------------------------------------------------------
@@ -319,15 +356,16 @@ def extract_chapter_multipass(
         (
             "save_entities",
             EntitiesPassPayload,
-            "Extract EVERY character (resolving pronouns/epithets and recording aliases), relationships "
-            "(with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
+            "Extract EVERY character (resolving pronouns/epithets to proper names and recording ONLY true character aliases/titles, NEVER bare pronouns like 'he', 'she', 'her', 'his', 'they'), "
+            "relationships (with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
         ),
         (
             "save_timeline_custody",
             TimelineCustodyPassPayload,
-            "Extract EVERY chronological/narrative scene beat (participants, location, temporal_anchor, "
+            "Extract SIGNIFICANT narrative scene beats, plot reveals, state transitions, and confrontations "
+            "(group closely connected paragraph actions into ~8-20 key events per chapter rather than micro-movements; include participants, location, temporal_anchor, "
             "is_flashback/is_flashforward), knowledge acquisition ('witnessed'|'told'|'deduced'|'overheard' with source_character), "
-            "and object custody transfer/use.",
+            "and object custody transfers.",
         ),
         (
             "save_claims_rules",
@@ -410,10 +448,25 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     existing_characters = db.query(Character).filter(Character.project_id == project_id).all()
     char_map: dict[str, Character] = {}
 
+    _PRONOUN_ALIASES = {
+        "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs",
+        "it", "its", "i", "me", "my", "we", "us", "our", "you", "your",
+    }
+
+    def _clean_aliases(raw_aliases: list[str], canonical_name: str) -> list[str]:
+        canon_low = canonical_name.strip().lower()
+        return sorted({
+            a.strip()
+            for a in (raw_aliases or [])
+            if a and a.strip() and a.strip().lower() not in _PRONOUN_ALIASES and a.strip().lower() != canon_low
+        })
+
     def _index_char(ch: Character):
         char_map[ch.name.strip().lower()] = ch
         for a in (ch.aliases or []):
-            char_map[a.strip().lower()] = ch
+            low = a.strip().lower()
+            if low and low not in _PRONOUN_ALIASES:
+                char_map[low] = ch
 
     for ch in existing_characters:
         _index_char(ch)
@@ -421,11 +474,12 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     for c in payload.characters:
         name_clean = c.name.strip()
         lookup_key = name_clean.lower()
+        cleaned_input_aliases = _clean_aliases(c.aliases, name_clean)
         matched = char_map.get(lookup_key)
         if not matched:
-            for alias in c.aliases:
-                if alias.strip().lower() in char_map:
-                    matched = char_map[alias.strip().lower()]
+            for alias in cleaned_input_aliases:
+                if alias.lower() in char_map:
+                    matched = char_map[alias.lower()]
                     break
 
         if matched:
@@ -433,8 +487,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 matched.description = c.description
             if c.status and c.status != "unknown":
                 matched.status = c.status
-            new_aliases = set(matched.aliases or []) | set(c.aliases)
-            matched.aliases = sorted(list(new_aliases))
+            matched.aliases = _clean_aliases(list(matched.aliases or []) + cleaned_input_aliases, matched.name)
             matched.last_chapter = max(matched.last_chapter or chapter_number, chapter_number)
             matched.first_chapter = min(matched.first_chapter or chapter_number, chapter_number)
             _index_char(matched)
@@ -442,7 +495,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             new_char = Character(
                 project_id=project_id,
                 name=name_clean,
-                aliases=c.aliases,
+                aliases=cleaned_input_aliases,
                 description=c.description,
                 status=c.status,
                 first_chapter=chapter_number,

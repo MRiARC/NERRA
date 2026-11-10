@@ -169,7 +169,7 @@ def extract_and_update_plot_threads_llm(
         "- Introduce NEW threads when a setup, unanswered question, prophecy, secret object, or goal opens.\n"
         "- Update EXISTING open threads to `resolved` (with `payoff_chapter`), `abandoned`, or `red_herring` when this chapter resolves or subverts them.\n\n"
         f"EXISTING PLOT THREADS:\n{prior_summary}\n\n"
-        f"CHAPTER {chapter_number} TEXT:\n{chapter_text[:12000]}"
+        f"CHAPTER {chapter_number} TEXT:\n{chapter_text[:120000]}"
     )
 
     try:
