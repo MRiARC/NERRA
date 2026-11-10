@@ -68,7 +68,11 @@ def _group_claims(claims: list) -> dict[tuple[str, str], list]:
 _MULTI_VALUE_ATTRIBUTES = {
     "knows_about",
     "possession",
+    "possesses",
     "owns",
+    "has",
+    "carries",
+    "holds",
     "skill",
     "ability",
     "language",
