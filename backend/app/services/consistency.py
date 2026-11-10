@@ -1,26 +1,4 @@
-"""The consistency engine — Task 05 (the five detect functions are yours).
-
-This is NERRA's killer feature, and the beautiful part: it's PURE PYTHON.
-No LLM here — the extraction (Task 03) already produced structured data;
-these functions just cross-reference it deterministically. That makes the
-rules fast, free, and perfectly unit-testable.
-
-The rules (mvp_blueprint.md §5.5):
-
-  1. Contradiction      same subject + attribute, different values, e.g.
-                        "Sarah eye_color green" (ch.1) vs "blue" (ch.3)
-  2. Knowledge violation  a claim says "X knows_about Y" at chapter M, but
-                        X only LEARNED Y at chapter N > M
-  3. Dangling object    an object mentioned in exactly one chapter —
-                        possibly an unresolved plot thread
-  4. Continuity note    the same fact stated identically across several
-                        chapters — informational: shows the author which
-                        facts the story keeps reasserting (never a defect)
-
-Inputs are lists of model rows (see models.py): Claim, KnowledgeUpdate,
-StoryObject. Output is a list of IssueDraft records for run_consistency_pass
-to persist as Issue rows.
-"""
+"""Deterministic story consistency checks (contradictions, knowledge violations, timeline & custody paradoxes, world rules)."""
 
 from dataclasses import dataclass, field
 

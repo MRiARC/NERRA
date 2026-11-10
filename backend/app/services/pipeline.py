@@ -1,18 +1,4 @@
-"""The import pipeline — Task 04 (run_import_pipeline is yours).
-
-Orchestration: text -> chapters -> extraction -> persistence -> embeddings
--> consistency pass -> status updates. This is where the whole system clicks
-together, which is why it comes after Tasks 02 and 03.
-
-Already built for you (study, don't rewrite):
-- run_import_pipeline_guarded  — the background-task safety net
-- status helpers               — _set_status
-- the content-hash cache       — _find_cached_analysis / _save_analysis
-
-Guarantee you must preserve: the pipeline NEVER crashes silently. Any
-exception bubbles up to the guard, which marks the manuscript 'failed' with
-the error message — that's the behavior the status endpoint shows.
-"""
+"""Manuscript import & chapter re-analysis orchestration pipeline."""
 
 import hashlib
 import json
@@ -118,44 +104,12 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
 
 
 # ---------------------------------------------------------------------------
-# YOUR TWO FUNCTIONS (Task 04)
+# Pipeline orchestration entrypoints
 # ---------------------------------------------------------------------------
 
 
 def run_import_pipeline(manuscript_id, db: Session) -> None:
-    """Analyze a manuscript end to end. Recommended order:
-
-    1. Load the manuscript; set status='processing', commit.
-    2. chapters = splitter.split_chapters(manuscript.raw_text)     (Task 02)
-       Set chapters_total = len(chapters), chapters_done = 0, commit —
-       the status endpoint should show progress ASAP.
-    3. For each chapter:
-         a. content_hash = _content_hash(chapter.content)
-         b. cached = _find_cached_analysis(...); if cached: reuse — skip the
-            LLM call, but STILL persist the cached payload (a re-import of a
-            changed manuscript must not lose chapters that didn't change).
-         c. roster = extractor.get_roster(db, manuscript.project_id)
-            payload = extractor.extract_chapter(...)                (Task 03)
-            payload = extractor.validate_payload(payload, chapter.content)
-         d. extractor.persist_extraction(db, manuscript.project_id,
-                                         chapter.number, payload)
-         e. _save_analysis(...) — the cache for next time
-         f. _embed_and_store_chunk(...)
-         g. chapters_done += 1; db.commit()  <- commit per chapter so the
-            status endpoint shows live progress
-    4. consistency.run_consistency_pass(db, manuscript.project_id)  (Task 05)
-    5. _set_status(db, manuscript, 'ready')
-
-    Args:
-        manuscript_id: uuid of the Manuscript row.
-        db: a fresh session (the guard owns its lifecycle).
-
-    Implementation note: import whole modules, not individual functions —
-        from app.services import consistency, extractor, splitter
-    then call `extractor.extract_chapter(...)`, rather than
-    `from app.services.extractor import extract_chapter`. The tests (and the
-    lead's code review) rely on this style.
-    """
+    """Analyze a manuscript end to end: split chapters, extract & validate, embed, compute timeline, check consistency, sync Neo4j, and snapshot version."""
     from app.services import consistency, exporter, extractor, graph, splitter, timeline
     from app.services.extractor import ExtractionPayload
 

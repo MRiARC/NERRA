@@ -1,21 +1,4 @@
-"""Chapter extraction with Claude — Task 03 (mostly yours to implement).
-
-This is where NERRA's core value happens: one chapter of raw prose goes in,
-one structured `ExtractionPayload` comes out — characters, relationships,
-locations, objects, events, factual claims, and knowledge updates.
-
-The data contracts (Pydantic models) and the prompt are ALREADY DEFINED
-below — study them first. Your job is the three functions at the bottom:
-extract_chapter, validate_payload, persist_extraction.
-
-Design rules encoded here (from mvp_blueprint.md §5):
-
-- ONE Claude call per chapter, using the cheap/fast model — cost control.
-- LLM output is UNTRUSTED: schema-validated, then evidence-checked (a claim
-  whose quote doesn't appear in the chapter is dropped — the hallucination
-  guard) before anything touches the database.
-- Every persisted row keeps its chapter number as provenance.
-"""
+"""Structured chapter extraction using Anthropic tool-use with strict verbatim quote validation."""
 
 import re
 

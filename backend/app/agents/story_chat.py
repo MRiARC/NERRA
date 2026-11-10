@@ -1,21 +1,4 @@
-"""Story chat agent — Task 06 (the two node functions are yours).
-
-The ONLY place in NERRA that uses LangGraph, and deliberately so: this is a
-genuine agent workflow (retrieve -> answer, with room to grow a grading/
-retrieval loop), while extraction is a straight pipeline that doesn't need
-an agent framework (see techstack.md, "LangGraph — use it, not for
-everything").
-
-The graph structure below is ALREADY WIRED:
-
-    START -> retrieve -> answer -> END
-
-You implement what the two nodes DO. The graph itself — state, nodes, edges
-— compiles and runs as soon as your node bodies are filled in.
-
-How state flows: each node receives the state dict and returns a dict of the
-keys it wants to ADD/UPDATE. LangGraph merges them into the next state.
-"""
+"""Graph RAG Story Chat agent built on LangGraph (`START -> retrieve -> answer -> END`)."""
 
 import logging
 import re
@@ -69,7 +52,7 @@ def grade_contexts(question: str, contexts: list[dict]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# YOUR TWO NODES (Task 06)
+# Graph RAG nodes
 # ---------------------------------------------------------------------------
 
 

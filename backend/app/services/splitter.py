@@ -1,12 +1,4 @@
-"""Chapter splitter — Task 02 (yours to implement).
-
-A manuscript arrives as one big string. This module cuts it into chapters,
-which become the unit of analysis for everything downstream (extraction,
-embeddings, citations).
-
-Pure Python — no database, no LLM. That makes it the perfect second task:
-small, self-contained, and fully verifiable with pytest.
-"""
+"""Chapter splitter — cuts a raw manuscript into chapter segments with character offsets."""
 
 from dataclasses import dataclass, field
 

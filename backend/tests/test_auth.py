@@ -1,11 +1,4 @@
-"""Auth tests — these PASS out of the box.
-
-Auth is the worked example: if these tests fail, something in the shared
-spine is broken (tell your team lead). Read them to see how test files are
-structured; your task tests follow the same shape.
-"""
-
-from tests.utils import expect_status
+"""Auth route integration tests."""
 
 
 def test_health(client):
@@ -52,15 +45,8 @@ def test_register_login_me_flow(client):
     assert resp.status_code == 401
 
 
-def test_stub_endpoints_are_helpful(client, auth_headers):
-    """Playground contract: an endpoint is either IMPLEMENTED (2xx/4xx for
-    normal reasons) or a helpful stub (501 pointing at its task doc) — never
-    an unhandled crash. Stays green before AND after Task 01."""
+def test_projects_endpoint_requires_auth_and_returns_200(client, auth_headers):
+    """Protected /projects endpoint rejects anonymous calls and succeeds with JWT."""
+    assert client.get("/projects").status_code == 401
     resp = client.get("/projects", headers=auth_headers)
-    if resp.status_code == 501:
-        assert "docs/tasks" in resp.json()["detail"]
-    else:
-        assert resp.status_code == 200, (
-            f"GET /projects should be 200 (implemented) or 501 (helpful stub), "
-            f"got {resp.status_code}: {resp.text[:200]}"
-        )
+    assert resp.status_code == 200, f"GET /projects failed: {resp.status_code}: {resp.text[:200]}"

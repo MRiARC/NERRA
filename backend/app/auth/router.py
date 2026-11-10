@@ -1,12 +1,4 @@
-"""Auth routes: POST /auth/register, POST /auth/login, GET /auth/me.
-
-Reading guide (this is the worked example for the whole playground):
-
-- Each function is small: validate -> query -> act -> respond.
-- `Depends(get_db)` gives a request-scoped database session.
-- Status codes: 201 created, 409 conflict (email taken), 401 bad login.
-- We return schemas (UserOut / TokenOut), never ORM objects raw.
-"""
+"""Auth routes: POST /auth/register, POST /auth/login, GET /auth/me."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm

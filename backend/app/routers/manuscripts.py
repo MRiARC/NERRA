@@ -1,16 +1,4 @@
-"""Manuscript import and pipeline status — built for you (the spine).
-
-The import endpoint works end to end even while the AI pipeline is still a
-stub: it saves the manuscript and schedules the background pipeline. The
-pipeline stub immediately records a failure pointing at Task 04, which you
-can watch live via GET /manuscripts/{id}/status.
-
-Things worth studying here (they're new compared to the auth example):
-- Multipart form endpoints (file upload + optional pasted text).
-- FastAPI BackgroundTasks: work scheduled to run AFTER the response is sent.
-- The guarded wrapper pattern: the background job can never crash silently —
-  any exception is recorded on the manuscript row as status='failed'.
-"""
+"""Manuscript import, chapter re-analysis, and pipeline status routes."""
 
 import uuid
 
@@ -19,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
 from app.database import get_db
-from app.errors import not_implemented
 from app.models import Manuscript, User
 from app.schemas import ImportOut, StatusOut
 from app.services.pipeline import run_import_pipeline_guarded
@@ -126,11 +113,7 @@ def reanalyze_manuscript(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> StatusOut:
-    """Re-run analysis for one chapter (or the whole manuscript).
-
-    Part of Task 04 — it should clear the chapter's cached extraction and
-    start the pipeline again.
-    """
+    """Clear cached chapter extractions and re-run analysis for one chapter or the full manuscript."""
     manuscript = db.get(Manuscript, manuscript_id)
     if manuscript is None or manuscript.project_id != project.id:
         raise HTTPException(status_code=404, detail="Manuscript not found")

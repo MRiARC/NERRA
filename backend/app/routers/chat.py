@@ -1,13 +1,8 @@
-"""Story chat — a thin HTTP wrapper around the LangGraph agent (Task 06).
-
-The router's only jobs: validate ownership, call the agent, translate the
-agent's structured result into a response. All intelligence lives in
-app/agents/story_chat.py.
-"""
+"""Story chat router wrapping the LangGraph Graph RAG agent."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.agents.story_chat import run_story_chat
@@ -27,14 +22,6 @@ def chat(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ChatOut:
-    """Ask a question about the story: 'What color are Sarah's eyes?'
-    'Where was the diary at the end of chapter 3?'
-
-    Answers always include chapter citations. The agent (Task 06) is
-    retrieval-grounded: it may only use passages and facts from this project.
-    """
-    try:
-        result = run_story_chat(project_id=project.id, question=payload.question)
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=501, detail=str(exc))
+    """Answer a question about the story strictly grounded in passages, facts, and graph memory."""
+    result = run_story_chat(project_id=project.id, question=payload.question)
     return ChatOut(**result)

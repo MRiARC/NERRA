@@ -1,13 +1,7 @@
-"""Projects CRUD — YOUR first feature (Task 01).
+"""Project CRUD routes.
 
-Read app/auth/router.py first: this file follows the exact same pattern, but
-the bodies are yours to write. Every endpoint is already declared — path,
-validation, auth dependency, and response schema are done. You fill in the
-function bodies, roughly 3–6 lines each.
-
-Ownership rule (applies to every endpoint below): users only ever see and
-touch their OWN projects. `Depends(get_owned_project)` handles that for the
-/{project_id} routes — it returns the Project or raises 404.
+Ownership rule: users only ever see and touch their own projects via
+`Depends(get_owned_project)`, which returns the Project or raises 404.
 """
 
 import uuid
@@ -17,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
 from app.database import get_db
-from app.errors import not_implemented
 from app.models import Project, User
 from app.schemas import ProjectCreate, ProjectOut, ProjectUpdate
 
