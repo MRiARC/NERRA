@@ -156,10 +156,43 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
     `from app.services.extractor import extract_chapter`. The tests (and the
     lead's code review) rely on this style.
     """
-    # ========== YOUR CODE HERE (Task 04) ==========
-    raise NotImplementedError(
-        "Task 04 — implement run_import_pipeline. See docs/tasks/04-pipeline.md"
-    )
+    from app.services import consistency, extractor, splitter
+    from app.services.extractor import ExtractionPayload
+
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None:
+        return
+
+    _set_status(db, manuscript, "processing")
+
+    chapters = splitter.split_chapters(manuscript.raw_text)
+    manuscript.chapters_total = len(chapters)
+    manuscript.chapters_done = 0
+    db.commit()
+
+    for chapter in chapters:
+        content_hash = _content_hash(chapter.content)
+        cached = _find_cached_analysis(db, manuscript.id, chapter.number, content_hash)
+        if cached:
+            if isinstance(cached.result, dict):
+                payload = ExtractionPayload.model_validate(cached.result)
+            elif isinstance(cached.result, str):
+                payload = ExtractionPayload.model_validate(json.loads(cached.result))
+            else:
+                payload = cached.result
+        else:
+            roster = extractor.get_roster(db, manuscript.project_id)
+            payload = extractor.extract_chapter(chapter.number, chapter.content, roster)
+            payload = extractor.validate_payload(payload, chapter.content)
+            _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
+
+        extractor.persist_extraction(db, manuscript.project_id, chapter.number, payload)
+        _embed_and_store_chunk(db, manuscript, chapter.number, chapter.content)
+        manuscript.chapters_done += 1
+        db.commit()
+
+    consistency.run_consistency_pass(db, manuscript.project_id)
+    _set_status(db, manuscript, "ready")
 
 
 def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) -> None:
@@ -169,7 +202,33 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     ChapterAnalysis cache row, then run steps 3b–3f of run_import_pipeline
     for just that chapter, then re-run the consistency pass.
     """
-    # ========== YOUR CODE HERE (Task 04) ==========
-    raise NotImplementedError(
-        "Task 04 — implement reanalyze_chapter. See docs/tasks/04-pipeline.md"
-    )
+    from app.models import Chunk
+    from app.services import consistency, extractor, splitter
+
+    chapters = splitter.split_chapters(manuscript.raw_text)
+    target = next((c for c in chapters if c.number == chapter_number), None)
+    if not target:
+        raise ValueError(f"Chapter {chapter_number} not found in manuscript")
+
+    # Delete chapter's ChapterAnalysis cache row(s)
+    db.query(ChapterAnalysis).filter(
+        ChapterAnalysis.manuscript_id == manuscript.id,
+        ChapterAnalysis.chapter_number == chapter_number,
+    ).delete()
+
+    # Delete existing chunk if any
+    db.query(Chunk).filter(
+        Chunk.manuscript_id == manuscript.id,
+        Chunk.chapter_number == chapter_number,
+    ).delete()
+    db.commit()
+
+    content_hash = _content_hash(target.content)
+    roster = extractor.get_roster(db, manuscript.project_id)
+    payload = extractor.extract_chapter(target.number, target.content, roster)
+    payload = extractor.validate_payload(payload, target.content)
+    extractor.persist_extraction(db, manuscript.project_id, target.number, payload)
+    _save_analysis(db, manuscript.id, target.number, content_hash, payload.model_dump())
+    _embed_and_store_chunk(db, manuscript, target.number, target.content)
+
+    consistency.run_consistency_pass(db, manuscript.project_id)

@@ -30,15 +30,16 @@ def create_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
-    """Create a new story project owned by the current user.
-
-    Steps:
-      1. Build a Project(owner_id=user.id, title=..., genre=...).
-      2. db.add(project) -> db.commit() -> db.refresh(project).
-      3. Return it (FastAPI serializes it with ProjectOut).
-    """
-    # ========== YOUR CODE HERE (Task 01) ==========
-    raise not_implemented("01-projects-crud")
+    """Create a new story project owned by the current user."""
+    project = Project(
+        owner_id=user.id,
+        title=payload.title,
+        genre=payload.genre,
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 @router.get("", response_model=list[ProjectOut])
@@ -46,23 +47,21 @@ def list_projects(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Project]:
-    """List all projects owned by the current user (newest first).
-
-    Hint: db.query(Project).filter(Project.owner_id == user.id)
-          .order_by(Project.created_at.desc()).all()
-    """
-    # ========== YOUR CODE HERE (Task 01) ==========
-    raise not_implemented("01-projects-crud")
+    """List all projects owned by the current user (newest first)."""
+    return (
+        db.query(Project)
+        .filter(Project.owner_id == user.id)
+        .order_by(Project.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(
     project: Project = Depends(get_owned_project),
 ) -> Project:
-    """Fetch one project. Ownership is already checked by the dependency —
-    if you got here, the project exists and is yours."""
-    # ========== YOUR CODE HERE (Task 01) ==========
-    raise not_implemented("01-projects-crud")
+    """Fetch one project. Ownership is already checked by the dependency."""
+    return project
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
@@ -71,10 +70,13 @@ def update_project(
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> Project:
-    """Update title and/or genre. Only set the fields the client sent —
-    `payload.model_dump(exclude_unset=True)` gives you exactly those."""
-    # ========== YOUR CODE HERE (Task 01) ==========
-    raise not_implemented("01-projects-crud")
+    """Update title and/or genre."""
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(project, field, value)
+    db.commit()
+    db.refresh(project)
+    return project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -82,8 +84,7 @@ def delete_project(
     project: Project = Depends(get_owned_project),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Delete the project (and, thanks to ON DELETE CASCADE, all its
-    manuscripts, characters, issues... — check the ForeignKeys in models.py).
-    Return an empty body with status 204."""
-    # ========== YOUR CODE HERE (Task 01) ==========
-    raise not_implemented("01-projects-crud")
+    """Delete the project and all cascaded children."""
+    db.delete(project)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

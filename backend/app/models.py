@@ -138,6 +138,7 @@ class Character(Base):
     aliases: Mapped[list[str]] = mapped_column(JSONB, default=list)
     description: Mapped[str | None] = None
     status: Mapped[str] = mapped_column(default="unknown")  # alive | dead | unknown
+    physical_traits: Mapped[dict] = mapped_column(JSONB, default=dict)
 
     first_chapter: Mapped[int | None] = None
     last_chapter: Mapped[int | None] = None
@@ -222,6 +223,9 @@ class Claim(Base):
     value: Mapped[str]
     chapter: Mapped[int]
     evidence_quote: Mapped[str]  # exact sentence from the manuscript
+    source_paragraph_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    confidence: Mapped[float] = mapped_column(default=1.0)
+    validation_state: Mapped[str] = mapped_column(default="AUTO_ACCEPTED")  # AUTO_ACCEPTED | PENDING_REVIEW | DISMISSED
     # active | superseded | intentional
     status: Mapped[str] = mapped_column(default="active")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -263,6 +267,7 @@ class Issue(Base):
     status: Mapped[str] = mapped_column(default="open", index=True)
     description: Mapped[str]
     evidence: Mapped[list[dict]] = mapped_column(JSONB, default=list)  # [{chapter, quote}, ...]
+    confidence: Mapped[float] = mapped_column(default=0.9)
     claim_a_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     claim_b_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

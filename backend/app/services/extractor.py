@@ -143,7 +143,10 @@ def get_anthropic_client():
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    kwargs = {"api_key": settings.anthropic_api_key}
+    if getattr(settings, "anthropic_base_url", None):
+        kwargs["base_url"] = settings.anthropic_base_url
+    return anthropic.Anthropic(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -170,65 +173,218 @@ def quote_in_text(quote: str, chapter_text: str) -> bool:
 
 
 def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> ExtractionPayload:
-    """Call Claude and return a validated ExtractionPayload.
-
-    The exact tool-use pattern (the SDK's structured-output idiom):
-
-        client = get_anthropic_client()
-        response = client.messages.create(
-            model=settings.extraction_model,
-            max_tokens=4096,
-            tools=[{
-                "name": "save_extraction",
-                "description": "Save the extracted story data",
-                "input_schema": ExtractionPayload.model_json_schema(),
-            }],
-            tool_choice={"type": "tool", "name": "save_extraction"},
-            messages=[{"role": "user", "content": EXTRACTION_PROMPT_TEMPLATE.format(...)}],
-        )
-        raw = next(block.input for block in response.content if block.type == "tool_use")
-        return ExtractionPayload.model_validate(raw)
-
-    Fill in the prompt via EXTRACTION_PROMPT_TEMPLATE.format(
-        chapter_number=..., roster=..., chapter_text=...).
-    """
-    # ========== YOUR CODE HERE (Task 03) ==========
-    raise NotImplementedError(
-        "Task 03 — implement extract_chapter. See docs/tasks/03-extraction.md"
+    """Call Claude and return a validated ExtractionPayload."""
+    client = get_anthropic_client()
+    prompt = EXTRACTION_PROMPT_TEMPLATE.format(
+        chapter_number=chapter_number,
+        roster=roster,
+        chapter_text=chapter_text,
     )
+    response = client.messages.create(
+        model=settings.extraction_model,
+        max_tokens=4096,
+        tools=[{
+            "name": "save_extraction",
+            "description": "Save the extracted story data",
+            "input_schema": ExtractionPayload.model_json_schema(),
+        }],
+        tool_choice={"type": "tool", "name": "save_extraction"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = next(block.input for block in response.content if getattr(block, "type", None) == "tool_use")
+    return ExtractionPayload.model_validate(raw)
 
 
 def validate_payload(payload: ExtractionPayload, chapter_text: str) -> ExtractionPayload:
-    """The hallucination guard — filter the payload against the real text.
+    """The hallucination guard — filter the payload against the real text."""
+    valid_claims = [
+        c for c in payload.claims
+        if c.subject and c.subject.strip()
+        and c.value and c.value.strip()
+        and quote_in_text(c.evidence_quote, chapter_text)
+    ]
+    valid_characters = [
+        c for c in payload.characters
+        if c.name and c.name.strip()
+    ]
+    valid_locations = [
+        loc for loc in payload.locations
+        if loc.name and loc.name.strip()
+    ]
+    valid_objects = [
+        obj for obj in payload.objects
+        if obj.name and obj.name.strip()
+    ]
 
-    Requirements:
-      1. Keep only claims whose evidence_quote passes quote_in_text().
-      2. Drop claims with an empty subject/value after .strip().
-      3. Drop empty-named characters/locations/objects.
-      4. Return a new ExtractionPayload with the survivors (do not mutate).
-    """
-    # ========== YOUR CODE HERE (Task 03) ==========
-    raise NotImplementedError(
-        "Task 03 — implement validate_payload. See docs/tasks/03-extraction.md"
+    return ExtractionPayload(
+        characters=valid_characters,
+        relationships=payload.relationships,
+        locations=valid_locations,
+        objects=valid_objects,
+        events=payload.events,
+        claims=valid_claims,
+        knowledge=payload.knowledge,
     )
 
 
 def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionPayload) -> None:
-    """Write the extraction into the story tables (models.py is your map).
-
-    Steps (docs/tasks/03-extraction.md walks through each):
-      1. Characters: match existing rows by case-insensitive name OR alias;
-         if new -> insert. Update description if it was empty, refresh
-         status, widen first_chapter/last_chapter.
-      2. Relationships: resolve character_a/b to Character ids by name
-         (skip the row if either name is unknown). Skip exact duplicates
-         (same pair + type).
-      3. Locations / objects: dedupe by case-insensitive name. For objects,
-         append chapter_number to mention_chapters (no duplicates).
-      4. Events, claims, knowledge_updates: plain inserts with chapter_number.
-      5. Commit ONCE at the end.
-    """
-    # ========== YOUR CODE HERE (Task 03) ==========
-    raise NotImplementedError(
-        "Task 03 — implement persist_extraction. See docs/tasks/03-extraction.md"
+    """Write the extraction into the story tables."""
+    from app.models import (
+        Character,
+        Claim,
+        KnowledgeUpdate,
+        Location,
+        Relationship,
+        StoryEvent,
+        StoryObject,
     )
+
+    # 1. Characters: dedupe / update or insert
+    existing_characters = db.query(Character).filter(Character.project_id == project_id).all()
+    char_map: dict[str, Character] = {}
+
+    def _index_char(ch: Character):
+        char_map[ch.name.strip().lower()] = ch
+        for a in (ch.aliases or []):
+            char_map[a.strip().lower()] = ch
+
+    for ch in existing_characters:
+        _index_char(ch)
+
+    for c in payload.characters:
+        name_clean = c.name.strip()
+        lookup_key = name_clean.lower()
+        matched = char_map.get(lookup_key)
+        if not matched:
+            for alias in c.aliases:
+                if alias.strip().lower() in char_map:
+                    matched = char_map[alias.strip().lower()]
+                    break
+
+        if matched:
+            if not matched.description and c.description:
+                matched.description = c.description
+            if c.status and c.status != "unknown":
+                matched.status = c.status
+            new_aliases = set(matched.aliases or []) | set(c.aliases)
+            matched.aliases = sorted(list(new_aliases))
+            matched.last_chapter = max(matched.last_chapter or chapter_number, chapter_number)
+            matched.first_chapter = min(matched.first_chapter or chapter_number, chapter_number)
+            _index_char(matched)
+        else:
+            new_char = Character(
+                project_id=project_id,
+                name=name_clean,
+                aliases=c.aliases,
+                description=c.description,
+                status=c.status,
+                first_chapter=chapter_number,
+                last_chapter=chapter_number,
+            )
+            db.add(new_char)
+            db.flush()
+            _index_char(new_char)
+
+    # 2. Relationships
+    existing_rels = db.query(Relationship).filter(Relationship.project_id == project_id).all()
+    rel_set = {
+        (r.character_a_id, r.character_b_id, r.type)
+        for r in existing_rels
+    }
+
+    for r in payload.relationships:
+        ca = char_map.get(r.character_a.strip().lower())
+        cb = char_map.get(r.character_b.strip().lower())
+        if not ca and not cb:
+            continue
+        ca_id = ca.id if ca else cb.id
+        cb_id = cb.id if cb else ca.id
+        rel_key = (ca_id, cb_id, r.type)
+        if rel_key in rel_set:
+            continue
+        rel_set.add(rel_key)
+        new_rel = Relationship(
+            project_id=project_id,
+            character_a_id=ca_id,
+            character_b_id=cb_id,
+            type=r.type,
+            description=r.description,
+            chapter=chapter_number,
+        )
+        db.add(new_rel)
+
+    # 3. Locations
+    existing_locs = db.query(Location).filter(Location.project_id == project_id).all()
+    loc_names = {l.name.strip().lower(): l for l in existing_locs}
+    for loc in payload.locations:
+        loc_key = loc.name.strip().lower()
+        if loc_key not in loc_names:
+            new_loc = Location(
+                project_id=project_id,
+                name=loc.name.strip(),
+                description=loc.description,
+                first_chapter=chapter_number,
+            )
+            db.add(new_loc)
+            db.flush()
+            loc_names[loc_key] = new_loc
+
+    # 4. Objects
+    existing_objs = db.query(StoryObject).filter(StoryObject.project_id == project_id).all()
+    obj_map = {o.name.strip().lower(): o for o in existing_objs}
+    for obj in payload.objects:
+        obj_key = obj.name.strip().lower()
+        if obj_key in obj_map:
+            matched_obj = obj_map[obj_key]
+            mentions = set(matched_obj.mention_chapters or [])
+            mentions.add(chapter_number)
+            matched_obj.mention_chapters = sorted(list(mentions))
+        else:
+            new_obj = StoryObject(
+                project_id=project_id,
+                name=obj.name.strip(),
+                description=obj.description,
+                first_chapter=chapter_number,
+                mention_chapters=[chapter_number],
+            )
+            db.add(new_obj)
+            db.flush()
+            obj_map[obj_key] = new_obj
+
+    # 5. Events
+    for ev in payload.events:
+        new_ev = StoryEvent(
+            project_id=project_id,
+            chapter_number=chapter_number,
+            summary=ev.summary,
+            participants=ev.participants,
+            location=ev.location,
+        )
+        db.add(new_ev)
+
+    # 6. Claims
+    for cl in payload.claims:
+        new_claim = Claim(
+            project_id=project_id,
+            subject=cl.subject.strip(),
+            attribute=cl.attribute.strip(),
+            value=cl.value.strip(),
+            chapter=chapter_number,
+            evidence_quote=cl.evidence_quote.strip(),
+            confidence=1.0,
+            validation_state="AUTO_ACCEPTED",
+        )
+        db.add(new_claim)
+
+    # 7. Knowledge Updates
+    for kn in payload.knowledge:
+        new_kn = KnowledgeUpdate(
+            project_id=project_id,
+            character=kn.character.strip(),
+            fact=kn.fact.strip(),
+            chapter=chapter_number,
+            how_learned=kn.how_learned,
+        )
+        db.add(new_kn)
+
+    db.commit()

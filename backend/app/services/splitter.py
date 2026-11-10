@@ -30,26 +30,84 @@ class Chapter:
     end: int = field(default=0)
 
 
+import re
+from dataclasses import dataclass, field
+
+# Known heading shapes, e.g.:
+#   "Chapter 12", "CHAPTER 3 - The Storm", "Chapter XII", "12. The Letter"
+HEADING_PATTERNS = [
+    r"^chapter\s+\d+",
+    r"^chapter\s+[IVXLCDM]+",
+    r"^\d{1,3}\.\s+\S",
+]
+
+_COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in HEADING_PATTERNS]
+
+
+@dataclass
+class Chapter:
+    number: int
+    title: str
+    content: str
+    start: int = field(default=0)
+    end: int = field(default=0)
+
+
+def _is_heading(line: str) -> bool:
+    line_clean = line.strip()
+    return any(p.match(line_clean) for p in _COMPILED_PATTERNS)
+
+
 def split_chapters(text: str) -> list[Chapter]:
-    """Split raw manuscript text into a list of chapters.
+    """Split raw manuscript text into a list of chapters."""
+    if not text or not text.strip():
+        return [Chapter(number=1, title="Full text", content=text, start=0, end=len(text))]
 
-    Requirements (docs/tasks/02-import-and-chapters.md has the full walkthrough):
+    lines_with_offsets = []
+    curr = 0
+    for line in text.splitlines(keepends=True):
+        line_start = curr
+        line_end = curr + len(line)
+        lines_with_offsets.append((line_start, line_end, line))
+        curr = line_end
 
-    1. Scan the text line by line; a line matching ANY pattern in
-       HEADING_PATTERNS (case-insensitive) starts a new chapter.
-    2. Chapter title = the heading line itself (stripped).
-    3. Chapter content = everything from that heading to the next heading.
-       Text BEFORE the first heading is never lost — it is prepended to
-       chapter 1's content.
-    4. Chapters are numbered 1..N in order of appearance.
-    5. Fallback: if NO heading matches anywhere, return the whole text as a
-       single Chapter(number=1, title="Full text", ...). Never return [].
-    6. Record start/end character offsets of each chapter's content.
+    headings = []
+    for line_start, line_end, line_str in lines_with_offsets:
+        if _is_heading(line_str):
+            headings.append((line_start, line_end, line_str.strip()))
 
-    Returns:
-        list[Chapter], in manuscript order.
-    """
-    # ========== YOUR CODE HERE (Task 02) ==========
-    raise NotImplementedError(
-        "Task 02 — implement split_chapters. See docs/tasks/02-import-and-chapters.md"
-    )
+    if not headings:
+        return [Chapter(number=1, title="Full text", content=text, start=0, end=len(text))]
+
+    chapters: list[Chapter] = []
+
+    for i, (h_start, h_end, h_title) in enumerate(headings):
+        next_h_start = headings[i + 1][0] if i + 1 < len(headings) else len(text)
+
+        if i == 0:
+            preamble = text[:h_start]
+            body = text[h_end:next_h_start]
+            if preamble.strip():
+                content = (preamble.rstrip("\n") + "\n\n" + body.lstrip("\n")).strip()
+                ch_start = 0
+            else:
+                content = body.strip()
+                ch_start = h_end
+            ch_end = next_h_start
+        else:
+            body = text[h_end:next_h_start]
+            content = body.strip()
+            ch_start = h_end
+            ch_end = next_h_start
+
+        chapters.append(
+            Chapter(
+                number=i + 1,
+                title=h_title,
+                content=content,
+                start=ch_start,
+                end=ch_end,
+            )
+        )
+
+    return chapters

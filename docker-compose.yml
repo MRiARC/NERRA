@@ -12,8 +12,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nerra_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-nerra}
     ports:
-      # Host port 5433 — 5432 often collides with a locally installed Postgres.
-      - "5433:5432"
+      # Host port 5434 — avoids collision with other local postgres instances.
+      - "5434:5432"
     volumes:
       - nerra_pgdata:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro

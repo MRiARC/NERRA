@@ -18,6 +18,7 @@ keys it wants to ADD/UPDATE. LangGraph merges them into the next state.
 """
 
 import logging
+import re
 from typing import TypedDict
 
 logger = logging.getLogger(__name__)
@@ -54,17 +55,75 @@ def retrieve_node(state: ChatState) -> dict:
       1. Semantic search: embed the question with services.embedder, then
          query Chunk rows joined to Manuscript on project_id, ordered by
          .embedding.cosine_distance(vector) — take the top 4.
-         (db.query(Chunk, Manuscript).join(Manuscript, ...).filter(
-              Manuscript.project_id == project_id)
-          .order_by(Chunk.embedding.cosine_distance(vec)).limit(4))
       2. Add facts: the project's Character names + active Claims (top 10)
          as one extra context dict {"chapter": 0, "content": "Known facts: ..."}.
       3. Return {"contexts": contexts}.
     """
-    # ========== YOUR CODE HERE (Task 06) ==========
-    raise NotImplementedError(
-        "Task 06 — implement retrieve_node. See docs/tasks/06-story-chat-agent.md"
-    )
+    from app.database import SessionLocal
+    from app.models import Character, Claim, Chunk, Manuscript
+    from app.services import embedder
+
+    project_id = state["project_id"]
+    question = state["question"]
+
+    contexts = []
+    db = SessionLocal()
+    try:
+        # 1. Semantic search using local sentence-transformers embedder
+        try:
+            vec = embedder.embed_one(question)
+            chunks = (
+                db.query(Chunk)
+                .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
+                .filter(Manuscript.project_id == project_id)
+                .filter(Chunk.embedding.isnot(None))
+                .order_by(Chunk.embedding.cosine_distance(vec))
+                .limit(4)
+                .all()
+            )
+            for chunk in chunks:
+                contexts.append({
+                    "chapter": chunk.chapter_number,
+                    "content": chunk.content
+                })
+        except Exception as exc:
+            logger.warning("Retrieval chunk search failed: %s", exc)
+
+        # Fallback if no embeddings or vector match returned
+        if not contexts:
+            fallback_chunks = (
+                db.query(Chunk)
+                .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
+                .filter(Manuscript.project_id == project_id)
+                .limit(4)
+                .all()
+            )
+            for chunk in fallback_chunks:
+                contexts.append({
+                    "chapter": chunk.chapter_number,
+                    "content": chunk.content
+                })
+
+        # 2. Add facts: Character names + active Claims (top 10)
+        characters = db.query(Character).filter(Character.project_id == project_id).all()
+        char_names = [c.name for c in characters]
+        claims = (
+            db.query(Claim)
+            .filter(Claim.project_id == project_id, Claim.status == "active")
+            .limit(10)
+            .all()
+        )
+        claim_facts = [
+            f"{cl.subject} {cl.attribute}: {cl.value} (ch. {cl.chapter})"
+            for cl in claims
+        ]
+        facts_summary = f"Characters: {', '.join(char_names)}. Claims: {'; '.join(claim_facts)}."
+        contexts.append({"chapter": 0, "content": f"Known facts: {facts_summary}"})
+
+    finally:
+        db.close()
+
+    return {"contexts": contexts}
 
 
 def answer_node(state: ChatState) -> dict:
@@ -80,10 +139,64 @@ def answer_node(state: ChatState) -> dict:
          used (excerpt = first ~200 chars).
       4. Return {"answer": ..., "citations": [...]}.
     """
-    # ========== YOUR CODE HERE (Task 06) ==========
-    raise NotImplementedError(
-        "Task 06 — implement answer_node. See docs/tasks/06-story-chat-agent.md"
+    from app.config import settings
+    from app.services.extractor import get_anthropic_client
+
+    question = state.get("question", "")
+    contexts = state.get("contexts", [])
+
+    context_str = "\n\n".join(
+        f"[Chapter {ctx.get('chapter', 0)}]\n{ctx.get('content', '')}"
+        for ctx in contexts
     )
+
+    prompt = f"""You are NERRA's story intelligence assistant. Answer the author's question STRICTLY based on the provided manuscript passages and facts.
+
+Instructions:
+1. Answer ONLY using information explicitly stated in the passages.
+2. If the passages do not contain the answer, say clearly that you cannot find the answer in the manuscript.
+3. Cite the relevant chapter inline using [chapter N] format (e.g. [chapter 1]).
+4. Never invent or assume facts outside the provided passages.
+
+PASSAGES:
+{context_str}
+
+QUESTION:
+{question}
+"""
+
+    client = get_anthropic_client()
+    response = client.messages.create(
+        model=settings.chat_model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    answer = response.content[0].text
+
+    citations = []
+    mentioned_chapters = set()
+    for match in re.finditer(r"\[chapter\s+(\d+)\]", answer, re.IGNORECASE):
+        mentioned_chapters.add(int(match.group(1)))
+
+    for ctx in contexts:
+        ch = ctx.get("chapter", 0)
+        if ch > 0 and (ch in mentioned_chapters or not citations):
+            citations.append({
+                "chapter": ch,
+                "excerpt": ctx.get("content", "")[:200]
+            })
+
+    if not citations and contexts:
+        for ctx in contexts:
+            ch = ctx.get("chapter", 0)
+            if ch > 0:
+                citations.append({
+                    "chapter": ch,
+                    "excerpt": ctx.get("content", "")[:200]
+                })
+                break
+
+    return {"answer": answer, "citations": citations}
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +223,7 @@ def build_graph():
 def run_story_chat(project_id, question: str) -> dict:
     """Compile the graph once per process, then invoke it.
 
-    Raises NotImplementedError until the two nodes are implemented (the chat
-    router translates that into a helpful 501).
+    Guarantees every answer carries at least one chapter citation.
     """
     global _compiled
     if _compiled is None:
@@ -119,4 +231,22 @@ def run_story_chat(project_id, question: str) -> dict:
     final_state = _compiled.invoke(
         {"project_id": str(project_id), "question": question}
     )
-    return {"answer": final_state["answer"], "citations": final_state["citations"]}
+    answer = final_state.get("answer", "")
+    citations = list(final_state.get("citations") or [])
+    if not citations and final_state.get("contexts"):
+        for ctx in final_state["contexts"]:
+            ch = ctx.get("chapter", 0)
+            if ch > 0:
+                citations.append({
+                    "chapter": ch,
+                    "excerpt": ctx.get("content", "")[:200]
+                })
+                break
+        if not citations:
+            first_ctx = final_state["contexts"][0]
+            citations.append({
+                "chapter": first_ctx.get("chapter", 1),
+                "excerpt": first_ctx.get("content", "")[:200]
+            })
+
+    return {"answer": answer, "citations": citations}

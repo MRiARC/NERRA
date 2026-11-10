@@ -131,5 +131,27 @@ def reanalyze_manuscript(
     Part of Task 04 — it should clear the chapter's cached extraction and
     start the pipeline again.
     """
-    # ========== YOUR CODE HERE (Task 04) ==========
-    raise not_implemented("04-pipeline")
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None or manuscript.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    if chapter_number is not None:
+        from app.services.pipeline import reanalyze_chapter
+
+        try:
+            reanalyze_chapter(db, manuscript, chapter_number)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+    else:
+        from app.services.pipeline import run_import_pipeline
+
+        run_import_pipeline(manuscript.id, db)
+
+    db.refresh(manuscript)
+    return StatusOut(
+        manuscript_id=manuscript.id,
+        status=manuscript.status,
+        chapters_done=manuscript.chapters_done,
+        chapters_total=manuscript.chapters_total,
+        error_note=manuscript.error_note,
+    )

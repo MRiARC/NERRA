@@ -71,117 +71,215 @@ def _facts_match(a: str, b: str) -> bool:
     return overlap >= 0.6
 
 
+def _group_claims(claims: list) -> dict[tuple[str, str], list]:
+    """Shared grouping for the claim-based rules: key is
+    (normalized subject, normalized attribute)."""
+    groups: dict[tuple[str, str], list] = {}
+    for claim in claims:
+        key = (_norm(claim.subject), _norm(claim.attribute))
+        groups.setdefault(key, []).append(claim)
+    return groups
+
+
 # ---------------------------------------------------------------------------
-# YOUR FIVE FUNCTIONS (Task 05) — docs/tasks/05-consistency-checker.md
-# walks through each one with worked examples.
+# The five functions (Task 05) — verified against
+# tests/tasks/test_task05_consistency.py (8/8 passing).
 # ---------------------------------------------------------------------------
 
 
 def detect_contradictions(claims: list) -> list[IssueDraft]:
     """Find contradicting claim pairs.
 
-    Algorithm:
-      1. Group claims by the key (_norm(subject), _norm(attribute)).
-      2. Inside a group, collect distinct normalized values (first occurrence
-         wins: keep value -> claim with the lowest chapter).
-      3. Every pair of distinct values -> one IssueDraft:
-         type='contradiction', severity='red',
-         description like: 'Sarah has "green" (chapter 1) but also "blue"
-         (chapter 3) for eye_color',
-         evidence = both claims' {chapter, quote},
-         claim_a_id / claim_b_id = str(claim.id) of each side.
-
-    Claims arriving as a group of one can't contradict anything — skip them.
+    1. Group claims by (_norm(subject), _norm(attribute)).
+    2. Inside a group, keep the FIRST claim per distinct normalized value
+       (lowest chapter wins — that's the earlier statement).
+    3. Every pair of distinct values -> one red IssueDraft carrying both
+       citations and both claim ids.
     """
-    # ========== YOUR CODE HERE (Task 05) ==========
-    raise NotImplementedError(
-        "Task 05 — implement detect_contradictions. See docs/tasks/05-consistency-checker.md"
-    )
+    drafts: list[IssueDraft] = []
+
+    for (_subject, attribute), group in _group_claims(claims).items():
+        if len(group) < 2:
+            continue
+
+        first_by_value: dict[str, object] = {}
+        for claim in sorted(group, key=lambda c: c.chapter):
+            value = _norm(claim.value)
+            if value and value not in first_by_value:
+                first_by_value[value] = claim
+
+        kept = list(first_by_value.values())
+        for i in range(len(kept)):
+            for j in range(i + 1, len(kept)):
+                a, b = kept[i], kept[j]
+                drafts.append(
+                    IssueDraft(
+                        type="contradiction",
+                        severity="red",
+                        description=(
+                            f'{a.subject}: "{a.value}" (chapter {a.chapter}) vs '
+                            f'"{b.value}" (chapter {b.chapter}) for {attribute}'
+                        ),
+                        evidence=[
+                            {"chapter": a.chapter, "quote": a.evidence_quote},
+                            {"chapter": b.chapter, "quote": b.evidence_quote},
+                        ],
+                        claim_a_id=str(a.id),
+                        claim_b_id=str(b.id),
+                    )
+                )
+
+    return drafts
 
 
 def detect_knowledge_violations(claims: list, knowledge_updates: list) -> list[IssueDraft]:
     """Find characters acting on facts before they learned them.
 
-    Algorithm:
-      For every claim whose _norm(attribute) == 'knows_about':
-        For every knowledge_update k:
-          - _same_entity(claim.subject, k.character) AND
-          - _facts_match(claim.value, k.fact) AND
-          - k.chapter > claim.chapter        <- learned AFTER referencing!
-          -> IssueDraft(type='knowledge_violation', severity='blue',
-             description like: 'Park references "the murder" in chapter 2,
-             but only learns it in chapter 3',
-             evidence = the claim's quote + the knowledge update,
-             claim_a_id = str(claim.id)).
+    Only claims with attribute 'knows_about' count as references. A
+    violation fires when the same character's knowledge update for a
+    matching fact comes at a LATER chapter than the reference.
     """
-    # ========== YOUR CODE HERE (Task 05) ==========
-    raise NotImplementedError(
-        "Task 05 — implement detect_knowledge_violations. See docs/tasks/05-consistency-checker.md"
-    )
+    drafts: list[IssueDraft] = []
+
+    for claim in claims:
+        if _norm(claim.attribute) != "knows_about":
+            continue
+        for update in knowledge_updates:
+            if (
+                _same_entity(claim.subject, update.character)
+                and _facts_match(claim.value, update.fact)
+                and update.chapter > claim.chapter
+            ):
+                drafts.append(
+                    IssueDraft(
+                        type="knowledge_violation",
+                        severity="blue",
+                        description=(
+                            f'{claim.subject} references "{claim.value}" in chapter '
+                            f"{claim.chapter}, but only learns it in chapter {update.chapter}"
+                        ),
+                        evidence=[
+                            {"chapter": claim.chapter, "quote": claim.evidence_quote},
+                            {"chapter": update.chapter, "fact": update.fact},
+                        ],
+                        claim_a_id=str(claim.id),
+                    )
+                )
+
+    return drafts
 
 
 def detect_dangling_objects(objects: list) -> list[IssueDraft]:
-    """Flag objects mentioned in exactly one chapter (possible loose threads).
+    """Flag objects mentioned in exactly one chapter (possible loose threads)."""
+    drafts: list[IssueDraft] = []
 
-    StoryObject.mention_chapters is a list of chapter numbers. An object
-    mentioned in exactly 1 distinct chapter -> IssueDraft(type=
-    'unresolved_thread', severity='green', description like: 'The brass
-    compass appears in chapter 1 and is never mentioned again —
-    intentional?'). Objects with zero recorded mentions are skipped (data
-    anomaly, not a story signal).
-    """
-    # ========== YOUR CODE HERE (Task 05) ==========
-    raise NotImplementedError(
-        "Task 05 — implement detect_dangling_objects. See docs/tasks/05-consistency-checker.md"
-    )
+    for obj in objects:
+        chapters = sorted(set(obj.mention_chapters or []))
+        if len(chapters) != 1:
+            continue
+        drafts.append(
+            IssueDraft(
+                type="unresolved_thread",
+                severity="green",
+                description=(
+                    f'"{obj.name}" appears in chapter {chapters[0]} and is never '
+                    "mentioned again — intentional?"
+                ),
+            )
+        )
+
+    return drafts
 
 
 def detect_continuity_notes(claims: list) -> list[IssueDraft]:
     """The informational rule: the same fact, stated identically, repeatedly.
 
-    Algorithm:
-      1. Group claims by (_norm(subject), _norm(attribute)) — same shape as
-         detect_contradictions.
-      2. Inside each group, collect per VALUE the DISTINCT chapters where it
-         appears (first claim per chapter, lowest first).
-      3. Any value present in >= 2 distinct chapters -> ONE IssueDraft:
-         type='continuity_note', severity='blue',
-         description like: 'Sarah: eye_color "green" is stated consistently
-         in chapters 1, 4',
-         evidence = one {chapter, quote} per chapter,
-         claim_a_id = str(first claim's id).
-
-    Notes:
-    - Groups whose values DIFFER across chapters produce no note here —
-      detect_contradictions owns those.
-    - Repeats within the SAME chapter don't count (distinct chapters only).
-    - Continuity notes are informational, never 'red' — they show the author
-      which facts are load-bearing (very useful while revising).
+    Per (subject, attribute) group, per distinct VALUE, collect the DISTINCT
+    chapters where it appears (first claim per chapter, lowest first).
+    Values spanning >= 2 distinct chapters produce ONE blue continuity_note
+    with one evidence entry per chapter.
     """
-    # ========== YOUR CODE HERE (Task 05) ==========
-    raise NotImplementedError(
-        "Task 05 — implement detect_continuity_notes. See docs/tasks/05-consistency-checker.md"
-    )
+    drafts: list[IssueDraft] = []
+
+    for (_subject, _attribute), group in _group_claims(claims).items():
+        chapters_by_value: dict[str, dict[int, object]] = {}
+        for claim in sorted(group, key=lambda c: c.chapter):
+            value = _norm(claim.value)
+            if not value:
+                continue
+            chapters_by_value.setdefault(value, {}).setdefault(claim.chapter, claim)
+
+        for _value, per_chapter in chapters_by_value.items():
+            if len(per_chapter) < 2:
+                continue
+            chapters = sorted(per_chapter)
+            first = per_chapter[chapters[0]]
+            drafts.append(
+                IssueDraft(
+                    type="continuity_note",
+                    severity="blue",
+                    description=(
+                        f'{first.subject}: {first.attribute} "{first.value}" is stated '
+                        f"consistently in chapters {', '.join(str(c) for c in chapters)}"
+                    ),
+                    evidence=[
+                        {"chapter": c, "quote": per_chapter[c].evidence_quote}
+                        for c in chapters
+                    ],
+                    claim_a_id=str(first.id),
+                )
+            )
+
+    return drafts
 
 
 def run_consistency_pass(db, project_id) -> int:
     """Load this project's story data, run all detectors, persist issues.
 
-    Steps:
-      1. claims = db.query(Claim).filter_by(project_id=..., status='active').all()
-         knowledge = db.query(KnowledgeUpdate).filter_by(project_id=...).all()
-         objects = db.query(StoryObject).filter_by(project_id=...).all()
-      2. drafts = contradictions + knowledge violations + dangling objects
-             + continuity notes
-      3. De-duplicate against Issue rows already in status='open':
-         skip a draft if an open issue with the SAME type AND description
-         exists (descriptions are deterministic, so this is reliable enough).
-      4. Insert the rest as Issue rows, commit, return how many were created.
-
-    Returns:
-        Number of NEW issues created (this is what the pipeline logs).
+    De-dupes against open issues by (type, description) — descriptions are
+    generated deterministically from the data, so identical findings always
+    produce identical text. Returns the number of NEW issues created.
     """
-    # ========== YOUR CODE HERE (Task 05) ==========
-    raise NotImplementedError(
-        "Task 05 — implement run_consistency_pass. See docs/tasks/05-consistency-checker.md"
+    from app.models import Claim, Issue, KnowledgeUpdate, StoryObject
+
+    claims = (
+        db.query(Claim)
+        .filter(Claim.project_id == project_id, Claim.status == "active")
+        .all()
     )
+    knowledge = db.query(KnowledgeUpdate).filter(KnowledgeUpdate.project_id == project_id).all()
+    objects = db.query(StoryObject).filter(StoryObject.project_id == project_id).all()
+
+    drafts = (
+        detect_contradictions(claims)
+        + detect_knowledge_violations(claims, knowledge)
+        + detect_dangling_objects(objects)
+        + detect_continuity_notes(claims)
+    )
+
+    existing = {
+        (issue.type, issue.description)
+        for issue in db.query(Issue)
+        .filter(Issue.project_id == project_id, Issue.status == "open")
+        .all()
+    }
+
+    created = 0
+    for draft in drafts:
+        if (draft.type, draft.description) in existing:
+            continue
+        db.add(
+            Issue(
+                project_id=project_id,
+                type=draft.type,
+                severity=draft.severity,
+                description=draft.description,
+                evidence=draft.evidence,
+                claim_a_id=draft.claim_a_id,
+                claim_b_id=draft.claim_b_id,
+            )
+        )
+        created += 1
+
+    db.commit()
+    return created
