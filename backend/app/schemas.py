@@ -370,3 +370,44 @@ class CandidateResolveIn(BaseModel):
     action: Literal["approve", "reject", "merge", "split"]
     target_character_id: uuid.UUID | None = None
     split_name: str | None = None
+
+
+class ClaimPatchIn(BaseModel):
+    value: str | None = None
+    attribute: str | None = None
+    subject: str | None = None
+    status: Literal["active", "superseded"] | None = None
+    reason: str | None = None
+    re_audit: bool = True
+
+
+class CharacterRenameIn(BaseModel):
+    new_name: str
+    re_audit: bool = True
+
+
+class CharacterSplitIn(BaseModel):
+    alias_to_split: str
+    new_character_name: str | None = None
+    re_audit: bool = True
+
+
+class CorrectionRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    rule_type: str
+    target_entity: str
+    instruction_text: str
+    payload: dict
+    active: bool
+    created_at: datetime
+
+
+class FeedbackActionOut(BaseModel):
+    updated_id: uuid.UUID
+    correction_rule: CorrectionRuleOut | None = None
+    re_audit_chapters: list[int] = Field(default_factory=list)
+    issues_created: int = 0
+    impact_notes: list[str] = Field(default_factory=list)

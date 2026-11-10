@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
@@ -27,8 +27,13 @@ from app.schemas import (
     CandidateResolveIn,
     CharacterMergeIn,
     CharacterOut,
+    CharacterRenameIn,
+    CharacterSplitIn,
     ClaimOut,
+    ClaimPatchIn,
+    CorrectionRuleOut,
     EventOut,
+    FeedbackActionOut,
     IssueOut,
     IssuePatchIn,
     IssueStatus,
@@ -44,7 +49,7 @@ from app.schemas import (
     WorldRuleCreate,
     WorldRuleOut,
 )
-from app.services import consistency, exporter, graph, knowledge, timeline, validator
+from app.services import consistency, exporter, feedback, graph, knowledge, timeline, validator
 
 router = APIRouter(tags=["story"])
 
@@ -462,5 +467,105 @@ def resolve_validation_candidate(
             target_character_id=payload.target_character_id,
             split_name=payload.split_name,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.patch("/projects/{project_id}/claims/{claim_id}", response_model=FeedbackActionOut)
+def patch_claim_feedback(
+    project_id: uuid.UUID,
+    claim_id: uuid.UUID,
+    payload: ClaimPatchIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Inline-edit a Claim and record an Author CorrectionRule + downstream re-audit."""
+    try:
+        return feedback.override_claim(
+            db,
+            project.id,
+            claim_id,
+            value=payload.value,
+            attribute=payload.attribute,
+            subject=payload.subject,
+            status=payload.status,
+            reason=payload.reason,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/characters/{character_id}/rename", response_model=FeedbackActionOut)
+def rename_character_feedback(
+    project_id: uuid.UUID,
+    character_id: uuid.UUID,
+    payload: CharacterRenameIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rename a character preserving UUID, record a CorrectionRule, and re-audit downstream."""
+    try:
+        return feedback.rename_character_with_feedback(
+            db,
+            project.id,
+            character_id,
+            payload.new_name,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/characters/{character_id}/split", response_model=FeedbackActionOut)
+def split_character_feedback(
+    project_id: uuid.UUID,
+    character_id: uuid.UUID,
+    payload: CharacterSplitIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Split a conflated alias off a character into its own canonical Character + CorrectionRule."""
+    try:
+        return feedback.split_character_alias(
+            db,
+            project.id,
+            character_id,
+            payload.alias_to_split,
+            new_character_name=payload.new_character_name,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/projects/{project_id}/corrections", response_model=list[CorrectionRuleOut])
+def get_correction_rules(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List active author correction directives for this project."""
+    return feedback.list_corrections(db, project.id)
+
+
+@router.delete(
+    "/projects/{project_id}/corrections/{correction_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_correction_rule(
+    project_id: uuid.UUID,
+    correction_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Deactivate an author correction rule."""
+    try:
+        feedback.deactivate_correction(db, project.id, correction_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

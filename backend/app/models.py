@@ -365,3 +365,23 @@ class Issue(Base):
     claim_a_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     claim_b_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class CorrectionRule(Base):
+    """Author feedback directives (Milestone 3.3).
+
+    Captures claim overrides, character renames, alias merges, and entity splits
+    so ContextBuilder, Extractor, and Validator respect author corrections.
+    """
+
+    __tablename__ = "correction_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+
+    rule_type: Mapped[str] = mapped_column(index=True)  # alias_merge | entity_split | character_rename | fact_override | plot_status
+    target_entity: Mapped[str]
+    instruction_text: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

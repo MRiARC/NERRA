@@ -43,6 +43,7 @@ import {
   ManuscriptVersion,
   ManuscriptSummary,
   ValidationCandidate,
+  CorrectionRule,
 } from "@/lib/api";
 
 function getErrorMessage(err: unknown): string {
@@ -104,6 +105,14 @@ export default function NerraDashboard() {
   const [resolvingCandidateId, setResolvingCandidateId] = useState<string | null>(null);
   const [candidateMergeTargets, setCandidateMergeTargets] = useState<Record<string, string>>({});
   const [candidateSplitNames, setCandidateSplitNames] = useState<Record<string, string>>({});
+
+  // M3.3 Feedback Loop state
+  const [corrections, setCorrections] = useState<CorrectionRule[]>([]);
+  const [isCorrectionsOpen, setIsCorrectionsOpen] = useState(false);
+  const [editingClaimId, setEditingClaimId] = useState<string | null>(null);
+  const [editingClaimValue, setEditingClaimValue] = useState("");
+  const [renamingCharId, setRenamingCharId] = useState<string | null>(null);
+  const [renameCharInput, setRenameCharInput] = useState("");
 
   // Filter state
   const [issueFilter, setIssueFilter] = useState<
@@ -183,13 +192,14 @@ export default function NerraDashboard() {
   async function loadProjectData(projectId: string) {
     setLoading(true);
     try {
-      const [iss, chars, world, clms, rules, cands] = await Promise.all([
+      const [iss, chars, world, clms, rules, cands, corrs] = await Promise.all([
         api.getIssues(projectId),
         api.getCharacters(projectId),
         api.getWorld(projectId),
         api.getClaims(projectId),
         api.getWorldRules(projectId),
         api.getCandidates(projectId, "pending").catch(() => []),
+        api.getCorrections(projectId).catch(() => []),
       ]);
       setIssues(iss);
       setCharacters(chars);
@@ -199,6 +209,7 @@ export default function NerraDashboard() {
       setClaims(clms);
       setWorldRules(rules);
       setCandidates(cands);
+      setCorrections(corrs);
     } catch (err) {
       console.error("Failed to load project details:", err);
     } finally {
@@ -439,6 +450,54 @@ export default function NerraDashboard() {
     }
   }
 
+  async function handleSaveClaimEdit(claimId: string) {
+    if (!selectedProjectId || !editingClaimValue.trim()) return;
+    try {
+      await api.patchClaim(selectedProjectId, claimId, {
+        value: editingClaimValue.trim(),
+        reason: "Inline author override",
+        re_audit: true,
+      });
+      setEditingClaimId(null);
+      setEditingClaimValue("");
+      await loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Claim update failed: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleRenameCharacter(charId: string) {
+    if (!selectedProjectId || !renameCharInput.trim()) return;
+    try {
+      await api.renameCharacter(selectedProjectId, charId, renameCharInput.trim());
+      setRenamingCharId(null);
+      setRenameCharInput("");
+      await loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Character rename failed: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleSplitAlias(charId: string, aliasText: string) {
+    if (!selectedProjectId) return;
+    try {
+      await api.splitCharacterAlias(selectedProjectId, charId, aliasText, aliasText);
+      await loadProjectData(selectedProjectId);
+    } catch (err: unknown) {
+      alert("Alias split failed: " + getErrorMessage(err));
+    }
+  }
+
+  async function handleDeleteCorrection(correctionId: string) {
+    if (!selectedProjectId) return;
+    try {
+      await api.deleteCorrection(selectedProjectId, correctionId);
+      setCorrections((prev) => prev.filter((r) => r.id !== correctionId));
+    } catch (err: unknown) {
+      alert("Failed to remove correction rule: " + getErrorMessage(err));
+    }
+  }
+
   async function handleExportBible() {
     if (!selectedProjectId || exportingBible) return;
     setExportingBible(true);
@@ -550,6 +609,21 @@ export default function NerraDashboard() {
           >
             <Plus className="w-3.5 h-3.5 text-sky-400" />
             <span className="hidden lg:inline">Append Ch</span>
+          </button>
+
+          <button
+            onClick={() => setIsCorrectionsOpen(true)}
+            disabled={!selectedProjectId}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition disabled:opacity-40"
+            title="Inspect author feedback correction rules"
+          >
+            <BookMarked className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="hidden md:inline">Corrections</span>
+            {corrections.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                {corrections.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -969,10 +1043,45 @@ export default function NerraDashboard() {
                         </div>
                       </div>
 
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                        Ch. {char.first_chapter ?? 1}–{char.last_chapter ?? 1}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setRenamingCharId(char.id);
+                            setRenameCharInput(char.name);
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300"
+                          title="Safe UUID-preserving rename"
+                        >
+                          Rename
+                        </button>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                          Ch. {char.first_chapter ?? 1}–{char.last_chapter ?? 1}
+                        </span>
+                      </div>
                     </div>
+
+                    {renamingCharId === char.id && (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          value={renameCharInput}
+                          onChange={(e) => setRenameCharInput(e.target.value)}
+                          className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white flex-1"
+                        />
+                        <button
+                          onClick={() => handleRenameCharacter(char.id)}
+                          className="text-[11px] px-2 py-1 rounded bg-indigo-600 text-white"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setRenamingCharId(null)}
+                          className="text-[11px] px-2 py-1 rounded bg-slate-800 text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
 
                     {char.description && (
                       <p className="text-xs text-slate-300 line-clamp-2">{char.description}</p>
@@ -985,9 +1094,16 @@ export default function NerraDashboard() {
                         {char.aliases.map((al, idx) => (
                           <span
                             key={idx}
-                            className="text-[10px] px-2 py-0.5 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50"
+                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50"
                           >
-                            {al}
+                            <span>{al}</span>
+                            <button
+                              onClick={() => handleSplitAlias(char.id, al)}
+                              className="text-amber-400 hover:text-amber-200 font-semibold"
+                              title={`Split "${al}" into its own character`}
+                            >
+                              Split
+                            </button>
                           </span>
                         ))}
                       </div>
@@ -1041,6 +1157,7 @@ export default function NerraDashboard() {
                       <th className="py-3 px-4 font-semibold">Value</th>
                       <th className="py-3 px-4 font-semibold">Chapter</th>
                       <th className="py-3 px-4 font-semibold">Verbatim Evidence Quote</th>
+                      <th className="py-3 px-4 font-semibold text-right">Feedback</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 text-slate-300">
@@ -1048,10 +1165,46 @@ export default function NerraDashboard() {
                       <tr key={claim.id} className="hover:bg-slate-800/30 transition">
                         <td className="py-2.5 px-4 font-medium text-white">{claim.subject}</td>
                         <td className="py-2.5 px-4 text-indigo-300 font-mono text-[11px]">{claim.attribute}</td>
-                        <td className="py-2.5 px-4 text-slate-200">{claim.value}</td>
+                        <td className="py-2.5 px-4 text-slate-200">
+                          {editingClaimId === claim.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={editingClaimValue}
+                                onChange={(e) => setEditingClaimValue(e.target.value)}
+                                className="bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white"
+                              />
+                              <button
+                                onClick={() => handleSaveClaimEdit(claim.id)}
+                                className="text-[11px] px-2 py-1 rounded bg-emerald-600 text-white"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingClaimId(null)}
+                                className="text-[11px] px-2 py-1 rounded bg-slate-800 text-slate-300"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            claim.value
+                          )}
+                        </td>
                         <td className="py-2.5 px-4 text-slate-400 font-mono">Ch. {claim.chapter}</td>
                         <td className="py-2.5 px-4 text-slate-400 italic font-serif">
                           &ldquo;{claim.evidence_quote || "—"}&rdquo;
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          <button
+                            onClick={() => {
+                              setEditingClaimId(claim.id);
+                              setEditingClaimValue(claim.value);
+                            }}
+                            className="text-[11px] px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-300"
+                          >
+                            Edit
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1813,6 +1966,57 @@ export default function NerraDashboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* M3.3 AUTHOR CORRECTION RULES MODAL */}
+      {isCorrectionsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f141c] border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <BookMarked className="w-4 h-4 text-indigo-400" />
+                Author Correction Rules ({corrections.length} active)
+              </h3>
+              <button
+                onClick={() => setIsCorrectionsOpen(false)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
+            {corrections.length === 0 ? (
+              <p className="text-xs text-slate-400 py-6 text-center">
+                No active author feedback rules yet. Edit a claim or rename/split a character to add one.
+              </p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto space-y-2.5 pr-1">
+                {corrections.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-start justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                          {rule.rule_type}
+                        </span>
+                        <span className="text-xs font-semibold text-white">{rule.target_entity}</span>
+                      </div>
+                      <p className="text-xs text-slate-300">{rule.instruction_text}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCorrection(rule.id)}
+                      className="p-1.5 rounded bg-slate-800 hover:bg-rose-600/30 text-slate-400 hover:text-rose-300"
+                      title="Deactivate correction rule"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>

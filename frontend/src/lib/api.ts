@@ -268,6 +268,25 @@ export interface ValidationCandidate {
   created_at: string;
 }
 
+export interface CorrectionRule {
+  id: string;
+  project_id: string;
+  rule_type: string;
+  target_entity: string;
+  instruction_text: string;
+  payload: Record<string, unknown>;
+  active: boolean;
+  created_at: string;
+}
+
+export interface FeedbackActionResult {
+  updated_id: string;
+  correction_rule: CorrectionRule | null;
+  re_audit_chapters: number[];
+  issues_created: number;
+  impact_notes: string[];
+}
+
 export interface BibleExport {
   project_title: string;
   markdown: string;
@@ -475,4 +494,36 @@ export const api = {
         body: JSON.stringify(body),
       }
     ),
+  patchClaim: (
+    projectId: string,
+    claimId: string,
+    body: { value?: string; attribute?: string; subject?: string; reason?: string; re_audit?: boolean }
+  ) =>
+    apiFetch<FeedbackActionResult>(`/projects/${projectId}/claims/${claimId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  renameCharacter: (projectId: string, characterId: string, newName: string) =>
+    apiFetch<FeedbackActionResult>(`/projects/${projectId}/characters/${characterId}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ new_name: newName, re_audit: true }),
+    }),
+  splitCharacterAlias: (
+    projectId: string,
+    characterId: string,
+    aliasToSplit: string,
+    newCharacterName?: string
+  ) =>
+    apiFetch<FeedbackActionResult>(`/projects/${projectId}/characters/${characterId}/split`, {
+      method: "POST",
+      body: JSON.stringify({
+        alias_to_split: aliasToSplit,
+        new_character_name: newCharacterName || aliasToSplit,
+        re_audit: true,
+      }),
+    }),
+  getCorrections: (projectId: string) =>
+    apiFetch<CorrectionRule[]>(`/projects/${projectId}/corrections`),
+  deleteCorrection: (projectId: string, correctionId: string) =>
+    apiFetch<void>(`/projects/${projectId}/corrections/${correctionId}`, { method: "DELETE" }),
 };
