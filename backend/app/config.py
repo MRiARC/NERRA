@@ -23,10 +23,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@127.0.0.1:5434/nerra"
     test_database_url: str = "postgresql+psycopg://nerra:nerra_dev_password@127.0.0.1:5434/nerra_test"
 
-    # --- Auth ---
+    # --- Auth & Session Recycling ---
     jwt_secret: str = "dev-only-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 14
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"
+    cookie_domain: str | None = None
 
     # --- LLMs (Anthropic Claude or compatible proxy) ---
     anthropic_base_url: str = ""

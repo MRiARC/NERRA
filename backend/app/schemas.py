@@ -35,6 +35,22 @@ class UserOut(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+    session_id: str | None = None
+    expires_in: int | None = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str | None = None
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_active_at: datetime
+    user_agent: str | None = None
+    ip_address: str | None = None
+    is_current: bool = False
 
 
 # ---------------------------------------------------------------------------
