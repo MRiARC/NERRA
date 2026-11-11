@@ -1,7 +1,8 @@
 /**
  * Central API Client for NERRA backend services.
  * Features:
- * - Automatic HttpOnly cookie credentials (`credentials: "include"`)
+ * - Dual-auth: Bearer token + automatic HttpOnly cookie credentials
+ * - Host-matched API resolution (localhost:3000 -> localhost:8001)
  * - 401 interception with rotating refresh token recycling
  * - Type-safe endpoint wrappers
  */
@@ -14,7 +15,37 @@ import type {
   UserSession,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+export function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname || "127.0.0.1";
+    return `http://${host}:8001`;
+  }
+  return "http://127.0.0.1:8001";
+}
+
+let inMemoryToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  inMemoryToken = token;
+  if (typeof window !== "undefined") {
+    if (token) {
+      localStorage.setItem("nerra_access_token", token);
+    } else {
+      localStorage.removeItem("nerra_access_token");
+    }
+  }
+}
+
+export function getAccessToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("nerra_access_token");
+  }
+  return null;
+}
 
 class ApiError extends Error {
   status: number;
@@ -40,10 +71,16 @@ async function fetchWithAuth(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
+  const apiBase = getApiBase();
+  const url = endpoint.startsWith("http") ? endpoint : `${apiBase}${endpoint}`;
   const defaultHeaders: Record<string, string> = {
     Accept: "application/json",
   };
+
+  const token = getAccessToken();
+  if (token) {
+    defaultHeaders["Authorization"] = `Bearer ${token}`;
+  }
 
   if (!(options.body instanceof FormData)) {
     defaultHeaders["Content-Type"] = "application/json";
@@ -70,31 +107,47 @@ async function fetchWithAuth(
     if (!isRefreshing) {
       isRefreshing = true;
       try {
-        const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
+        const refreshRes = await fetch(`${apiBase}/auth/refresh`, {
           method: "POST",
           credentials: "include",
-          headers: { Accept: "application/json" },
+          headers: {
+            Accept: "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
         });
 
         if (refreshRes.ok) {
+          const refreshedData = (await refreshRes.json()) as TokenOut;
+          if (refreshedData.access_token) {
+            setAccessToken(refreshedData.access_token);
+            if (mergedOptions.headers) {
+              (mergedOptions.headers as Record<string, string>)["Authorization"] =
+                `Bearer ${refreshedData.access_token}`;
+            }
+          }
           isRefreshing = false;
           onRefreshed(true);
-          // Retry initial request with updated rotated cookies
           return fetch(url, mergedOptions);
         } else {
+          setAccessToken(null);
           isRefreshing = false;
           onRefreshed(false);
         }
       } catch {
+        setAccessToken(null);
         isRefreshing = false;
         onRefreshed(false);
       }
     } else {
-      // Another request is refreshing; wait for completion
       const retryPromise = new Promise<Response>((resolve, reject) => {
         refreshSubscribers.push(async (success) => {
           if (success) {
             try {
+              const newToken = getAccessToken();
+              if (newToken && mergedOptions.headers) {
+                (mergedOptions.headers as Record<string, string>)["Authorization"] =
+                  `Bearer ${newToken}`;
+              }
               resolve(await fetch(url, mergedOptions));
             } catch (err) {
               reject(err);
@@ -136,7 +189,8 @@ export const api = {
     },
 
     async login(formData: URLSearchParams): Promise<TokenOut> {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/auth/login`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -149,7 +203,11 @@ export const api = {
         const err = await res.json().catch(() => ({ detail: "Login failed" }));
         throw new ApiError(res.status, err.detail || "Invalid credentials");
       }
-      return res.json();
+      const data = (await res.json()) as TokenOut;
+      if (data.access_token) {
+        setAccessToken(data.access_token);
+      }
+      return data;
     },
 
     async me(): Promise<User> {
@@ -157,11 +215,19 @@ export const api = {
     },
 
     async refresh(): Promise<TokenOut> {
-      return request<TokenOut>("/auth/refresh", { method: "POST" });
+      const res = await request<TokenOut>("/auth/refresh", { method: "POST" });
+      if (res.access_token) {
+        setAccessToken(res.access_token);
+      }
+      return res;
     },
 
     async logout(): Promise<{ message: string }> {
-      return request<{ message: string }>("/auth/logout", { method: "POST" });
+      try {
+        return await request<{ message: string }>("/auth/logout", { method: "POST" });
+      } finally {
+        setAccessToken(null);
+      }
     },
 
     async listSessions(): Promise<UserSession[]> {
