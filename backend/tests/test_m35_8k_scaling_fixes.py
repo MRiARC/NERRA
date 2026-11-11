@@ -75,6 +75,26 @@ def test_dynamic_llm_budget_models_and_windowing():
     assert "Paragraph 11" in windows[-1]
 
 
+def test_split_text_windows_survives_oversized_paragraph_without_dropping_tail():
+    """Regression test for PR #35: verify all content survives when a paragraph exceeds max_chars."""
+    # Construct a 3-paragraph text where the middle paragraph is ~3,000 chars, but max_chars=800
+    p1 = "Prologue: The harbor was calm and the bells rang three times."
+    p2 = "Secret lore segment. " + " ".join(f"lore_token_{i}" for i in range(250)) + " The terminal truth revealed."
+    p3 = "Epilogue: Dawn arrived quietly over the obsidian spires."
+    full_text = f"{p1}\n\n{p2}\n\n{p3}"
+
+    windows = llm_budget.split_text_windows(full_text, max_chars=800, overlap_paragraphs=1)
+    assert len(windows) > 1
+
+    combined = " ".join(windows)
+    assert "Prologue: The harbor was calm" in combined
+    assert "The terminal truth revealed." in combined
+    assert "Epilogue: Dawn arrived quietly" in combined
+    # Verify every single token from the oversized paragraph survives
+    for i in range(250):
+        assert f"lore_token_{i}" in combined, f"lore_token_{i} was dropped!"
+
+
 def test_multivalue_has_feature_skip_and_batched_intent_classification(db_session, client, auth_headers, monkeypatch):
     pid = uuid.UUID(client.post("/projects", json={"title": "Batch Intent Test"}, headers=auth_headers).json()["id"])
     monkeypatch.setattr("app.config.settings.anthropic_api_key", "test-key")

@@ -64,11 +64,26 @@ def split_text_windows(text: str, max_chars: int, overlap_paragraphs: int = 2) -
     if max_chars <= 0 or len(clean) <= max_chars:
         return [clean] if clean else []
 
-    paragraphs = [p for p in re.split(r"\n{2,}", clean) if p.strip()]
+    raw_paragraphs = [p for p in re.split(r"\n{2,}", clean) if p.strip()]
+    if not raw_paragraphs:
+        return []
+
+    # If any single paragraph exceeds max_chars, subdivide it into overlapping slices
+    # so no paragraph tail is dropped.
+    paragraphs: list[str] = []
+    step_ratio = 0.85
+    for p in raw_paragraphs:
+        if len(p) <= max_chars:
+            paragraphs.append(p)
+        else:
+            step = max(1, int(max_chars * step_ratio))
+            for i in range(0, len(p), step):
+                chunk = p[i : i + max_chars]
+                if chunk.strip():
+                    paragraphs.append(chunk)
+
     if len(paragraphs) <= 1:
-        # Single giant paragraph: fall back to hard char chunks with 10% overlap
-        step = max(1, int(max_chars * 0.9))
-        return [clean[i : i + max_chars] for i in range(0, len(clean), step)]
+        return paragraphs
 
     windows: list[str] = []
     idx = 0
@@ -80,10 +95,6 @@ def split_text_windows(text: str, max_chars: int, overlap_paragraphs: int = 2) -
             p = paragraphs[idx]
             add_len = len(p) + (2 if buf else 0)
             if buf and buf_len + add_len > max_chars:
-                break
-            if not buf and len(p) > max_chars:
-                buf.append(p[:max_chars])
-                idx += 1
                 break
             buf.append(p)
             buf_len += add_len
