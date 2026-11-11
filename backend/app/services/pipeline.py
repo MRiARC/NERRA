@@ -130,7 +130,12 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
 
     _set_status(db, manuscript, "processing")
 
-    change_report = change_detector.detect_changes(db, manuscript.project_id, manuscript.raw_text)
+    change_report = change_detector.detect_changes(
+        db,
+        manuscript.project_id,
+        manuscript.raw_text,
+        exclude_manuscript_id=manuscript.id,
+    )
     for stale_ch in change_report.get("stale_claim_chapters") or []:
         change_detector.mark_chapter_claims_stale(db, manuscript.project_id, stale_ch)
 

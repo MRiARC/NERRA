@@ -29,6 +29,7 @@ def detect_changes(
     project_id,
     new_text: str,
     existing_manuscript=None,
+    exclude_manuscript_id=None,
 ) -> dict[str, Any]:
     """Compare split chapters & paragraph hashes against prior stored chapters."""
     from app.models import ChapterAnalysis, Chunk, Manuscript
@@ -38,12 +39,15 @@ def detect_changes(
     chapters = splitter.split_chapters(new_text)
 
     if existing_manuscript is None:
-        existing_manuscript = (
-            db.query(Manuscript)
-            .filter(Manuscript.project_id == pid)
-            .order_by(Manuscript.created_at.desc())
-            .first()
-        )
+        q = db.query(Manuscript).filter(Manuscript.project_id == pid)
+        if exclude_manuscript_id is not None:
+            ex_id = (
+                uuid.UUID(str(exclude_manuscript_id))
+                if not isinstance(exclude_manuscript_id, uuid.UUID)
+                else exclude_manuscript_id
+            )
+            q = q.filter(Manuscript.id != ex_id)
+        existing_manuscript = q.order_by(Manuscript.created_at.desc()).first()
 
     if existing_manuscript is None:
         return {

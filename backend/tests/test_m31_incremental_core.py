@@ -54,6 +54,51 @@ def test_change_detector_classifies_append_edit_rewrite_and_rename(db_session, c
     assert cl.subject == "Mira"
 
 
+def test_detect_changes_excludes_in_flight_manuscript_on_reimport(db_session, client, auth_headers):
+    """Regression test for PR #30: ensure in-flight manuscript is excluded when selecting baseline."""
+    pid = uuid.UUID(client.post("/projects", json={"title": "Reimport Baseline Test"}, headers=auth_headers).json()["id"])
+
+    # Draft 1 — already completed
+    ms1 = Manuscript(
+        project_id=pid,
+        title="Draft 1",
+        raw_text="Chapter 1\nSarah arrived at the old station.\n\nChapter 2\nPark met Sarah.",
+        chapters_total=2,
+        chapters_done=2,
+        status="ready",
+    )
+    db_session.add(ms1)
+    db_session.commit()
+    db_session.refresh(ms1)
+    pipeline._embed_and_store_chunk(db_session, ms1, 1, "Sarah arrived at the old station.")
+    pipeline._embed_and_store_chunk(db_session, ms1, 2, "Park met Sarah.")
+
+    # Draft 2 — re-imported, committed in DB before background pipeline runs
+    ms2 = Manuscript(
+        project_id=pid,
+        title="Draft 2 (Rewrote Chapter 1)",
+        raw_text="Chapter 1\nSarah escaped from the burning tower in a sudden thunderstorm.\n\nChapter 2\nPark met Sarah.",
+        chapters_total=2,
+        chapters_done=0,
+        status="pending",
+    )
+    db_session.add(ms2)
+    db_session.commit()
+    db_session.refresh(ms2)
+
+    # Calling detect_changes with exclude_manuscript_id=ms2.id selects ms1 as baseline
+    report = change_detector.detect_changes(
+        db_session,
+        pid,
+        ms2.raw_text,
+        exclude_manuscript_id=ms2.id,
+    )
+    assert report["event_type"] in ("large_rewrite", "paragraph_edited")
+    assert 1 in report["changed_chapters"]
+    assert 1 in report["stale_claim_chapters"]
+    assert 2 in report["unchanged_chapters"]
+
+
 def test_signal_scanner_and_deep_context_builder(db_session, client, auth_headers, monkeypatch):
     pid = uuid.UUID(client.post("/projects", json={"title": "Signal Context Test"}, headers=auth_headers).json()["id"])
     ch1 = Character(project_id=pid, name="Sarah", aliases=["the stranger"], status="active")
