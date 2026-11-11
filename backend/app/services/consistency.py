@@ -90,6 +90,19 @@ _MULTI_VALUE_ATTRIBUTES = {
     "detail",
     "characteristic",
     "attribute",
+    "physical_trait",
+    "physical_feature",
+    "physical_description",
+    "clothing",
+    "attire",
+    "garment",
+    "injury",
+    "wound",
+    "equipment",
+    "item",
+    "accessory",
+    "habit",
+    "mannerism",
 }
 
 
@@ -677,18 +690,56 @@ def run_consistency_pass(db, project_id) -> int:
     else:
         drafts.extend(detect_world_rule_violations(claims, rules))
 
-    existing = {
-        (issue.type, issue.description)
-        for issue in db.query(Issue)
+    existing_issues = (
+        db.query(Issue)
         .filter(Issue.project_id == project_id, Issue.status == "open")
         .all()
+    )
+    existing_desc = {(issue.type, issue.description) for issue in existing_issues}
+    existing_claims: set[tuple[str, str]] = set()
+    for issue in existing_issues:
+        if issue.claim_a_id and issue.claim_b_id:
+            existing_claims.add((str(issue.claim_a_id), str(issue.claim_b_id)))
+            existing_claims.add((str(issue.claim_b_id), str(issue.claim_a_id)))
+
+    existing_evidence = {
+        (
+            issue.type,
+            frozenset(
+                (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                for e in (issue.evidence or [])
+                if isinstance(e, dict)
+            ),
+        )
+        for issue in existing_issues
+        if issue.evidence
     }
 
     to_persist: list[IssueDraft] = []
     for draft in drafts:
-        if (draft.type, draft.description) in existing:
+        if (draft.type, draft.description) in existing_desc:
             continue
-        existing.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            pair = (str(draft.claim_a_id), str(draft.claim_b_id))
+            if pair in existing_claims:
+                continue
+        if draft.evidence:
+            ev_sig = (
+                draft.type,
+                frozenset(
+                    (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                    for e in draft.evidence
+                    if isinstance(e, dict)
+                ),
+            )
+            if len(ev_sig[1]) >= 2 and ev_sig in existing_evidence:
+                continue
+            existing_evidence.add(ev_sig)
+
+        existing_desc.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            existing_claims.add((str(draft.claim_a_id), str(draft.claim_b_id)))
+            existing_claims.add((str(draft.claim_b_id), str(draft.claim_a_id)))
         to_persist.append(draft)
 
     _CONFLICT_TYPES = {

@@ -232,3 +232,51 @@ def test_idempotent_chunk_upsert_candidate_dedupe_and_pronoun_alias_strip(db_ses
     dyn_budget = llm_budget.compute_context_char_budget(settings.extraction_model, len("Sarah entered chapter 2."), settings.extraction_max_tokens)
     assert len(packet["prompt_text"]) <= dyn_budget
     assert "Always preserve green eyes for Sarah." in packet["prompt_text"]
+
+
+def test_multivalued_physical_traits_and_idempotent_event_claim_persistence(db_session, client, auth_headers):
+    """Verify physical_trait multi-value whitelist and idempotent persist_extraction."""
+    pid = uuid.UUID(client.post("/projects", json={"title": "Idempotent Persist Test"}, headers=auth_headers).json()["id"])
+
+    # 1. Multi-valued physical traits must not trigger false positive contradictions
+    claims = [
+        Claim(project_id=pid, subject="Malakor", attribute="physical_trait", value="obsidian breastplate", chapter=3, evidence_quote="obsidian breastplate"),
+        Claim(project_id=pid, subject="Malakor", attribute="physical_trait", value="sharp steel-gray eyes", chapter=3, evidence_quote="sharp steel-gray eyes"),
+        Claim(project_id=pid, subject="Malakor", attribute="physical_trait", value="scarred hands", chapter=4, evidence_quote="scarred hands"),
+    ]
+    drafts = consistency.detect_contradictions(claims)
+    assert len(drafts) == 0, f"Expected 0 contradictions for distinct physical traits, got {len(drafts)}"
+
+    # 2. Flashback pattern matching covers word numerals like 'twelve' and 'seven'
+    from app.services import timeline
+    anchor1, fb1, _ = timeline.detect_temporal_markers("Twelve years before the breach, Corin was a scholar.")
+    assert fb1 is True
+    assert "Twelve years before the breach" in anchor1
+
+    anchor2, fb2, _ = timeline.detect_temporal_markers("Seven years before the flood, the council fell.")
+    assert fb2 is True
+    assert "Seven years before the flood" in anchor2
+
+    # 3. Idempotent persist_extraction: calling twice does not duplicate events or claims
+    payload = extractor.ExtractionPayload(
+        events=[extractor.ExtractedEvent(summary="The council was dissolved in the lower hall.", scene_order=1)],
+        claims=[extractor.ExtractedClaim(subject="Corin", attribute="rank", value="Scribe", evidence_quote="Corin the scribe")],
+    )
+    extractor.persist_extraction(db_session, pid, 1, payload)
+    db_session.commit()
+
+    from app.models import StoryEvent
+    ev_count_1 = db_session.query(StoryEvent).filter(StoryEvent.project_id == pid).count()
+    cl_count_1 = db_session.query(Claim).filter(Claim.project_id == pid, Claim.subject == "Corin").count()
+    assert ev_count_1 == 1
+    assert cl_count_1 == 1
+
+    # Call persist_extraction again on identical chapter payload
+    extractor.persist_extraction(db_session, pid, 1, payload)
+    db_session.commit()
+
+    ev_count_2 = db_session.query(StoryEvent).filter(StoryEvent.project_id == pid).count()
+    cl_count_2 = db_session.query(Claim).filter(Claim.project_id == pid, Claim.subject == "Corin").count()
+    assert ev_count_2 == 1, "StoryEvent must not be duplicated on second persist"
+    assert cl_count_2 == 1, "Claim must not be duplicated on second persist"
+

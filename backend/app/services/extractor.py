@@ -219,6 +219,7 @@ def get_anthropic_client():
     kwargs = {
         "api_key": settings.anthropic_api_key,
         "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
+        "max_retries": 1,
     }
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
@@ -229,12 +230,15 @@ def get_anthropic_client():
             self._inner = inner
 
         def create(self, **call_kwargs):
-            if explicit_timeout is None and "timeout" not in call_kwargs:
-                in_chars = sum(
-                    len(str(m.get("content", ""))) for m in (call_kwargs.get("messages") or [])
-                )
-                max_toks = int(call_kwargs.get("max_tokens") or 4096)
-                call_kwargs["timeout"] = llm_budget.compute_dynamic_timeout_seconds(in_chars, max_toks)
+            if "timeout" not in call_kwargs:
+                if explicit_timeout is not None:
+                    call_kwargs["timeout"] = float(explicit_timeout)
+                else:
+                    in_chars = sum(
+                        len(str(m.get("content", ""))) for m in (call_kwargs.get("messages") or [])
+                    )
+                    max_toks = int(call_kwargs.get("max_tokens") or 4096)
+                    call_kwargs["timeout"] = llm_budget.compute_dynamic_timeout_seconds(in_chars, max_toks)
 
             delay = 2.0
             for attempt in range(4):
@@ -313,8 +317,21 @@ def extract_chapter(
         tool_choice={"type": "tool", "name": "save_extraction"},
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = next(block.input for block in response.content if getattr(block, "type", None) == "tool_use")
-    return ExtractionPayload.model_validate(raw)
+    tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+    if tool_block is not None:
+        return ExtractionPayload.model_validate(tool_block.input)
+    for b in response.content:
+        txt = getattr(b, "text", "")
+        if "{" in txt:
+            import json
+            import re
+            m = re.search(r"\{.*\}", txt, re.DOTALL)
+            if m:
+                try:
+                    return ExtractionPayload.model_validate(json.loads(m.group(0)))
+                except Exception:
+                    pass
+    return ExtractionPayload()
 
 
 def extract_chapter_multipass(
@@ -363,8 +380,29 @@ def extract_chapter_multipass(
             tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = next(block.input for block in res.content if getattr(block, "type", None) == "tool_use")
-        return schema_cls.model_validate(raw)
+        tool_block = next((block for block in res.content if getattr(block, "type", None) == "tool_use"), None)
+        if tool_block is not None:
+            raw = tool_block.input
+            if isinstance(raw, dict):
+                return schema_cls.model_validate(raw)
+            if isinstance(raw, str):
+                import json
+                try:
+                    return schema_cls.model_validate(json.loads(raw))
+                except Exception:
+                    pass
+        for block in res.content:
+            txt = getattr(block, "text", "")
+            if "{" in txt:
+                import json
+                import re
+                m = re.search(r"\{.*\}", txt, re.DOTALL)
+                if m:
+                    try:
+                        return schema_cls.model_validate(json.loads(m.group(0)))
+                    except Exception:
+                        pass
+        return schema_cls()
 
     from app.services import llm_budget
 
@@ -387,8 +425,7 @@ def extract_chapter_multipass(
         (
             "save_claims_rules",
             ClaimsRulesPassPayload,
-            "Extract ALL verifiable factual claims (physical traits, ages, possessions, behavior, and 'knows_about' assertions) "
-            "with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
+            "Extract ALL verifiable factual claims with specific attributes where applicable (e.g. 'eye_color', 'hair_color', 'age', 'height', 'status', 'rank', 'profession', rather than generic 'physical_trait'; use 'physical_trait' for scars, build, prosthetics, and general features) with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
         ),
     ]
 
@@ -608,10 +645,20 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             obj_map[obj_key] = new_obj
 
-    # 5. Events (with scene_order & flashback/temporal marker detection)
+    # 5. Events (idempotent: avoid duplicate summary or scene_order for this chapter)
     from app.services import timeline
 
+    existing_events = db.query(StoryEvent).filter(
+        StoryEvent.project_id == project_id,
+        StoryEvent.chapter_number == chapter_number,
+    ).all()
+    existing_event_summaries = {e.summary.strip().lower() for e in existing_events}
+    existing_scene_orders = {e.scene_order for e in existing_events}
+
     for idx, ev in enumerate(payload.events, start=1):
+        clean_sum = ev.summary.strip()
+        if clean_sum.lower() in existing_event_summaries or idx in existing_scene_orders:
+            continue
         anchor, fb, ff = timeline.detect_temporal_markers(
             ev.summary,
             explicit_anchor=ev.temporal_anchor,
@@ -626,14 +673,27 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             temporal_anchor=anchor,
             is_flashback=fb,
             is_flashforward=ff,
-            summary=ev.summary,
+            summary=clean_sum,
             participants=ev.participants,
             location=ev.location,
         )
         db.add(new_ev)
+        existing_event_summaries.add(clean_sum.lower())
+        existing_scene_orders.add(idx)
 
-    # 6. Claims
+    # 6. Claims (idempotent: avoid duplicate subject/attribute/value for this chapter)
+    existing_claims = db.query(Claim).filter(
+        Claim.project_id == project_id,
+        Claim.chapter == chapter_number,
+    ).all()
+    claim_keys = {
+        (c.subject.strip().lower(), c.attribute.strip().lower(), c.value.strip().lower())
+        for c in existing_claims
+    }
     for cl in payload.claims:
+        ckey = (cl.subject.strip().lower(), cl.attribute.strip().lower(), cl.value.strip().lower())
+        if ckey in claim_keys:
+            continue
         new_claim = Claim(
             project_id=project_id,
             subject=cl.subject.strip(),
@@ -645,9 +705,18 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             validation_state="AUTO_ACCEPTED",
         )
         db.add(new_claim)
+        claim_keys.add(ckey)
 
-    # 7. Knowledge Updates
+    # 7. Knowledge Updates (idempotent)
+    existing_kn = db.query(KnowledgeUpdate).filter(
+        KnowledgeUpdate.project_id == project_id,
+        KnowledgeUpdate.chapter == chapter_number,
+    ).all()
+    kn_keys = {(k.character.strip().lower(), k.fact.strip().lower()) for k in existing_kn}
     for kn in payload.knowledge:
+        kkey = (kn.character.strip().lower(), kn.fact.strip().lower())
+        if kkey in kn_keys:
+            continue
         new_kn = KnowledgeUpdate(
             project_id=project_id,
             character=kn.character.strip(),
@@ -657,8 +726,17 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             source_character=kn.source_character.strip() if kn.source_character else None,
         )
         db.add(new_kn)
+        kn_keys.add(kkey)
 
-    # 8. Object Custody Events
+    # 8. Object Custody Events (idempotent)
+    existing_custody = db.query(ObjectCustodyEvent).filter(
+        ObjectCustodyEvent.project_id == project_id,
+        ObjectCustodyEvent.chapter == chapter_number,
+    ).all()
+    custody_keys = {
+        (c.object_id, (c.holder_name or "").strip().lower(), (c.action or "").strip().lower())
+        for c in existing_custody
+    }
     for ce in payload.custody_events:
         obj_key = ce.object_name.strip().lower()
         matched_obj = obj_map.get(obj_key)
@@ -677,6 +755,9 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             mentions.add(chapter_number)
             matched_obj.mention_chapters = sorted(list(mentions))
 
+        ckey = (matched_obj.id, ce.holder_name.strip().lower(), (ce.action or "").strip().lower())
+        if ckey in custody_keys:
+            continue
         db.add(
             ObjectCustodyEvent(
                 project_id=project_id,
@@ -688,6 +769,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 evidence_quote=ce.evidence_quote,
             )
         )
+        custody_keys.add(ckey)
 
     # 9. Discovered World Rules
     existing_rules = {

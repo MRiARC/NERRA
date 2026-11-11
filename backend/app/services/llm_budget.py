@@ -110,11 +110,11 @@ def split_text_windows(text: str, max_chars: int, overlap_paragraphs: int = 2) -
 def compute_dynamic_timeout_seconds(
     input_chars: int,
     max_tokens: int,
-    floor_s: float = 45.0,
+    floor_s: float = 180.0,
     ceil_s: float = 600.0,
 ) -> float:
     """Scale HTTP request timeout dynamically from prompt chars and generation headroom."""
-    est = 30.0 + (max(0, int(input_chars)) / 1500.0) + (max(0, int(max_tokens)) / 60.0)
+    est = 60.0 + (max(0, int(input_chars)) / 600.0) + (max(0, int(max_tokens)) / 10.0)
     return round(max(floor_s, min(ceil_s, est)), 1)
 
 
