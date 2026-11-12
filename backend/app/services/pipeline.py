@@ -151,7 +151,8 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         manuscript.raw_text,
         exclude_manuscript_id=manuscript.id,
     )
-    for stale_ch in change_report.get("stale_claim_chapters") or []:
+    stale_chapters = set(change_report.get("stale_claim_chapters") or [])
+    for stale_ch in stale_chapters:
         change_detector.mark_chapter_claims_stale(db, manuscript.project_id, stale_ch)
 
     chapters = splitter.split_chapters(manuscript.raw_text)
@@ -205,6 +206,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
 
+        is_rewritten = chapter.number in stale_chapters
         validator.gate_and_commit_extraction(
             db,
             manuscript.project_id,
@@ -213,6 +215,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             chapter.content,
             payload,
             use_llm=not extract_is_mocked,
+            supersede_chapter=is_rewritten,
         )
         _embed_and_store_chunk(db, manuscript, chapter.number, chapter.content)
         manuscript.chapters_done += 1
