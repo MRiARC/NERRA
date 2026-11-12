@@ -280,3 +280,82 @@ def test_multivalued_physical_traits_and_idempotent_event_claim_persistence(db_s
     assert ev_count_2 == 1, "StoryEvent must not be duplicated on second persist"
     assert cl_count_2 == 1, "Claim must not be duplicated on second persist"
 
+
+def test_chapter_rewrite_re_extraction_reconciles_events_and_restores_stale_claims(db_session, client, auth_headers):
+    """Verify that chapter rewrites correctly replace stale StoryEvents and restore still-valid claims."""
+    from app.models import Claim, StoryEvent
+    from app.services import change_detector, consistency
+
+    pid = uuid.UUID(client.post("/projects", json={"title": "Rewrite Reconcile Test"}, headers=auth_headers).json()["id"])
+
+    # 1. Initial extraction of Chapter 1
+    initial_payload = extractor.ExtractionPayload(
+        events=[
+            extractor.ExtractedEvent(summary="Corin sat quietly in the archives.", scene_order=1),
+            extractor.ExtractedEvent(summary="Corin discovered the broken seal.", scene_order=2),
+        ],
+        claims=[
+            extractor.ExtractedClaim(subject="Corin", attribute="rank", value="Scholar", evidence_quote="Corin the scholar"),
+            extractor.ExtractedClaim(subject="Corin", attribute="eye_color", value="green", evidence_quote="Corin's green eyes"),
+        ],
+    )
+    extractor.persist_extraction(db_session, pid, 1, initial_payload)
+    db_session.commit()
+
+    events_initial = db_session.query(StoryEvent).filter(StoryEvent.project_id == pid, StoryEvent.chapter_number == 1).order_by(StoryEvent.scene_order).all()
+    assert len(events_initial) == 2
+    assert [e.summary for e in events_initial] == ["Corin sat quietly in the archives.", "Corin discovered the broken seal."]
+
+    active_claims_initial = db_session.query(Claim).filter(Claim.project_id == pid, Claim.chapter == 1, Claim.status == "active").all()
+    assert len(active_claims_initial) == 2
+
+    # 2. Simulate author rewriting Chapter 1: change_detector marks previous claims stale/superseded
+    stale_count = change_detector.mark_chapter_claims_stale(db_session, pid, 1)
+    assert stale_count == 2
+    assert db_session.query(Claim).filter(Claim.project_id == pid, Claim.chapter == 1, Claim.status == "active").count() == 0
+
+    # 3. New extraction from rewritten Chapter 1:
+    # - Completely new scene events (must NOT be dropped by scene_order collision)
+    # - Fact 1 ("Corin", "rank", "Scholar") is still in text and must be restored to active
+    # - Fact 2 ("Corin", "eye_color", "blue") replaces green eyes
+    rewritten_payload = extractor.ExtractionPayload(
+        events=[
+            extractor.ExtractedEvent(summary="Corin fled through the secret catacombs.", scene_order=1),
+            extractor.ExtractedEvent(summary="Corin met Sarah at the river docks.", scene_order=2),
+            extractor.ExtractedEvent(summary="They boarded the midnight barge to Solitude.", scene_order=3),
+        ],
+        claims=[
+            extractor.ExtractedClaim(subject="Corin", attribute="rank", value="Scholar", evidence_quote="Corin the scholar fled"),
+            extractor.ExtractedClaim(subject="Corin", attribute="eye_color", value="blue", evidence_quote="Corin's piercing blue eyes"),
+        ],
+    )
+    extractor.persist_extraction(db_session, pid, 1, rewritten_payload, supersede_chapter=True)
+    db_session.commit()
+
+    # Verify: Old events were replaced, and all 3 new events are saved in order
+    events_after = db_session.query(StoryEvent).filter(StoryEvent.project_id == pid, StoryEvent.chapter_number == 1).order_by(StoryEvent.scene_order).all()
+    assert len(events_after) == 3, f"Expected 3 rewritten events, got {len(events_after)}"
+    assert [e.summary for e in events_after] == [
+        "Corin fled through the secret catacombs.",
+        "Corin met Sarah at the river docks.",
+        "They boarded the midnight barge to Solitude.",
+    ]
+
+    # Verify: Still-valid claim ("Corin", "rank", "Scholar") is restored to active
+    scholar_claim = db_session.query(Claim).filter(Claim.project_id == pid, Claim.subject == "Corin", Claim.attribute == "rank").first()
+    assert scholar_claim.status == "active", f"Expected active status, got {scholar_claim.status}"
+    assert scholar_claim.evidence_quote == "Corin the scholar fled"
+
+    # Verify: Old claim ("Corin", "eye_color", "green") remains superseded, while "blue" is active
+    green_claim = db_session.query(Claim).filter(Claim.project_id == pid, Claim.attribute == "eye_color", Claim.value == "green").first()
+    assert green_claim.status == "superseded"
+
+    blue_claim = db_session.query(Claim).filter(Claim.project_id == pid, Claim.attribute == "eye_color", Claim.value == "blue").first()
+    assert blue_claim.status == "active"
+
+    # Verify: Consistency check on active claims sees 0 contradictions
+    active_claims = db_session.query(Claim).filter(Claim.project_id == pid, Claim.status == "active").all()
+    assert len(active_claims) == 2
+    assert consistency.detect_contradictions(active_claims) == []
+
+

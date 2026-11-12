@@ -162,6 +162,7 @@ def gate_and_commit_extraction(
     chapter_text: str,
     payload,
     use_llm: bool = True,
+    supersede_chapter: bool = False,
 ) -> tuple[Any, list]:
     """Validate extracted items before Story Graph persistence.
 
@@ -321,7 +322,17 @@ def gate_and_commit_extraction(
         custody_events=payload.custody_events,
         world_rules=getattr(payload, "world_rules", []),
     )
-    extractor.persist_extraction(db, pid, chapter_number, approved_payload)
+    import inspect
+
+    sig = inspect.signature(extractor.persist_extraction)
+    if "supersede_chapter" in sig.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    ):
+        extractor.persist_extraction(
+            db, pid, chapter_number, approved_payload, supersede_chapter=supersede_chapter
+        )
+    else:
+        extractor.persist_extraction(db, pid, chapter_number, approved_payload)
     db.commit()
     return approved_payload, staged_rows
 
