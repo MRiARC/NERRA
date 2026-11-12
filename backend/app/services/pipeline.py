@@ -91,16 +91,29 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
         logger.warning("Embedding skipped for chapter %s: %s", chapter_number, exc)
         embedding = None
 
-    db.add(
-        Chunk(
-            manuscript_id=manuscript.id,
-            chapter_number=chapter_number,
-            content=content,
-            content_hash=_content_hash(content),
-            paragraph_hashes=change_detector.compute_paragraph_hashes(content),
-            embedding=embedding,
-        )
+    content_hash = _content_hash(content)
+    p_hashes = change_detector.compute_paragraph_hashes(content)
+    existing_chunk = (
+        db.query(Chunk)
+        .filter(Chunk.manuscript_id == manuscript.id, Chunk.chapter_number == chapter_number)
+        .first()
     )
+    if existing_chunk is not None:
+        existing_chunk.content = content
+        existing_chunk.content_hash = content_hash
+        existing_chunk.paragraph_hashes = p_hashes
+        existing_chunk.embedding = embedding
+    else:
+        db.add(
+            Chunk(
+                manuscript_id=manuscript.id,
+                chapter_number=chapter_number,
+                content=content,
+                content_hash=content_hash,
+                paragraph_hashes=p_hashes,
+                embedding=embedding,
+            )
+        )
     db.commit()
 
 
@@ -121,6 +134,8 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         signal_scanner,
         splitter,
         timeline,
+        validator,
+        plot_threads,
     )
     from app.services.extractor import ExtractionPayload
 
@@ -136,7 +151,8 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         manuscript.raw_text,
         exclude_manuscript_id=manuscript.id,
     )
-    for stale_ch in change_report.get("stale_claim_chapters") or []:
+    stale_chapters = set(change_report.get("stale_claim_chapters") or [])
+    for stale_ch in stale_chapters:
         change_detector.mark_chapter_claims_stale(db, manuscript.project_id, stale_ch)
 
     chapters = splitter.split_chapters(manuscript.raw_text)
@@ -146,10 +162,25 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
 
     extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
 
+    from app.models import Chunk
+
     for chapter in chapters:
         content_hash = _content_hash(chapter.content)
         cached = _find_cached_analysis(db, manuscript.id, chapter.number, content_hash)
         if cached:
+            already_chunked = (
+                db.query(Chunk)
+                .filter(
+                    Chunk.manuscript_id == manuscript.id,
+                    Chunk.chapter_number == chapter.number,
+                    Chunk.content_hash == content_hash,
+                )
+                .first()
+            )
+            if already_chunked is not None:
+                manuscript.chapters_done += 1
+                db.commit()
+                continue
             if isinstance(cached.result, dict):
                 payload = ExtractionPayload.model_validate(cached.result)
             elif isinstance(cached.result, str):
@@ -165,13 +196,27 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
                 ctx_packet = context_builder.build_story_context_packet(
                     db, manuscript.project_id, chapter.number, chapter.content, signals=signals
                 )
+                cust = plot_threads.get_customization(db, manuscript.project_id)
                 payload = extractor.extract_chapter_multipass(
-                    chapter.number, chapter.content, ctx_packet["prompt_text"]
+                    chapter.number,
+                    chapter.content,
+                    ctx_packet["prompt_text"],
+                    custom_prompt=cust.get("custom_prompt") or "",
                 )
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
 
-        extractor.persist_extraction(db, manuscript.project_id, chapter.number, payload)
+        is_rewritten = chapter.number in stale_chapters
+        validator.gate_and_commit_extraction(
+            db,
+            manuscript.project_id,
+            manuscript.id,
+            chapter.number,
+            chapter.content,
+            payload,
+            use_llm=not extract_is_mocked,
+            supersede_chapter=is_rewritten,
+        )
         _embed_and_store_chunk(db, manuscript, chapter.number, chapter.content)
         manuscript.chapters_done += 1
         db.commit()
@@ -180,6 +225,15 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         timeline.compute_story_chronology(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Timeline chronology computation skipped: %s", exc)
+    if not extract_is_mocked:
+        for ch_item in chapters:
+            plot_threads.extract_and_update_plot_threads_llm(
+                db,
+                manuscript.project_id,
+                ch_item.number,
+                ch_item.content,
+                use_llm=True,
+            )
     consistency.run_consistency_pass(db, manuscript.project_id)
     try:
         graph.sync_project_graph(db, manuscript.project_id)
@@ -205,6 +259,8 @@ def append_chapter_to_manuscript(
         signal_scanner,
         splitter,
         timeline,
+        validator,
+        plot_threads,
     )
 
     existing_chapters = splitter.split_chapters(manuscript.raw_text)
@@ -228,11 +284,29 @@ def append_chapter_to_manuscript(
     if extract_is_mocked:
         payload = extractor.extract_chapter(next_num, body, ctx_packet["prompt_text"])
     else:
-        payload = extractor.extract_chapter_multipass(next_num, body, ctx_packet["prompt_text"])
+        cust = plot_threads.get_customization(db, manuscript.project_id)
+        payload = extractor.extract_chapter_multipass(
+            next_num,
+            body,
+            ctx_packet["prompt_text"],
+            custom_prompt=cust.get("custom_prompt") or "",
+        )
     payload = extractor.validate_payload(payload, body)
 
     content_hash = _content_hash(body)
-    extractor.persist_extraction(db, manuscript.project_id, next_num, payload)
+    validator.gate_and_commit_extraction(
+        db,
+        manuscript.project_id,
+        manuscript.id,
+        next_num,
+        body,
+        payload,
+        use_llm=not extract_is_mocked,
+    )
+    if not extract_is_mocked:
+        plot_threads.extract_and_update_plot_threads_llm(
+            db, manuscript.project_id, next_num, body, use_llm=True
+        )
     _save_analysis(db, manuscript.id, next_num, content_hash, payload.model_dump())
     _embed_and_store_chunk(db, manuscript, next_num, body)
 

@@ -22,8 +22,8 @@ def build_story_context_packet(
     signals: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a complete Story Memory Context Packet for extraction & reasoning."""
-    from app.models import Chunk, Manuscript
-    from app.services import embedder, extractor, graph
+    from app.models import Chunk, CorrectionRule, Manuscript, PlotThread
+    from app.services import embedder, extractor, graph, plot_threads
 
     pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
     base_roster = extractor.get_roster(db, pid)
@@ -68,7 +68,33 @@ def build_story_context_packet(
     except Exception as exc:  # noqa: BLE001
         logger.debug("ContextBuilder vector recall skipped: %s", exc)
 
+    corrections = (
+        db.query(CorrectionRule)
+        .filter(CorrectionRule.project_id == pid, CorrectionRule.active.is_(True))
+        .order_by(CorrectionRule.created_at.asc())
+        .all()
+    )
+    open_threads = (
+        db.query(PlotThread)
+        .filter(PlotThread.project_id == pid)
+        .order_by(PlotThread.setup_chapter.asc())
+        .all()
+    )
+    customization = plot_threads.get_customization(db, pid)
+
     parts = [base_roster]
+    if customization.get("custom_context"):
+        parts.append("\nCustom Project Context:\n" + str(customization["custom_context"]).strip())
+    if open_threads:
+        parts.append(
+            "\nActive Plot Threads:\n"
+            + "\n".join(f"- [{t.status}] Ch.{t.setup_chapter} {t.title}: {t.description}" for t in open_threads[:15])
+        )
+    if corrections:
+        parts.append(
+            "\nActive Author Correction Rules:\n"
+            + "\n".join(f"- [{r.rule_type}] {r.instruction_text}" for r in corrections)
+        )
     if sig.get("coreference_hints"):
         parts.append("\nSignal Coreference Hints:\n" + "\n".join(f"- {h}" for h in sig["coreference_hints"][:15]))
     if sig.get("temporal_cues"):
@@ -79,6 +105,30 @@ def build_story_context_packet(
         parts.append("\nSemantically Related Prior Passages:\n" + "\n".join(similar_passages))
 
     prompt_text = "\n".join(parts)
+    from app.config import settings
+    from app.services import llm_budget
+
+    explicit_max = getattr(settings, "max_context_chars", None)
+    max_chars = (
+        int(explicit_max)
+        if explicit_max
+        else llm_budget.compute_context_char_budget(
+            settings.extraction_model,
+            chapter_chars=len(chapter_text or ""),
+            max_output_tokens=settings.extraction_max_tokens,
+        )
+    )
+    if len(prompt_text) > max_chars:
+        # Preserve critical roster/custom/threads/corrections prefix; trim long semantic passages tail cleanly
+        core_parts = [p for p in parts if not p.startswith("\nSemantically Related Prior Passages:")]
+        core_text = "\n".join(core_parts)
+        remaining = max(0, max_chars - len(core_text) - 64)
+        if similar_passages and remaining > 200:
+            passages_block = "\nSemantically Related Prior Passages:\n" + "\n".join(similar_passages)
+            prompt_text = core_text + "\n" + passages_block[:remaining]
+        else:
+            prompt_text = core_text[:max_chars]
+
     return {
         "prompt_text": prompt_text,
         "signals": sig,
