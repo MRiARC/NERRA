@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 
 # Known heading shapes, e.g.:
-#   "Chapter 12", "CHAPTER 3 - The Storm", "Chapter XII", "12. The Letter"
+#   "Chapter 12", "CHAPTER 3 - The Storm", "## Chapter 1", "Chapter XII", "12. The Letter"
 HEADING_PATTERNS = [
-    r"^chapter\s+\d+",
-    r"^chapter\s+[IVXLCDM]+",
+    r"^(?:#{1,6}\s+)?chapter\s+\d+",
+    r"^(?:#{1,6}\s+)?chapter\s+[IVXLCDM]+",
     r"^\d{1,3}\.\s+\S",
 ]
 
@@ -26,10 +26,10 @@ import re
 from dataclasses import dataclass, field
 
 # Known heading shapes, e.g.:
-#   "Chapter 12", "CHAPTER 3 - The Storm", "Chapter XII", "12. The Letter"
+#   "Chapter 12", "CHAPTER 3 - The Storm", "## Chapter 1", "Chapter XII", "12. The Letter"
 HEADING_PATTERNS = [
-    r"^chapter\s+\d+",
-    r"^chapter\s+[IVXLCDM]+",
+    r"^(?:#{1,6}\s+)?chapter\s+\d+",
+    r"^(?:#{1,6}\s+)?chapter\s+[IVXLCDM]+",
     r"^\d{1,3}\.\s+\S",
 ]
 
