@@ -111,57 +111,57 @@ export default function DashboardPage() {
 
             {/* High-Level Telemetry Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Total Words</span>
                   <ScrollText className="w-4 h-4 text-wine-crimson" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   {formatWords(totalWords)}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Across {projects.length} {projects.length === 1 ? "story" : "stories"}
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Chapters Ingested</span>
-                  <BookOpen className="w-4 h-4 text-pine-moss" />
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   {totalChapters}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Ready in your workspace
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Plot Alerts</span>
                   <AlertTriangle className="w-4 h-4 text-severity-contradiction" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment flex items-baseline gap-2">
                   <span>{totalIssues}</span>
                   {totalIssues === 0 && (
-                    <span className="text-xs font-sans text-pine-moss">All Consistent</span>
+                    <span className="text-xs font-sans text-emerald-400 font-medium">All Consistent</span>
                   )}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   {totalIssues === 0 ? "No contradictions found" : "Items to review"}
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Consistency Engine</span>
                   <Sparkles className="w-4 h-4 text-wine-crimson" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   Ready
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Monitoring your story
                 </div>
               </Surface>

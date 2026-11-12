@@ -72,7 +72,7 @@ export function ProjectCard({ project, onUploadClick }: ProjectCardProps) {
         {/* Narrative Metrics */}
         <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-border-quiet text-xs">
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-ink-ash font-medium">
+            <p className="text-xs uppercase tracking-wider text-ink-faint font-semibold">
               Word Count
             </p>
             <p className="font-serif text-base font-medium text-ink-parchment mt-0.5">
@@ -80,7 +80,7 @@ export function ProjectCard({ project, onUploadClick }: ProjectCardProps) {
             </p>
           </div>
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-ink-ash font-medium">
+            <p className="text-xs uppercase tracking-wider text-ink-faint font-semibold">
               Chapters
             </p>
             <p className="font-serif text-base font-medium text-ink-parchment mt-0.5">

@@ -12,7 +12,7 @@ import {
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { formatWords } from "@/lib/utils";
+import { formatWords, cn } from "@/lib/utils";
 import {
   BookOpen,
   Sparkles,
@@ -123,15 +123,15 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   return (
     <div className="flex-1 p-6 sm:p-8 space-y-8 max-w-7xl w-full mx-auto">
       {/* Top Banner (Stitch Screen 1) */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-border-quiet">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-5 border-b border-border-quiet">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[11px] text-ink-ash uppercase tracking-wider font-mono">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-ink-faint uppercase tracking-wider font-semibold">
               Story Overview
             </span>
-            <span className="text-border-subtle">•</span>
-            <span className="text-[11px] text-pine-moss font-mono flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-moss animate-pulse-subtle" />
+            <span className="text-border-subtle font-mono">•</span>
+            <span className="text-xs text-emerald-400 font-mono flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse-subtle" />
               <span>
                 Status: {activeManuscript?.status ? activeManuscript.status.toUpperCase() : "READY"}
               </span>
@@ -141,8 +141,8 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           <h1 className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-ink-parchment">
             {project?.title || "Project Overview"}
           </h1>
-          <p className="text-xs text-ink-bone mt-1 max-w-xl leading-relaxed">
-            {project?.genre ? `${project.genre} • ` : ""}
+          <p className="text-xs sm:text-sm text-ink-ash mt-1.5 max-w-2xl leading-relaxed">
+            {project?.genre ? <span className="font-medium text-ink-bone">{project.genre} • </span> : ""}
             Track your manuscript&apos;s progress, review plot consistency, and manage characters and key story events.
           </p>
         </div>
@@ -152,7 +152,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             variant="outline"
             size="sm"
             onClick={handleExportBible}
-            className="gap-2"
+            className="gap-2 text-ink-bone hover:text-ink-parchment border-border-subtle"
           >
             <Download className="w-3.5 h-3.5 text-wine-crimson" />
             <span>Export Story Bible</span>
@@ -163,7 +163,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             size="sm"
             onClick={handleTriggerAudit}
             isLoading={isAuditing}
-            className="gap-2"
+            className="gap-2 shadow-[0_2px_12px_rgba(140,34,66,0.35)]"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Check Consistency</span>
@@ -174,10 +174,10 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       {/* 4 Telemetry Scorecards (Stitch Screen 1) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Coherence Scorecard */}
-        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 relative overflow-hidden">
-          <div className="flex items-center justify-between text-xs text-ink-ash">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 relative overflow-hidden shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-faint">
             <span>Story Consistency</span>
-            <Badge variant={coherenceScore >= 90 ? "thread" : "warning"} size="xs">
+            <Badge variant={coherenceScore >= 90 ? "thread" : "warning"} size="xs" className="rounded-full">
               {coherenceScore >= 90 ? "Consistent" : "Needs Review"}
             </Badge>
           </div>
@@ -189,19 +189,21 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </div>
           <div className="w-full h-1 bg-surface-subtle rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-wine-accent via-pine-accent to-pine-moss rounded-full transition-all duration-500"
+              className="h-full bg-gradient-to-r from-wine-accent via-emerald-600 to-emerald-400 rounded-full transition-all duration-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
               style={{ width: `${coherenceScore}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[11px] text-ink-ash">
-            <span>{issues.length} {issues.length === 1 ? "issue" : "issues"} recorded</span>
-            <span>{criticalIssues.length} major</span>
+          <div className="flex items-center justify-between text-xs text-ink-ash pt-0.5">
+            <span className="text-ink-bone font-medium">{issues.length} {issues.length === 1 ? "issue" : "issues"} recorded</span>
+            <span className={criticalIssues.length > 0 ? "text-severity-contradiction font-medium" : "text-ink-ash"}>
+              {criticalIssues.length} major
+            </span>
           </div>
         </Surface>
 
         {/* Volume & Velocity Scorecard */}
-        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs text-ink-ash">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-faint">
             <span>Word Count & Progress</span>
             <BookOpen className="w-4 h-4 text-wine-crimson" />
           </div>
@@ -211,23 +213,23 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             </span>
             <span className="text-xs text-ink-ash">words written</span>
           </div>
-          <p className="text-[11px] text-ink-ash truncate">
+          <p className="text-xs text-ink-bone truncate font-medium">
             {totalChapters} {totalChapters === 1 ? "Chapter" : "Chapters"} in manuscript
           </p>
           <div className="flex gap-1.5 pt-0.5">
             {activeManuscript ? (
-              <Badge variant="subtle" size="xs">
+              <Badge variant="subtle" size="xs" className="rounded-full">
                 {activeManuscript.chapters_done}/{activeManuscript.chapters_total} Processed
               </Badge>
             ) : (
-              <Badge variant="subtle" size="xs">Awaiting Manuscript</Badge>
+              <Badge variant="subtle" size="xs" className="rounded-full">Awaiting Manuscript</Badge>
             )}
           </div>
         </Surface>
 
         {/* Continuity Paradox Index */}
-        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs text-ink-ash">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-faint">
             <span>Plot Contradictions</span>
             <AlertTriangle className="w-4 h-4 text-severity-contradiction" />
           </div>
@@ -238,27 +240,27 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             <span className="text-xs text-severity-contradiction uppercase font-semibold tracking-wide">
               Major
             </span>
-            <span className="text-border-subtle mx-1">/</span>
-            <span className="text-xs text-ink-ash">{minorIssues.length} Minor</span>
+            <span className="text-border-subtle mx-1 font-mono">/</span>
+            <span className="text-xs text-ink-ash font-medium">{minorIssues.length} Minor</span>
           </div>
-          <p className="text-[11px] text-ink-ash truncate">
+          <p className="text-xs text-ink-bone truncate font-medium">
             Automatic plot & character checker
           </p>
-          <div className="flex items-center gap-2 text-[10px]">
-            <Badge variant="contradiction" size="xs">
+          <div className="flex items-center gap-2 text-xs pt-0.5">
+            <Badge variant="contradiction" size="xs" className="rounded-full">
               {criticalIssues.length} Open Issues
             </Badge>
-            <Badge variant="knowledge" size="xs">
+            <Badge variant="knowledge" size="xs" className="rounded-full">
               {eventCount} Timeline Events
             </Badge>
           </div>
         </Surface>
 
         {/* Entity & Lore Topology */}
-        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
-          <div className="flex items-center justify-between text-xs text-ink-ash">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+          <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-ink-faint">
             <span>Entity & Lore Topology</span>
-            <Compass className="w-4 h-4 text-pine-moss" />
+            <Compass className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="flex items-baseline gap-2">
             <span className="font-serif text-3xl font-medium text-ink-parchment">
@@ -266,17 +268,17 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             </span>
             <span className="text-xs text-ink-ash">knowledge nodes</span>
           </div>
-          <p className="text-[11px] text-ink-ash truncate">
+          <p className="text-xs text-ink-bone truncate font-medium">
             Characters, Artifacts & Locations
           </p>
           <div className="flex flex-wrap gap-1.5 pt-0.5">
-            <Badge variant="subtle" size="xs">
+            <Badge variant="subtle" size="xs" className="rounded-full">
               {characterCount} Personae
             </Badge>
-            <Badge variant="subtle" size="xs">
+            <Badge variant="subtle" size="xs" className="rounded-full">
               {locationCount} Locations
             </Badge>
-            <Badge variant="subtle" size="xs">
+            <Badge variant="subtle" size="xs" className="rounded-full">
               {objectCount} Objects
             </Badge>
           </div>
@@ -297,13 +299,13 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 text-[10px]">
-              <span className="flex items-center gap-1.5 text-ink-bone">
-                <span className="w-2 h-2 rounded-full bg-pine-moss" />
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1.5 text-ink-bone font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
                 <span>Clean</span>
               </span>
-              <span className="flex items-center gap-1.5 text-ink-bone ml-2">
-                <span className="w-2 h-2 rounded-full bg-severity-contradiction" />
+              <span className="flex items-center gap-1.5 text-ink-bone font-medium">
+                <span className="w-2 h-2 rounded-full bg-severity-contradiction shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
                 <span>Conflict</span>
               </span>
             </div>
@@ -311,13 +313,13 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
           {/* Chapter Matrix Grid */}
           {chapters.length === 0 ? (
-            <Surface depth={1} border="quiet" rounded="md" className="p-8 text-center space-y-4">
+            <Surface depth={1} border="subtle" rounded="md" className="p-8 text-center space-y-4">
               <BookOpen className="w-10 h-10 text-ink-ash mx-auto opacity-50" />
               <div>
                 <h3 className="font-serif text-base text-ink-parchment font-medium">
                   No manuscript chapters ingested yet
                 </h3>
-                <p className="text-xs text-ink-bone mt-1 max-w-md mx-auto">
+                <p className="text-xs text-ink-ash mt-1 max-w-md mx-auto">
                   Upload a manuscript file (.txt, .md, .docx, .pdf) to populate the chapter folio matrix and run the continuity engine.
                 </p>
               </div>
@@ -341,44 +343,42 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 const hasCritical = chIssues.some((iss) => iss.severity === "red");
                 const hasMinor = chIssues.some((iss) => iss.severity !== "red");
 
-                let statusColor = "bg-pine-moss";
-                let cardBorder = "border-border-subtle hover:border-border-prominent";
+                let pipColor = "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
                 if (hasCritical) {
-                  statusColor = "bg-severity-contradiction";
-                  cardBorder = "border-severity-contradiction/40 hover:border-severity-contradiction";
+                  pipColor = "bg-severity-contradiction shadow-[0_0_8px_rgba(244,63,94,0.6)]";
                 } else if (hasMinor) {
-                  statusColor = "bg-severity-warning";
-                  cardBorder = "border-severity-warning/40 hover:border-severity-warning";
+                  pipColor = "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]";
                 }
 
                 return (
                   <button
                     key={ch.number}
                     onClick={() => setSelectedChapterNumber(ch.number)}
-                    className={`p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
+                    className={cn(
+                      "p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative shadow-[inset_0_1px_0_0_var(--edge-highlight)]",
                       isSelected
-                        ? "bg-wine-accent/20 border-wine-accent shadow-[0_4px_16px_rgba(140,34,66,0.35),inset_0_1px_0_0_rgba(255,255,255,0.12)]"
-                        : `bg-surface-card ${cardBorder}`
-                    }`}
+                        ? "bg-surface-elevated border-wine-accent shadow-[0_4px_16px_rgba(140,34,66,0.3),inset_0_1px_0_0_var(--edge-highlight-prominent)] ring-1 ring-wine-accent/50"
+                        : "bg-surface-card border-border-subtle hover:border-border-prominent hover:bg-surface-elevated/60"
+                    )}
                   >
                     <div className="flex items-center justify-between w-full">
-                      <span className="text-[10px] uppercase font-mono tracking-wider text-ink-ash">
+                      <span className="text-[11px] uppercase font-mono tracking-wider text-ink-faint font-semibold">
                         CH.{ch.number < 10 ? `0${ch.number}` : ch.number}
                       </span>
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor}`} />
+                      <span className={cn("w-2 h-2 rounded-full shrink-0", pipColor)} />
                     </div>
 
                     <div>
                       <div className="font-serif text-xs font-medium text-ink-parchment truncate">
                         {ch.title}
                       </div>
-                      <div className="text-[10px] text-ink-ash mt-0.5 truncate">
+                      <div className="text-xs text-ink-ash mt-0.5 truncate">
                         {chIssues.length > 0 ? (
-                          <span className="text-severity-contradiction font-medium">
-                            {chIssues.length} {chIssues.length === 1 ? "Alert" : "Alerts"}
+                          <span className="text-severity-contradiction font-semibold flex items-center gap-1">
+                            <span>{chIssues.length} {chIssues.length === 1 ? "Alert" : "Alerts"}</span>
                           </span>
                         ) : (
-                          <span>{formatWords(ch.word_count)}</span>
+                          <span className="text-ink-ash">{formatWords(ch.word_count)}</span>
                         )}
                       </div>
                     </div>
@@ -390,17 +390,17 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
           {/* Selected Folio Inspector Bar */}
           {activeSelectedChapter && (
-            <Surface depth={1} border="quiet" rounded="md" className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <Surface depth={1} border="subtle" rounded="md" className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 rounded-xl bg-surface-card border border-border-subtle text-wine-crimson shrink-0 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
+                <div className="p-2 rounded-xl bg-surface-card border border-border-subtle text-wine-crimson shrink-0 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
                   <BookOpen className="w-4 h-4" />
                 </div>
                 <div className="truncate">
                   <h4 className="font-serif text-sm font-medium text-ink-parchment truncate">
                     {activeSelectedChapter.title}
                   </h4>
-                  <p className="text-[11px] text-ink-ash mt-0.5 truncate">
-                    {formatWords(activeSelectedChapter.word_count)} words •{" "}
+                  <p className="text-xs text-ink-ash mt-0.5 truncate">
+                    <span className="text-ink-bone font-medium">{formatWords(activeSelectedChapter.word_count)} words</span> •{" "}
                     {selectedChapterIssues.length} continuity {selectedChapterIssues.length === 1 ? "issue" : "issues"} detected
                   </p>
                 </div>
@@ -408,12 +408,12 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
               <div className="flex items-center gap-2 shrink-0">
                 <Link href={`/projects/${projectId}/reader?chapter=${activeSelectedChapter.number}`}>
-                  <Button variant="outline" size="xs">
+                  <Button variant="outline" size="xs" className="border-border-subtle text-ink-bone hover:text-ink-parchment">
                     Read Folio
                   </Button>
                 </Link>
                 <Link href={`/projects/${projectId}/editor?chapter=${activeSelectedChapter.number}`}>
-                  <Button variant="primary" size="xs" className="gap-1.5">
+                  <Button variant="primary" size="xs" className="gap-1.5 shadow-[0_2px_10px_rgba(140,34,66,0.3)]">
                     <span>Open in Studio</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
@@ -429,13 +429,13 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 <h3 className="font-serif text-base font-medium text-ink-parchment">
                   Plot Inconsistencies to Review
                 </h3>
-                <p className="text-[11px] text-ink-ash mt-0.5">
+                <p className="text-xs text-ink-ash mt-0.5">
                   Conflicts caught across chapters that need your decision.
                 </p>
               </div>
 
               <Link href={`/projects/${projectId}/issues`}>
-                <Button variant="ghost" size="xs" className="gap-1 text-wine-crimson hover:text-wine-crimson">
+                <Button variant="ghost" size="xs" className="gap-1 text-wine-crimson hover:text-wine-crimson font-medium">
                   <span>Review All ({issues.length}) Issues</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </Button>
@@ -449,7 +449,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                   depth={2}
                   border={issue.severity === "red" ? "contradiction" : "subtle"}
                   rounded="md"
-                  className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-[inset_0_1px_0_0_var(--edge-highlight)]"
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <div
@@ -461,26 +461,27 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                     >
                       <AlertTriangle className="w-3.5 h-3.5" />
                     </div>
-                    <div className="space-y-0.5 truncate">
+                    <div className="space-y-1 truncate">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-ink-parchment">
+                        <span className="font-semibold text-ink-parchment font-sans text-xs">
                           {issue.type ? issue.type.replace(/_/g, " ").toUpperCase() : "CONTINUITY ISSUE"}
                         </span>
                         <Badge
                           variant={issue.severity === "red" ? "contradiction" : "warning"}
                           size="xs"
+                          className="rounded-full"
                         >
                           {issue.id.slice(0, 8).toUpperCase()}
                         </Badge>
                       </div>
-                      <p className="text-[11px] text-ink-bone line-clamp-1">
+                      <p className="text-xs text-ink-bone line-clamp-1 font-medium">
                         {issue.description}
                       </p>
                     </div>
                   </div>
 
                   <Link href={`/projects/${projectId}/issues`}>
-                    <Button variant="outline" size="xs" className="shrink-0 gap-1">
+                    <Button variant="outline" size="xs" className="shrink-0 gap-1 border-border-subtle text-ink-bone hover:text-ink-parchment">
                       <span>Inspect</span>
                       <ExternalLink className="w-3 h-3" />
                     </Button>
@@ -489,8 +490,8 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               ))}
 
               {issues.length === 0 && (
-                <Surface depth={1} border="quiet" rounded="md" className="p-5 text-center text-xs text-ink-ash">
-                  <CheckCircle2 className="w-5 h-5 text-pine-moss mx-auto mb-1.5" />
+                <Surface depth={1} border="subtle" rounded="md" className="p-5 text-center text-xs text-ink-ash shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 mx-auto mb-1.5" />
                   <span>No outstanding priority adjudication flags. Your narrative graph is canonical.</span>
                 </Surface>
               )}
@@ -501,60 +502,60 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         {/* Right 1 Column: Continuous Daemon Feed & Dramatic Anchors */}
         <div className="space-y-6">
           {/* Continuous Daemon Log Feed */}
-          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-border-quiet">
+          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-4 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+            <div className="flex items-center justify-between pb-3 border-b border-border-quiet">
               <div>
                 <h3 className="font-serif text-sm font-medium text-ink-parchment flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5 text-wine-crimson" />
                   <span>Continuous Ingestion Daemon</span>
                 </h3>
-                <p className="text-[10px] text-ink-ash mt-0.5">
+                <p className="text-xs text-ink-ash mt-0.5">
                   Real-time pipeline status and story graph sync
                 </p>
               </div>
 
-              <span className="w-2 h-2 rounded-full bg-pine-moss animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-3.5 text-xs">
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between">
                   <span className="font-medium text-ink-parchment">Manuscript Pipeline</span>
-                  <span className="text-ink-ash text-[10px]">
+                  <span className="text-emerald-400 font-mono text-[11px] font-medium">
                     {activeManuscript ? activeManuscript.status.toUpperCase() : "IDLE"}
                   </span>
                 </div>
-                <p className="text-[11px] text-ink-ash">
+                <p className="text-xs text-ink-ash leading-relaxed">
                   {activeManuscript
                     ? `${activeManuscript.chapters_done} of ${activeManuscript.chapters_total} chapters verified in canon.`
                     : "No active manuscript ingestion running."}
                 </p>
               </div>
 
-              <div className="border-t border-border-quiet pt-2 space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-medium text-severity-contradiction">
+              <div className="border-t border-border-quiet pt-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-rose-400">
                     Continuity Issues
                   </span>
-                  <span className="text-ink-ash text-[10px]">
+                  <span className="text-ink-bone font-mono text-[11px]">
                     {issues.length} detected
                   </span>
                 </div>
-                <p className="text-[11px] text-ink-ash">
+                <p className="text-xs text-ink-ash leading-relaxed">
                   {criticalIssues.length} critical contradictions requiring author adjudication.
                 </p>
               </div>
 
-              <div className="border-t border-border-quiet pt-2 space-y-1">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-medium text-pine-moss">
+              <div className="border-t border-border-quiet pt-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-emerald-400">
                     Story Memory Graph
                   </span>
-                  <span className="text-ink-ash text-[10px]">
+                  <span className="text-ink-bone font-mono text-[11px]">
                     {totalKnowledgeNodes} nodes
                   </span>
                 </div>
-                <p className="text-[11px] text-ink-ash">
+                <p className="text-xs text-ink-ash leading-relaxed">
                   {characterCount} characters, {locationCount} locations, and {objectCount} objects linked.
                 </p>
               </div>
@@ -562,19 +563,19 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </Surface>
 
           {/* Dramatic Anchors (Cast Preview) */}
-          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-border-quiet">
+          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+            <div className="flex items-center justify-between pb-3 border-b border-border-quiet">
               <div>
                 <h3 className="font-serif text-sm font-medium text-ink-parchment">
                   Key Characters
                 </h3>
-                <p className="text-[10px] text-ink-ash mt-0.5">
+                <p className="text-xs text-ink-ash mt-0.5">
                   Characters introduced in your story
                 </p>
               </div>
 
               <Link href={`/projects/${projectId}/characters`}>
-                <span className="text-[11px] text-wine-crimson hover:underline">
+                <span className="text-xs font-medium text-wine-crimson hover:underline">
                   View All ({characters.length})
                 </span>
               </Link>
@@ -584,22 +585,22 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               {characters.slice(0, 4).map((char) => (
                 <div
                   key={char.id}
-                  className="p-2.5 rounded-xl bg-surface-subtle border border-border-quiet flex items-center justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
+                  className="p-3 rounded-xl bg-surface-subtle border border-border-quiet flex items-center justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] hover:border-border-subtle transition-colors"
                 >
                   <div className="space-y-0.5 truncate mr-2">
                     <p className="font-medium text-ink-parchment truncate">{char.name}</p>
-                    <p className="text-[10px] text-ink-ash truncate">
-                      {char.description ? char.description.slice(0, 40) + "..." : "Character"}
+                    <p className="text-xs text-ink-ash truncate">
+                      {char.description ? char.description.slice(0, 45) + "..." : "Character"}
                     </p>
                   </div>
-                  <Badge variant="subtle" size="xs">
+                  <Badge variant="subtle" size="xs" className="rounded-full shrink-0 font-mono text-[11px]">
                     {char.first_chapter ? `Ch. ${char.first_chapter}` : "Scene 1"}
                   </Badge>
                 </div>
               ))}
 
               {characters.length === 0 && (
-                <div className="p-2.5 rounded-xl bg-surface-subtle border border-border-quiet text-ink-ash text-center py-4">
+                <div className="p-3 rounded-xl bg-surface-subtle border border-border-quiet text-ink-ash text-center py-4">
                   Upload a manuscript to automatically discover characters.
                 </div>
               )}
@@ -607,7 +608,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </Surface>
 
           {/* Quick Actions */}
-          <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-2.5 text-xs">
+          <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-2.5 text-xs shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
             <h3 className="font-serif text-sm font-medium text-ink-parchment mb-1">
               Quick Actions
             </h3>
@@ -616,14 +617,14 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               variant="outline"
               size="sm"
               onClick={handleExportBible}
-              className="w-full justify-between"
+              className="w-full justify-between border-border-subtle text-ink-bone hover:text-ink-parchment"
             >
               <span>Export Story Bible</span>
-              <Download className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5 text-wine-crimson" />
             </Button>
 
             <Link href={`/projects/${projectId}/editor`} className="block">
-              <Button variant="primary" size="sm" className="w-full justify-between">
+              <Button variant="primary" size="sm" className="w-full justify-between shadow-[0_2px_8px_rgba(140,34,66,0.3)]">
                 <span>Continue Writing in Editor</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Button>

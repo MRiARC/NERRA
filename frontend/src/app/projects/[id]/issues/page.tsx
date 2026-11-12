@@ -133,21 +133,21 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
           <div className="flex items-center gap-2">
             <Link
               href={`/projects/${projectId}`}
-              className="inline-flex items-center gap-1 text-xs text-ink-ash hover:text-ink-parchment transition-colors"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-ash hover:text-ink-parchment transition-colors px-2 py-1 rounded-lg hover:bg-surface-card border border-transparent hover:border-border-quiet"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Project Overview</span>
             </Link>
-            <span className="text-border-subtle">•</span>
-            <span className="text-[11px] font-mono text-pine-moss flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-moss animate-pulse-subtle" />
+            <span className="text-border-subtle font-mono text-xs">•</span>
+            <span className="text-xs font-mono text-emerald-400 flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse-subtle" />
               <span>Checker: Ready</span>
             </span>
           </div>
 
           <h1 className="font-serif text-xl sm:text-2xl font-medium tracking-tight text-ink-parchment flex items-center gap-2.5">
             <span>Plot & Consistency Checks</span>
-            <Badge variant="subtle" size="xs" className="font-mono">
+            <Badge variant="subtle" size="xs" className="font-mono rounded-full text-xs">
               {issues.length} {issues.length === 1 ? "Issue" : "Issues"}
             </Badge>
           </h1>
@@ -157,34 +157,34 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             onClick={() => { setSelectedSeverity("red"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
               selectedSeverity === "red"
-                ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-semibold"
-                : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
+                ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-semibold ring-1 ring-severity-contradiction/40"
+                : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-severity-contradiction" />
+            <span className="w-2 h-2 rounded-full bg-severity-contradiction shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
             <span>{redCount} Major</span>
           </button>
 
           <button
             onClick={() => { setSelectedSeverity("yellow"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
               selectedSeverity === "yellow"
-                ? "bg-severity-warning/15 border-severity-warning text-severity-warning font-semibold"
-                : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
+                ? "bg-severity-warning/15 border-severity-warning text-severity-warning font-semibold ring-1 ring-severity-warning/40"
+                : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-severity-warning" />
+            <span className="w-2 h-2 rounded-full bg-severity-warning shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
             <span>{yellowCount} Minor</span>
           </button>
 
           <button
             onClick={() => { setSelectedStatus("intentional"); setSelectedSeverity("all"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
               selectedStatus === "intentional"
-                ? "bg-wine-accent/20 border-wine-accent text-wine-crimson font-semibold"
-                : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
+                ? "bg-wine-accent/20 border-wine-accent text-wine-crimson font-semibold ring-1 ring-wine-accent/40"
+                : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
             <EyeOff className="w-3.5 h-3.5 text-wine-crimson" />
@@ -193,10 +193,10 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
 
           <button
             onClick={() => { setSelectedStatus("all"); setSelectedSeverity("all"); }}
-            className={`px-3 py-1.5 rounded-full border text-xs text-ink-ash transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
+            className={`px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
               selectedStatus === "all" && selectedSeverity === "all"
                 ? "bg-surface-field border-border-focus text-ink-parchment font-semibold"
-                : "bg-surface-card border-border-subtle hover:border-border-focus"
+                : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
             All ({issues.length})

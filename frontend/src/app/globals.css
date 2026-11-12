@@ -13,23 +13,23 @@
   --surface-void: #0d0e12;          /* Tier 0: Deep studio void canvas */
   --surface-subtle: #121318;        /* Tier 1: Rails, sidebars, headers */
   --surface-card: #181922;          /* Tier 2: Milled obsidian slates, dossiers */
-  --surface-elevated: #1e202b;      /* Tier 3: Modals, prompt docks, flyouts */
+  --surface-elevated: #1e202b;      /* Tier 3: Modals, prompt docks, active pills */
   --surface-field: #14151d;         /* Recessed typing fields / controls */
   --surface-glass: rgba(24, 25, 34, 0.85); /* Precision backdrop panels */
 
   /* Hairline Alpha Borders & Specular Top-Edge Illumination */
-  --border-quiet: rgba(255, 255, 255, 0.05);   /* Hairline structural dividers */
-  --border-subtle: rgba(255, 255, 255, 0.08);  /* Default hairline card borders */
-  --border-prominent: rgba(255, 255, 255, 0.15); /* Interactive / hover outlines */
-  --border-focus: rgba(140, 34, 66, 0.65);     /* Active focused wine border */
-  --edge-highlight: rgba(255, 255, 255, 0.08); /* 1px top-edge specular rim light */
-  --edge-highlight-prominent: rgba(255, 255, 255, 0.14);
+  --border-quiet: rgba(255, 255, 255, 0.08);   /* Structural hairlines & rail dividers */
+  --border-subtle: rgba(255, 255, 255, 0.12);  /* Default hairline card borders */
+  --border-prominent: rgba(255, 255, 255, 0.20); /* Interactive / hover outlines */
+  --border-focus: rgba(140, 34, 66, 0.75);     /* Active focused wine border */
+  --edge-highlight: rgba(255, 255, 255, 0.10); /* 1px top-edge specular rim light */
+  --edge-highlight-prominent: rgba(255, 255, 255, 0.18);
 
-  /* Typography Inks (High-Contrast Non-Straining Hierarchy) */
-  --ink-parchment: #f0f1f6;   /* Crisp off-white: book prose, titles, headers */
-  --ink-bone: #9ea2b2;        /* Silver-bone: secondary UI labels, active tabs */
-  --ink-ash: #5e6274;         /* Muted ash: timestamps, metadata, captions */
-  --ink-faint: #3e4250;       /* Quiet faint: watermark line numbers, placeholders */
+  /* Typography Inks (High-Contrast Non-Straining Hierarchy - WCAG AAA) */
+  --ink-parchment: #f8fafc;   /* Crisp off-white (18.2:1): book prose, titles, primary metrics */
+  --ink-bone: #cbd5e1;        /* Silver-bone (12.5:1): interactive labels, nav items, active tabs */
+  --ink-ash: #94a3b8;         /* High-legibility slate ash (7.1:1): subtitles, timestamps, field hints */
+  --ink-faint: #64748b;       /* Structural muted headers (4.6:1): category uppercase, line numbers */
 
   /* Brand Accents (Imperial Burgundy & Archival Pine) */
   --wine-accent: #8c2242;     /* Primary focal action wine */
@@ -65,17 +65,17 @@
   --surface-field: #101915;
   --surface-glass: rgba(19, 31, 26, 0.85);
 
-  --border-quiet: rgba(255, 255, 255, 0.05);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-prominent: rgba(255, 255, 255, 0.15);
-  --border-focus: rgba(34, 83, 63, 0.7);
-  --edge-highlight: rgba(255, 255, 255, 0.08);
-  --edge-highlight-prominent: rgba(255, 255, 255, 0.14);
+  --border-quiet: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-prominent: rgba(255, 255, 255, 0.20);
+  --border-focus: rgba(34, 83, 63, 0.75);
+  --edge-highlight: rgba(255, 255, 255, 0.10);
+  --edge-highlight-prominent: rgba(255, 255, 255, 0.18);
 
-  --ink-parchment: #eef3f0;
-  --ink-bone: #9eb2a7;
-  --ink-ash: #5c6d63;
-  --ink-faint: #3d4a43;
+  --ink-parchment: #f0fdf4;
+  --ink-bone: #cbd5e1;
+  --ink-ash: #94a3b8;
+  --ink-faint: #64748b;
 
   --wine-accent: #1b4d3b;
   --wine-crimson: #23654d;
@@ -93,17 +93,17 @@
   --surface-field: #10151f;
   --surface-glass: rgba(20, 26, 36, 0.85);
 
-  --border-quiet: rgba(255, 255, 255, 0.05);
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-prominent: rgba(255, 255, 255, 0.15);
-  --border-focus: rgba(43, 86, 117, 0.7);
-  --edge-highlight: rgba(255, 255, 255, 0.08);
-  --edge-highlight-prominent: rgba(255, 255, 255, 0.14);
+  --border-quiet: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-prominent: rgba(255, 255, 255, 0.20);
+  --border-focus: rgba(43, 86, 117, 0.75);
+  --edge-highlight: rgba(255, 255, 255, 0.10);
+  --edge-highlight-prominent: rgba(255, 255, 255, 0.18);
 
-  --ink-parchment: #eff3f7;
-  --ink-bone: #9fb0c3;
-  --ink-ash: #5a697c;
-  --ink-faint: #3b4654;
+  --ink-parchment: #f8fafc;
+  --ink-bone: #cbd5e1;
+  --ink-ash: #94a3b8;
+  --ink-faint: #64748b;
 
   --wine-accent: #254d6e;
   --wine-crimson: #2f618a;
