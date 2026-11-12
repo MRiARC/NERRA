@@ -79,6 +79,30 @@ _MULTI_VALUE_ATTRIBUTES = {
     "ally",
     "behavior",
     "action",
+    "action_performed",
+    "has_feature",
+    "feature",
+    "appearance_note",
+    "observation",
+    "trait",
+    "role",
+    "activity",
+    "detail",
+    "characteristic",
+    "attribute",
+    "physical_trait",
+    "physical_feature",
+    "physical_description",
+    "clothing",
+    "attire",
+    "garment",
+    "injury",
+    "wound",
+    "equipment",
+    "item",
+    "accessory",
+    "habit",
+    "mannerism",
 }
 
 
@@ -128,6 +152,58 @@ def detect_contradictions(claims: list) -> list[IssueDraft]:
     return drafts
 
 
+def _build_chapter_chronology(
+    events: list | None, claims: list, knowledge_updates: list
+) -> dict[int, float]:
+    """Build a unified, monotonic chronology mapping across chapters.
+
+    Normalizes explicit `story_time_order` slots and interpolates positions
+    for eventless chapters to avoid scale mismatches (e.g. eventless Ch.1 at 100
+    vs explicit Ch.9 at slot 3).
+    """
+    anchors: dict[int, float] = {}
+    for ev in (events or []):
+        slot = getattr(ev, "story_time_order", None)
+        ch = getattr(ev, "chapter_number", None)
+        if isinstance(slot, (int, float)) and isinstance(ch, int):
+            prev = anchors.get(ch)
+            if prev is None or slot < prev:
+                anchors[ch] = float(slot)
+
+    all_chapters: set[int] = set(anchors.keys())
+    for c in claims:
+        ch = getattr(c, "chapter", None)
+        if isinstance(ch, int):
+            all_chapters.add(ch)
+    for u in knowledge_updates:
+        ch = getattr(u, "chapter", None)
+        if isinstance(ch, int):
+            all_chapters.add(ch)
+
+    if not anchors:
+        return {ch: float(ch) for ch in all_chapters}
+
+    sorted_anchors = sorted(anchors.items(), key=lambda x: x[0])
+    first_ch, first_time = sorted_anchors[0]
+    last_ch, last_time = sorted_anchors[-1]
+
+    mapping: dict[int, float] = dict(anchors)
+    for ch in sorted(all_chapters):
+        if ch in mapping:
+            continue
+        if ch < first_ch:
+            mapping[ch] = first_time - (first_ch - ch) * 0.1
+        elif ch > last_ch:
+            mapping[ch] = last_time + (ch - last_ch) * 0.1
+        else:
+            prev_ch, prev_time = max((c, t) for c, t in sorted_anchors if c < ch)
+            next_ch, next_time = min((c, t) for c, t in sorted_anchors if c > ch)
+            ratio = (ch - prev_ch) / max(1, next_ch - prev_ch)
+            mapping[ch] = prev_time + ratio * (next_time - prev_time)
+
+    return mapping
+
+
 def detect_knowledge_violations(
     claims: list, knowledge_updates: list, events: list | None = None
 ) -> list[IssueDraft]:
@@ -138,28 +214,13 @@ def detect_knowledge_violations(
     back to narrative chapter order otherwise.
     """
     drafts: list[IssueDraft] = []
-
-    chapter_min_time: dict[int, int] = {}
-    for ev in (events or []):
-        slot = getattr(ev, "story_time_order", None)
-        ch = getattr(ev, "chapter_number", None)
-        if isinstance(slot, int) and isinstance(ch, int):
-            prev = chapter_min_time.get(ch)
-            if prev is None or slot < prev:
-                chapter_min_time[ch] = slot
-
-    def _time_pos(chapter: int) -> int:
-        return chapter_min_time.get(chapter, chapter * 100)
+    chrono = _build_chapter_chronology(events, claims, knowledge_updates)
 
     for claim in claims:
         if _norm(claim.attribute) != "knows_about":
             continue
         for update in knowledge_updates:
-            learned_later = (
-                _time_pos(update.chapter) > _time_pos(claim.chapter)
-                if chapter_min_time
-                else update.chapter > claim.chapter
-            )
+            learned_later = chrono.get(update.chapter, float(update.chapter)) > chrono.get(claim.chapter, float(claim.chapter))
             if (
                 _same_entity(claim.subject, update.character)
                 and _facts_match(claim.value, update.fact)
@@ -253,17 +314,19 @@ def detect_spatiotemporal_conflicts(events: list) -> list[IssueDraft]:
     drafts: list[IssueDraft] = []
     seen_pairs: set[tuple[str, int, str, str]] = set()
 
-    # Bucket events by story_time_order (or chapter+scene_order fallback)
-    by_slot: dict[int, list] = {}
+    # Bucket events by story_time_order (or distinct chapter+scene fallback)
+    by_slot: dict[str, list] = {}
     for ev in events:
         if not ev.location or not ev.participants:
             continue
         slot = getattr(ev, "story_time_order", None)
-        if slot is None:
-            slot = ev.chapter_number * 100 + getattr(ev, "scene_order", 1)
-        by_slot.setdefault(slot, []).append(ev)
+        if slot is not None:
+            slot_key = f"time:{slot}"
+        else:
+            slot_key = f"ch:{ev.chapter_number}:scene:{getattr(ev, 'scene_order', 1)}"
+        by_slot.setdefault(slot_key, []).append(ev)
 
-    for slot, slot_events in by_slot.items():
+    for slot_key, slot_events in by_slot.items():
         if len(slot_events) < 2:
             continue
         for i in range(len(slot_events)):
@@ -276,10 +339,15 @@ def detect_spatiotemporal_conflicts(events: list) -> list[IssueDraft]:
                 for p_norm, p_orig in pa.items():
                     if p_norm in pb:
                         loc_pair = tuple(sorted([_norm(a.location), _norm(b.location)]))
-                        dedupe_key = (p_norm, slot, loc_pair[0], loc_pair[1])
+                        dedupe_key = (p_norm, slot_key, loc_pair[0], loc_pair[1])
                         if dedupe_key in seen_pairs:
                             continue
                         seen_pairs.add(dedupe_key)
+                        slot_display = (
+                            f"story time {getattr(a, 'story_time_order', '')}".strip()
+                            if slot_key.startswith("time:")
+                            else f"ch.{a.chapter_number} scene {getattr(a, 'scene_order', 1)}"
+                        )
                         drafts.append(
                             IssueDraft(
                                 type="spatiotemporal_conflict",
@@ -287,7 +355,7 @@ def detect_spatiotemporal_conflicts(events: list) -> list[IssueDraft]:
                                 description=(
                                     f'{p_orig} appears simultaneously in "{a.location}" '
                                     f'(chapter {a.chapter_number}) and "{b.location}" '
-                                    f'(chapter {b.chapter_number}) at story time {slot}'
+                                    f'(chapter {b.chapter_number}) at {slot_display}'
                                 ),
                                 evidence=[
                                     {"chapter": a.chapter_number, "quote": a.summary},
@@ -622,18 +690,56 @@ def run_consistency_pass(db, project_id) -> int:
     else:
         drafts.extend(detect_world_rule_violations(claims, rules))
 
-    existing = {
-        (issue.type, issue.description)
-        for issue in db.query(Issue)
+    existing_issues = (
+        db.query(Issue)
         .filter(Issue.project_id == project_id, Issue.status == "open")
         .all()
+    )
+    existing_desc = {(issue.type, issue.description) for issue in existing_issues}
+    existing_claims: set[tuple[str, str]] = set()
+    for issue in existing_issues:
+        if issue.claim_a_id and issue.claim_b_id:
+            existing_claims.add((str(issue.claim_a_id), str(issue.claim_b_id)))
+            existing_claims.add((str(issue.claim_b_id), str(issue.claim_a_id)))
+
+    existing_evidence = {
+        (
+            issue.type,
+            frozenset(
+                (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                for e in (issue.evidence or [])
+                if isinstance(e, dict)
+            ),
+        )
+        for issue in existing_issues
+        if issue.evidence
     }
 
     to_persist: list[IssueDraft] = []
     for draft in drafts:
-        if (draft.type, draft.description) in existing:
+        if (draft.type, draft.description) in existing_desc:
             continue
-        existing.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            pair = (str(draft.claim_a_id), str(draft.claim_b_id))
+            if pair in existing_claims:
+                continue
+        if draft.evidence:
+            ev_sig = (
+                draft.type,
+                frozenset(
+                    (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                    for e in draft.evidence
+                    if isinstance(e, dict)
+                ),
+            )
+            if len(ev_sig[1]) >= 2 and ev_sig in existing_evidence:
+                continue
+            existing_evidence.add(ev_sig)
+
+        existing_desc.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            existing_claims.add((str(draft.claim_a_id), str(draft.claim_b_id)))
+            existing_claims.add((str(draft.claim_b_id), str(draft.claim_a_id)))
         to_persist.append(draft)
 
     _CONFLICT_TYPES = {
@@ -646,22 +752,14 @@ def run_consistency_pass(db, project_id) -> int:
 
     reasons_by_idx: dict[int, dict] = {}
     if to_persist:
-        from concurrent.futures import ThreadPoolExecutor
-
-        def _reason_for(idx_draft: tuple[int, IssueDraft]) -> tuple[int, dict]:
-            idx, d = idx_draft
-            should_llm = llm_enabled and d.type in _CONFLICT_TYPES
-            return idx, contradiction_reasoner.analyze_issue_intent(
-                project_id=project_id,
-                issue_type=d.type,
-                description=d.description,
-                evidence=d.evidence,
-                use_llm=should_llm,
-            )
-
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            for idx, res in pool.map(_reason_for, enumerate(to_persist)):
-                reasons_by_idx[idx] = res
+        batch_reasons = contradiction_reasoner.analyze_issues_batch_intent(
+            project_id=project_id,
+            drafts=to_persist,
+            conflict_types=_CONFLICT_TYPES,
+            use_llm=llm_enabled,
+        )
+        for idx, res in enumerate(batch_reasons):
+            reasons_by_idx[idx] = res
 
     created = 0
     for idx, draft in enumerate(to_persist):

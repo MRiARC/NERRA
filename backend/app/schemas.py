@@ -8,6 +8,7 @@ Two jobs:
 """
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -34,6 +35,22 @@ class UserOut(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+    session_id: str | None = None
+    expires_in: int | None = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str | None = None
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_active_at: datetime
+    user_agent: str | None = None
+    ip_address: str | None = None
+    is_current: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +95,30 @@ class StatusOut(BaseModel):
     chapters_done: int
     chapters_total: int
     error_note: str | None
+
+
+class ManuscriptOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    status: str
+    chapters_done: int
+    chapters_total: int
+    created_at: datetime
+
+
+class ChapterAppendIn(BaseModel):
+    chapter_title: str = Field(default="")
+    text: str = Field(min_length=20)
+
+
+class ChangeDetectionOut(BaseModel):
+    event_type: str
+    changed_chapters: list[int] = Field(default_factory=list)
+    unchanged_chapters: list[int] = Field(default_factory=list)
+    stale_claim_chapters: list[int] = Field(default_factory=list)
+    paragraph_diffs: dict = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -322,3 +363,123 @@ class BibleExportOut(BaseModel):
     project_title: str
     markdown: str
     generated_at: str
+
+
+class ValidationCandidateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    manuscript_id: uuid.UUID | None
+    chapter: int
+    candidate_type: str
+    payload: dict
+    confidence: float
+    route: str
+    ambiguity_reason: str | None = None
+    evidence_quote: str | None = None
+    status: str
+    created_at: datetime
+
+
+class CandidateResolveIn(BaseModel):
+    action: Literal["approve", "reject", "merge", "split"]
+    target_character_id: uuid.UUID | None = None
+    split_name: str | None = None
+
+
+class ClaimPatchIn(BaseModel):
+    value: str | None = None
+    attribute: str | None = None
+    subject: str | None = None
+    status: Literal["active", "superseded"] | None = None
+    reason: str | None = None
+    re_audit: bool = True
+
+
+class CharacterRenameIn(BaseModel):
+    new_name: str
+    re_audit: bool = True
+
+
+class CharacterSplitIn(BaseModel):
+    alias_to_split: str
+    new_character_name: str | None = None
+    re_audit: bool = True
+
+
+class CorrectionRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    rule_type: str
+    target_entity: str
+    instruction_text: str
+    payload: dict
+    active: bool
+    created_at: datetime
+
+
+class FeedbackActionOut(BaseModel):
+    updated_id: uuid.UUID
+    correction_rule: CorrectionRuleOut | None = None
+    re_audit_chapters: list[int] = Field(default_factory=list)
+    issues_created: int = 0
+    impact_notes: list[str] = Field(default_factory=list)
+
+
+PlotThreadStatus = Literal["open", "resolved", "abandoned", "red_herring"]
+
+
+class PlotThreadCreate(BaseModel):
+    title: str
+    description: str
+    setup_chapter: int = 1
+    payoff_chapter: int | None = None
+    status: PlotThreadStatus = "open"
+    related_entities: list[str] = Field(default_factory=list)
+    evidence_quote: str | None = None
+
+
+class PlotThreadPatch(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    payoff_chapter: int | None = None
+    status: PlotThreadStatus | None = None
+    related_entities: list[str] | None = None
+
+
+class PlotThreadOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    title: str
+    description: str
+    setup_chapter: int
+    payoff_chapter: int | None = None
+    status: str
+    related_entities: list[str] = Field(default_factory=list)
+    evidence_quote: str | None = None
+    updated_at: datetime
+
+
+class ProjectCustomizationIn(BaseModel):
+    custom_context: str | None = None
+    custom_prompt: str | None = None
+    custom_validation: dict = Field(default_factory=dict)
+    custom_graph_write: dict = Field(default_factory=dict)
+    custom_ui_config: dict = Field(default_factory=dict)
+
+
+class ProjectCustomizationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: uuid.UUID
+    custom_context: str | None = None
+    custom_prompt: str | None = None
+    custom_validation: dict = Field(default_factory=dict)
+    custom_graph_write: dict = Field(default_factory=dict)
+    custom_ui_config: dict = Field(default_factory=dict)
+    updated_at: datetime | None = None

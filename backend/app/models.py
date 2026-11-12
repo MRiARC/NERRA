@@ -50,6 +50,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    refresh_token_hash: Mapped[str] = mapped_column(String(128), index=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    is_revoked: Mapped[bool] = mapped_column(default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    last_active_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    expires_at: Mapped[datetime] = mapped_column(index=True)
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -116,6 +130,7 @@ class Chunk(Base):
     chapter_number: Mapped[int]
     content: Mapped[str]
     content_hash: Mapped[str]
+    paragraph_hashes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.embedding_dim), nullable=True
     )
@@ -250,6 +265,7 @@ class Claim(Base):
     chapter: Mapped[int]
     evidence_quote: Mapped[str]  # exact sentence from the manuscript
     source_paragraph_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    extraction_version: Mapped[int] = mapped_column(default=1)
     confidence: Mapped[float] = mapped_column(default=1.0)
     validation_state: Mapped[str] = mapped_column(default="AUTO_ACCEPTED")  # AUTO_ACCEPTED | PENDING_REVIEW | DISMISSED
     # active | superseded | intentional
@@ -289,6 +305,35 @@ class ManuscriptVersion(Base):
     content_hash: Mapped[str]
     raw_text: Mapped[str]
     diff_summary: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class ValidationCandidate(Base):
+    """Pre-graph validation gate staging table (Milestone 3.2).
+
+    Enforces `LLM proposes -> Validator decides`:
+      - auto_accepted (0.90-1.00): written straight into Story Graph
+      - human_review  (0.40-0.89): awaits author confirmation/merge/split
+      - reject_hold   (0.00-0.39): quarantined without polluting canon
+    """
+
+    __tablename__ = "validation_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    manuscript_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("manuscripts.id", ondelete="CASCADE"), nullable=True
+    )
+
+    chapter: Mapped[int]
+    candidate_type: Mapped[str]  # character | alias | claim | relationship | location
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    confidence: Mapped[float] = mapped_column(default=0.7)
+    route: Mapped[str] = mapped_column(default="human_review", index=True)  # auto_accepted | human_review | reject_hold
+    ambiguity_reason: Mapped[str | None] = None
+    source_paragraph_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    evidence_quote: Mapped[str | None] = None
+    status: Mapped[str] = mapped_column(default="pending", index=True)  # pending | approved | rejected | merged | split
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -334,3 +379,57 @@ class Issue(Base):
     claim_a_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     claim_b_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("claims.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class CorrectionRule(Base):
+    """Author feedback directives (Milestone 3.3).
+
+    Captures claim overrides, character renames, alias merges, and entity splits
+    so ContextBuilder, Extractor, and Validator respect author corrections.
+    """
+
+    __tablename__ = "correction_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+
+    rule_type: Mapped[str] = mapped_column(index=True)  # alias_merge | entity_split | character_rename | fact_override | plot_status
+    target_entity: Mapped[str]
+    instruction_text: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PlotThread(Base):
+    """Cross-chapter narrative setup, promise, mystery, and payoff tracker (Milestone 3.4)."""
+
+    __tablename__ = "plot_threads"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+
+    title: Mapped[str]
+    description: Mapped[str]
+    setup_chapter: Mapped[int] = mapped_column(default=1)
+    payoff_chapter: Mapped[int | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(default="open", index=True)  # open | resolved | abandoned | red_herring
+    related_entities: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    evidence_quote: Mapped[str | None] = None
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
+class ProjectCustomization(Base):
+    """Per-project extension hooks for context, prompts, validation, graph writes & UI (Milestone 3.4)."""
+
+    __tablename__ = "project_customizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), unique=True, index=True)
+
+    custom_context: Mapped[str | None] = None
+    custom_prompt: Mapped[str | None] = None
+    custom_validation: Mapped[dict] = mapped_column(JSONB, default=dict)
+    custom_graph_write: Mapped[dict] = mapped_column(JSONB, default=dict)
+    custom_ui_config: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())

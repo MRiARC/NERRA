@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
@@ -19,14 +19,21 @@ from app.models import (
     StoryEvent,
     StoryObject,
     User,
+    ValidationCandidate,
     WorldRule,
 )
 from app.schemas import (
     BibleExportOut,
+    CandidateResolveIn,
     CharacterMergeIn,
     CharacterOut,
+    CharacterRenameIn,
+    CharacterSplitIn,
     ClaimOut,
+    ClaimPatchIn,
+    CorrectionRuleOut,
     EventOut,
+    FeedbackActionOut,
     IssueOut,
     IssuePatchIn,
     IssueStatus,
@@ -34,14 +41,20 @@ from app.schemas import (
     KnowledgeOut,
     ManuscriptVersionOut,
     ObjectCustodyOut,
+    PlotThreadCreate,
+    PlotThreadOut,
+    PlotThreadPatch,
+    ProjectCustomizationIn,
+    ProjectCustomizationOut,
     RelationshipOut,
     StoryGraphOut,
     TimelineOut,
+    ValidationCandidateOut,
     WorldOut,
     WorldRuleCreate,
     WorldRuleOut,
 )
-from app.services import consistency, exporter, graph, knowledge, timeline
+from app.services import consistency, exporter, feedback, graph, knowledge, plot_threads, timeline, validator
 
 router = APIRouter(tags=["story"])
 
@@ -420,3 +433,223 @@ def export_story_bible(
 ) -> dict:
     """Compile and return the full project Story Bible in Markdown."""
     return exporter.export_story_bible_markdown(db, project.id)
+
+
+@router.get("/projects/{project_id}/candidates", response_model=list[ValidationCandidateOut])
+def list_candidates(
+    project_id: uuid.UUID,
+    status: str | None = None,
+    route: str | None = None,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list:
+    """List pre-graph staged validation candidates (human_review and reject_hold)."""
+    query = db.query(ValidationCandidate).filter(ValidationCandidate.project_id == project.id)
+    if status:
+        query = query.filter(ValidationCandidate.status == status)
+    if route:
+        query = query.filter(ValidationCandidate.route == route)
+    return query.order_by(ValidationCandidate.chapter.asc(), ValidationCandidate.created_at.desc()).all()
+
+
+@router.post("/projects/{project_id}/candidates/{candidate_id}/resolve", response_model=ValidationCandidateOut)
+def resolve_validation_candidate(
+    project_id: uuid.UUID,
+    candidate_id: uuid.UUID,
+    payload: CandidateResolveIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Approve, reject, merge, or split a staged pre-graph validation candidate."""
+    try:
+        return validator.resolve_candidate(
+            db,
+            project.id,
+            candidate_id,
+            action=payload.action,
+            target_character_id=payload.target_character_id,
+            split_name=payload.split_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.patch("/projects/{project_id}/claims/{claim_id}", response_model=FeedbackActionOut)
+def patch_claim_feedback(
+    project_id: uuid.UUID,
+    claim_id: uuid.UUID,
+    payload: ClaimPatchIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Inline-edit a Claim and record an Author CorrectionRule + downstream re-audit."""
+    try:
+        return feedback.override_claim(
+            db,
+            project.id,
+            claim_id,
+            value=payload.value,
+            attribute=payload.attribute,
+            subject=payload.subject,
+            status=payload.status,
+            reason=payload.reason,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/characters/{character_id}/rename", response_model=FeedbackActionOut)
+def rename_character_feedback(
+    project_id: uuid.UUID,
+    character_id: uuid.UUID,
+    payload: CharacterRenameIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Rename a character preserving UUID, record a CorrectionRule, and re-audit downstream."""
+    try:
+        return feedback.rename_character_with_feedback(
+            db,
+            project.id,
+            character_id,
+            payload.new_name,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/characters/{character_id}/split", response_model=FeedbackActionOut)
+def split_character_feedback(
+    project_id: uuid.UUID,
+    character_id: uuid.UUID,
+    payload: CharacterSplitIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Split a conflated alias off a character into its own canonical Character + CorrectionRule."""
+    try:
+        return feedback.split_character_alias(
+            db,
+            project.id,
+            character_id,
+            payload.alias_to_split,
+            new_character_name=payload.new_character_name,
+            re_audit=payload.re_audit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/projects/{project_id}/corrections", response_model=list[CorrectionRuleOut])
+def get_correction_rules(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List active author correction directives for this project."""
+    return feedback.list_corrections(db, project.id)
+
+
+@router.delete(
+    "/projects/{project_id}/corrections/{correction_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_correction_rule(
+    project_id: uuid.UUID,
+    correction_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Deactivate an author correction rule."""
+    try:
+        feedback.deactivate_correction(db, project.id, correction_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/projects/{project_id}/plot-threads", response_model=list[PlotThreadOut])
+def get_plot_threads(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List tracked cross-chapter plot threads, mysteries, and payoffs."""
+    return plot_threads.list_plot_threads(db, project.id)
+
+
+@router.post(
+    "/projects/{project_id}/plot-threads",
+    response_model=PlotThreadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_plot_thread_endpoint(
+    project_id: uuid.UUID,
+    payload: PlotThreadCreate,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create or update a plot thread manually."""
+    return plot_threads.create_plot_thread(db, project.id, payload.model_dump())
+
+
+@router.patch("/projects/{project_id}/plot-threads/{thread_id}", response_model=PlotThreadOut)
+def patch_plot_thread_endpoint(
+    project_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    payload: PlotThreadPatch,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update a plot thread status, payoff chapter, description, or entities."""
+    try:
+        return plot_threads.patch_plot_thread(
+            db, project.id, thread_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/plot-threads/sync", response_model=list[PlotThreadOut])
+def sync_plot_threads_endpoint(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Run Claude Sonnet cross-chapter synthesis to refresh all plot threads."""
+    return plot_threads.synthesize_all_plot_threads_llm(db, project.id, use_llm=True)
+
+
+@router.get("/projects/{project_id}/customization", response_model=ProjectCustomizationOut)
+def get_project_customization(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the project's 5 Feature Customization hooks."""
+    return plot_threads.get_customization(db, project.id)
+
+
+@router.put("/projects/{project_id}/customization", response_model=ProjectCustomizationOut)
+def put_project_customization(
+    project_id: uuid.UUID,
+    payload: ProjectCustomizationIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update the project's 5 Feature Customization hooks."""
+    return plot_threads.upsert_customization(db, project.id, payload.model_dump())
