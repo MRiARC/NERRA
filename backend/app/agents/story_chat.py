@@ -187,7 +187,7 @@ def retrieve_node(state: ChatState) -> dict:
       4. Active structured Claim facts.
     """
     from app.database import SessionLocal
-    from app.models import Character, Claim, Chunk, KnowledgeUpdate, Location, Manuscript, Relationship
+    from app.models import Character, Claim, Chunk, KnowledgeUpdate, Location, Manuscript, PlotThread, Relationship
     from app.services import embedder, graph, timeline
 
     project_id = state["project_id"]
@@ -321,6 +321,15 @@ def retrieve_node(state: ChatState) -> dict:
         ]
         facts_summary = f"Characters: {', '.join(char_names)}. Claims: {'; '.join(claim_facts)}."
         contexts.append({"chapter": 0, "content": f"Known facts: {facts_summary}"})
+
+        threads = db.query(PlotThread).filter(PlotThread.project_id == project_id).order_by(PlotThread.setup_chapter.asc()).all()
+        if threads:
+            threads_summary = "; ".join(
+                f"[{t.status}] Ch.{t.setup_chapter} {t.title}: {t.description}"
+                + (f" (payoff Ch.{t.payoff_chapter})" if t.payoff_chapter else "")
+                for t in threads[:20]
+            )
+            contexts.append({"chapter": 0, "content": f"Plot Threads & Mysteries: {threads_summary}"})
 
         # 4. Self-correction retry: if context grading fails, rewrite search terms & retrieve additional chunks
         if not grade_contexts(question, contexts):

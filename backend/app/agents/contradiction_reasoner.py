@@ -254,3 +254,139 @@ def evaluate_issue_in_db(db, issue, use_llm: bool = True):
     db.commit()
     db.refresh(issue)
     return issue
+
+
+def analyze_issues_batch_intent(
+    project_id,
+    drafts: list,
+    conflict_types: set[str] | None = None,
+    batch_size: int | None = None,
+    use_llm: bool = True,
+) -> list[dict]:
+    """Classify a batch of IssueDraft objects sharing context to prevent O(N) LLM bursts."""
+    if not drafts:
+        return []
+
+    target_types = conflict_types or {
+        "contradiction",
+        "knowledge_violation",
+        "spatiotemporal_conflict",
+        "custody_paradox",
+        "world_rule_violation",
+    }
+
+    # Pre-populate deterministic baseline for all items
+    results: list[dict] = [
+        analyze_issue_intent(
+            project_id=project_id,
+            issue_type=d.type,
+            description=d.description,
+            evidence=d.evidence,
+            surrounding_context=" ",  # skip per-issue DB roundtrip; heuristic fallback runs cleanly
+            use_llm=False,
+        )
+        for d in drafts
+    ]
+
+    if not use_llm:
+        return results
+
+    try:
+        from app.config import settings
+        from app.services import llm_budget
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return results
+    except Exception:  # noqa: BLE001
+        return results
+
+    conflict_indices = [idx for idx, d in enumerate(drafts) if d.type in target_types]
+    if not conflict_indices:
+        return results
+
+    # Gather shared project context once across involved chapters
+    all_chapters = sorted(
+        {
+            ev.get("chapter")
+            for idx in conflict_indices
+            for ev in (drafts[idx].evidence or [])
+            if isinstance(ev.get("chapter"), int)
+        }
+    )
+    ctx_state = gather_context_node(
+        {
+            "project_id": str(project_id),
+            "evidence": [{"chapter": ch} for ch in all_chapters[:6]],
+        }
+    )
+    shared_limit = llm_budget.compute_shared_context_budget(settings.chat_model, max_output_tokens=2048)
+    shared_ctx = (ctx_state.get("surrounding_context") or "")[:shared_limit]
+    eff_batch_size = batch_size if batch_size is not None else llm_budget.compute_intent_batch_size(2048)
+
+    class BatchIntentItem(BaseModel):
+        index: int
+        intent_classification: str = Field(description="One of: error | intentional | ambiguous")
+        confidence: float = Field(ge=0.0, le=1.0)
+        reasoning: str
+
+    class BatchIntentResult(BaseModel):
+        items: list[BatchIntentItem] = Field(default_factory=list)
+
+    client = get_anthropic_client()
+    for start in range(0, len(conflict_indices), eff_batch_size):
+        chunk_idxs = conflict_indices[start : start + eff_batch_size]
+        issues_block = "\n".join(
+            f"[{i}] ({drafts[i].type}) {drafts[i].description} | Quotes: "
+            + "; ".join(str(e.get("quote") or e.get("fact") or "") for e in (drafts[i].evidence or []))
+            for i in chunk_idxs
+        )
+        prompt = f"""Analyze each numbered continuity issue carefully and classify the author's intent.
+Decide for every index whether it is:
+- "error": A genuine accidental continuity mistake.
+- "intentional": Deliberate narrative tension (alias, disguise, lying, unreliable narrator, magic rule).
+- "ambiguous": Needs author confirmation.
+
+SURROUNDING CHARACTER & CHAPTER CONTEXT:
+{shared_ctx}
+
+ISSUES TO CLASSIFY:
+{issues_block}"""
+        try:
+            resp = client.messages.create(
+                model=settings.chat_model,
+                max_tokens=2048,
+                tools=[
+                    {
+                        "name": "classify_intent_batch",
+                        "description": "Record intent classifications for each numbered issue",
+                        "input_schema": BatchIntentResult.model_json_schema(),
+                    }
+                ],
+                tool_choice={"type": "tool", "name": "classify_intent_batch"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in resp.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "classify_intent_batch":
+                    parsed = BatchIntentResult.model_validate(block.input)
+                    valid_idx = set(chunk_idxs)
+                    for item in parsed.items:
+                        if item.index not in valid_idx:
+                            continue
+                        routed = route_by_confidence_node(
+                            {
+                                "intent_classification": item.intent_classification,
+                                "confidence": item.confidence,
+                            }
+                        )
+                        results[item.index] = {
+                            "intent_classification": routed["intent_classification"],
+                            "confidence": routed["confidence"],
+                            "ai_reasoning": item.reasoning,
+                            "severity": routed["severity"],
+                        }
+                    break
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Batched LLM intent reasoner fallback to heuristic: %s", exc)
+
+    return results

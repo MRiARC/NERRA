@@ -203,17 +203,72 @@ def get_roster(db, project_id) -> str:
 
 
 def get_anthropic_client():
-    """Shared Anthropic client with a helpful error when the key is missing."""
+    """Shared Anthropic client with dynamic payload timeout and Retry-After backoff."""
+    import random
+    import time
+
     import anthropic
+
+    from app.services import llm_budget
 
     if not settings.anthropic_api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    kwargs = {"api_key": settings.anthropic_api_key, "timeout": 60.0}
+    explicit_timeout = getattr(settings, "llm_timeout_seconds", None)
+    kwargs = {
+        "api_key": settings.anthropic_api_key,
+        "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
+        "max_retries": 1,
+    }
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
-    return anthropic.Anthropic(**kwargs)
+    raw_client = anthropic.Anthropic(**kwargs)
+
+    class _ResilientMessages:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def create(self, **call_kwargs):
+            if "timeout" not in call_kwargs:
+                if explicit_timeout is not None:
+                    call_kwargs["timeout"] = float(explicit_timeout)
+                else:
+                    in_chars = sum(
+                        len(str(m.get("content", ""))) for m in (call_kwargs.get("messages") or [])
+                    )
+                    max_toks = int(call_kwargs.get("max_tokens") or 4096)
+                    call_kwargs["timeout"] = llm_budget.compute_dynamic_timeout_seconds(in_chars, max_toks)
+
+            delay = 2.0
+            for attempt in range(4):
+                try:
+                    return self._inner.create(**call_kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    status = getattr(exc, "status_code", None)
+                    msg = str(exc).lower()
+                    is_transient = (
+                        isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError, anthropic.InternalServerError))
+                        or (isinstance(status, int) and (status == 429 or status >= 500))
+                        or "quota exhausted" in msg
+                        or "timed out" in msg
+                    )
+                    if not is_transient or attempt == 3:
+                        raise
+                    retry_after = llm_budget.parse_retry_after_seconds(exc)
+                    wait_s = retry_after if retry_after is not None else (delay + random.uniform(0.2, 1.2))
+                    time.sleep(wait_s)
+                    delay *= 2.0
+
+    class _ResilientClient:
+        def __init__(self, inner):
+            self._inner = inner
+            self.messages = _ResilientMessages(inner.messages)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    return _ResilientClient(raw_client)
 
 
 # ---------------------------------------------------------------------------
@@ -235,11 +290,13 @@ def quote_in_text(quote: str, chapter_text: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# YOUR THREE FUNCTIONS (Task 03)
+# Extraction & Validation Entrypoints
 # ---------------------------------------------------------------------------
 
 
-def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> ExtractionPayload:
+def extract_chapter(
+    chapter_number: int, chapter_text: str, roster: str, custom_prompt: str = ""
+) -> ExtractionPayload:
     """Call Claude and return a validated ExtractionPayload."""
     client = get_anthropic_client()
     prompt = EXTRACTION_PROMPT_TEMPLATE.format(
@@ -247,6 +304,8 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
         roster=roster,
         chapter_text=chapter_text,
     )
+    if custom_prompt and custom_prompt.strip():
+        prompt += f"\n\nPROJECT CUSTOM EXTRACTION INSTRUCTIONS:\n{custom_prompt.strip()}"
     response = client.messages.create(
         model=settings.extraction_model,
         max_tokens=settings.extraction_max_tokens,
@@ -258,8 +317,133 @@ def extract_chapter(chapter_number: int, chapter_text: str, roster: str) -> Extr
         tool_choice={"type": "tool", "name": "save_extraction"},
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = next(block.input for block in response.content if getattr(block, "type", None) == "tool_use")
-    return ExtractionPayload.model_validate(raw)
+    tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+    if tool_block is not None:
+        return ExtractionPayload.model_validate(tool_block.input)
+    for b in response.content:
+        txt = getattr(b, "text", "")
+        if "{" in txt:
+            import json
+            import re
+            m = re.search(r"\{.*\}", txt, re.DOTALL)
+            if m:
+                try:
+                    return ExtractionPayload.model_validate(json.loads(m.group(0)))
+                except Exception:
+                    pass
+    return ExtractionPayload()
+
+
+def extract_chapter_multipass(
+    chapter_number: int, chapter_text: str, story_context: str, custom_prompt: str = ""
+) -> ExtractionPayload:
+    """Run 3 focused parallel Claude Sonnet passes for high-recall chapter extraction."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    class EntitiesPassPayload(BaseModel):
+        characters: list[ExtractedCharacter] = Field(default_factory=list)
+        relationships: list[ExtractedRelationship] = Field(default_factory=list)
+        locations: list[ExtractedLocation] = Field(default_factory=list)
+        objects: list[ExtractedObject] = Field(default_factory=list)
+
+    class TimelineCustodyPassPayload(BaseModel):
+        events: list[ExtractedEvent] = Field(default_factory=list)
+        knowledge: list[ExtractedKnowledge] = Field(default_factory=list)
+        custody_events: list[ExtractedCustodyEvent] = Field(default_factory=list)
+
+    class ClaimsRulesPassPayload(BaseModel):
+        claims: list[ExtractedClaim] = Field(default_factory=list)
+        world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
+
+    def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
+        client = get_anthropic_client()
+        custom_note = (
+            f"\nPROJECT CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}\n"
+            if custom_prompt and custom_prompt.strip()
+            else ""
+        )
+        prompt = (
+            f"You are analyzing Chapter {chapter_number} of a novel.\n\n"
+            f"EXISTING STORY CONTEXT:\n{story_context}\n\n"
+            f"FOCUS FOR THIS PASS:\n{focus_instructions}\n"
+            f"{custom_note}\n"
+            f"CHAPTER TEXT:\n---\n{chapter_text}\n---"
+        )
+        res = client.messages.create(
+            model=settings.extraction_model,
+            max_tokens=settings.extraction_max_tokens,
+            tools=[{
+                "name": tool_name,
+                "description": f"Save structured output for {tool_name}",
+                "input_schema": schema_cls.model_json_schema(),
+            }],
+            tool_choice={"type": "tool", "name": tool_name},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        tool_block = next((block for block in res.content if getattr(block, "type", None) == "tool_use"), None)
+        if tool_block is not None:
+            raw = tool_block.input
+            if isinstance(raw, dict):
+                return schema_cls.model_validate(raw)
+            if isinstance(raw, str):
+                import json
+                try:
+                    return schema_cls.model_validate(json.loads(raw))
+                except Exception:
+                    pass
+        for block in res.content:
+            txt = getattr(block, "text", "")
+            if "{" in txt:
+                import json
+                import re
+                m = re.search(r"\{.*\}", txt, re.DOTALL)
+                if m:
+                    try:
+                        return schema_cls.model_validate(json.loads(m.group(0)))
+                    except Exception:
+                        pass
+        return schema_cls()
+
+    from app.services import llm_budget
+
+    low_beats, high_beats = llm_budget.compute_event_beat_range(chapter_text)
+    passes = [
+        (
+            "save_entities",
+            EntitiesPassPayload,
+            "Extract EVERY character (resolving pronouns/epithets to proper names and recording ONLY true character aliases/titles, NEVER bare pronouns like 'he', 'she', 'her', 'his', 'they'), "
+            "relationships (with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
+        ),
+        (
+            "save_timeline_custody",
+            TimelineCustodyPassPayload,
+            f"Extract SIGNIFICANT narrative scene beats, plot reveals, state transitions, and confrontations "
+            f"(group closely connected paragraph actions into ~{low_beats}-{high_beats} key events for this chapter rather than micro-movements; include participants, location, temporal_anchor, "
+            "is_flashback/is_flashforward), knowledge acquisition ('witnessed'|'told'|'deduced'|'overheard' with source_character), "
+            "and object custody transfers.",
+        ),
+        (
+            "save_claims_rules",
+            ClaimsRulesPassPayload,
+            "Extract ALL verifiable factual claims with specific attributes where applicable (e.g. 'eye_color', 'hair_color', 'age', 'height', 'status', 'rank', 'profession', rather than generic 'physical_trait'; use 'physical_trait' for scars, build, prosthetics, and general features) with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
+        ),
+    ]
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(lambda p: _run_pass(*p), passes))
+
+    ent_out, tl_out, cl_out = results[0], results[1], results[2]
+    return ExtractionPayload(
+        characters=ent_out.characters,
+        relationships=ent_out.relationships,
+        locations=ent_out.locations,
+        objects=ent_out.objects,
+        events=tl_out.events,
+        knowledge=tl_out.knowledge,
+        custody_events=tl_out.custody_events,
+        claims=cl_out.claims,
+        world_rules=cl_out.world_rules,
+    )
 
 
 def validate_payload(payload: ExtractionPayload, chapter_text: str) -> ExtractionPayload:
@@ -318,10 +502,25 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     existing_characters = db.query(Character).filter(Character.project_id == project_id).all()
     char_map: dict[str, Character] = {}
 
+    _PRONOUN_ALIASES = {
+        "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs",
+        "it", "its", "i", "me", "my", "we", "us", "our", "you", "your",
+    }
+
+    def _clean_aliases(raw_aliases: list[str], canonical_name: str) -> list[str]:
+        canon_low = canonical_name.strip().lower()
+        return sorted({
+            a.strip()
+            for a in (raw_aliases or [])
+            if a and a.strip() and a.strip().lower() not in _PRONOUN_ALIASES and a.strip().lower() != canon_low
+        })
+
     def _index_char(ch: Character):
         char_map[ch.name.strip().lower()] = ch
         for a in (ch.aliases or []):
-            char_map[a.strip().lower()] = ch
+            low = a.strip().lower()
+            if low and low not in _PRONOUN_ALIASES:
+                char_map[low] = ch
 
     for ch in existing_characters:
         _index_char(ch)
@@ -329,11 +528,12 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     for c in payload.characters:
         name_clean = c.name.strip()
         lookup_key = name_clean.lower()
+        cleaned_input_aliases = _clean_aliases(c.aliases, name_clean)
         matched = char_map.get(lookup_key)
         if not matched:
-            for alias in c.aliases:
-                if alias.strip().lower() in char_map:
-                    matched = char_map[alias.strip().lower()]
+            for alias in cleaned_input_aliases:
+                if alias.lower() in char_map:
+                    matched = char_map[alias.lower()]
                     break
 
         if matched:
@@ -341,8 +541,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 matched.description = c.description
             if c.status and c.status != "unknown":
                 matched.status = c.status
-            new_aliases = set(matched.aliases or []) | set(c.aliases)
-            matched.aliases = sorted(list(new_aliases))
+            matched.aliases = _clean_aliases(list(matched.aliases or []) + cleaned_input_aliases, matched.name)
             matched.last_chapter = max(matched.last_chapter or chapter_number, chapter_number)
             matched.first_chapter = min(matched.first_chapter or chapter_number, chapter_number)
             _index_char(matched)
@@ -350,7 +549,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             new_char = Character(
                 project_id=project_id,
                 name=name_clean,
-                aliases=c.aliases,
+                aliases=cleaned_input_aliases,
                 description=c.description,
                 status=c.status,
                 first_chapter=chapter_number,
@@ -446,10 +645,20 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             obj_map[obj_key] = new_obj
 
-    # 5. Events (with scene_order & flashback/temporal marker detection)
+    # 5. Events (idempotent: avoid duplicate summary or scene_order for this chapter)
     from app.services import timeline
 
+    existing_events = db.query(StoryEvent).filter(
+        StoryEvent.project_id == project_id,
+        StoryEvent.chapter_number == chapter_number,
+    ).all()
+    existing_event_summaries = {e.summary.strip().lower() for e in existing_events}
+    existing_scene_orders = {e.scene_order for e in existing_events}
+
     for idx, ev in enumerate(payload.events, start=1):
+        clean_sum = ev.summary.strip()
+        if clean_sum.lower() in existing_event_summaries or idx in existing_scene_orders:
+            continue
         anchor, fb, ff = timeline.detect_temporal_markers(
             ev.summary,
             explicit_anchor=ev.temporal_anchor,
@@ -464,14 +673,27 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             temporal_anchor=anchor,
             is_flashback=fb,
             is_flashforward=ff,
-            summary=ev.summary,
+            summary=clean_sum,
             participants=ev.participants,
             location=ev.location,
         )
         db.add(new_ev)
+        existing_event_summaries.add(clean_sum.lower())
+        existing_scene_orders.add(idx)
 
-    # 6. Claims
+    # 6. Claims (idempotent: avoid duplicate subject/attribute/value for this chapter)
+    existing_claims = db.query(Claim).filter(
+        Claim.project_id == project_id,
+        Claim.chapter == chapter_number,
+    ).all()
+    claim_keys = {
+        (c.subject.strip().lower(), c.attribute.strip().lower(), c.value.strip().lower())
+        for c in existing_claims
+    }
     for cl in payload.claims:
+        ckey = (cl.subject.strip().lower(), cl.attribute.strip().lower(), cl.value.strip().lower())
+        if ckey in claim_keys:
+            continue
         new_claim = Claim(
             project_id=project_id,
             subject=cl.subject.strip(),
@@ -483,9 +705,18 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             validation_state="AUTO_ACCEPTED",
         )
         db.add(new_claim)
+        claim_keys.add(ckey)
 
-    # 7. Knowledge Updates
+    # 7. Knowledge Updates (idempotent)
+    existing_kn = db.query(KnowledgeUpdate).filter(
+        KnowledgeUpdate.project_id == project_id,
+        KnowledgeUpdate.chapter == chapter_number,
+    ).all()
+    kn_keys = {(k.character.strip().lower(), k.fact.strip().lower()) for k in existing_kn}
     for kn in payload.knowledge:
+        kkey = (kn.character.strip().lower(), kn.fact.strip().lower())
+        if kkey in kn_keys:
+            continue
         new_kn = KnowledgeUpdate(
             project_id=project_id,
             character=kn.character.strip(),
@@ -495,8 +726,17 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             source_character=kn.source_character.strip() if kn.source_character else None,
         )
         db.add(new_kn)
+        kn_keys.add(kkey)
 
-    # 8. Object Custody Events
+    # 8. Object Custody Events (idempotent)
+    existing_custody = db.query(ObjectCustodyEvent).filter(
+        ObjectCustodyEvent.project_id == project_id,
+        ObjectCustodyEvent.chapter == chapter_number,
+    ).all()
+    custody_keys = {
+        (c.object_id, (c.holder_name or "").strip().lower(), (c.action or "").strip().lower())
+        for c in existing_custody
+    }
     for ce in payload.custody_events:
         obj_key = ce.object_name.strip().lower()
         matched_obj = obj_map.get(obj_key)
@@ -515,6 +755,9 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             mentions.add(chapter_number)
             matched_obj.mention_chapters = sorted(list(mentions))
 
+        ckey = (matched_obj.id, ce.holder_name.strip().lower(), (ce.action or "").strip().lower())
+        if ckey in custody_keys:
+            continue
         db.add(
             ObjectCustodyEvent(
                 project_id=project_id,
@@ -526,6 +769,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 evidence_quote=ce.evidence_quote,
             )
         )
+        custody_keys.add(ckey)
 
     # 9. Discovered World Rules
     existing_rules = {

@@ -67,6 +67,23 @@ def test_detect_knowledge_violations():
     assert drafts[0].type == "knowledge_violation" and drafts[0].severity == "blue"
 
 
+def test_detect_knowledge_violations_normalizes_eventless_chapter_chronology():
+    """Regression test for PR #21: eventless chapter 1 learning must not be inverted by chapter 9 slot 3."""
+    from types import SimpleNamespace
+
+    # Chapter 1 is eventless: Park learns "the silver key"
+    learned_early = KnowledgeUpdate(character="Park", fact="the silver key opens the vault", chapter=1)
+    # Chapter 9 has events: Park references "the silver key"
+    claims = [_claim("Park", "knows_about", "the silver key opens the vault", 9, "Park used the silver key.")]
+    # Chapter 9 has explicit story_time_order=3 from timeline analysis
+    events = [
+        SimpleNamespace(chapter_number=9, story_time_order=3, location="Vault", participants=["Park"], summary="Park entered vault")
+    ]
+
+    drafts = consistency.detect_knowledge_violations(claims, [learned_early], events=events)
+    assert drafts == [], f"Learning in eventless Ch.1 before using in Ch.9 (slot 3) must NOT be flagged: {drafts}"
+
+
 def test_knowledge_violation_requires_reference_claim():
     """A plain attribute claim ('eye_color') is not a knowledge reference."""
     claims = [_claim("Park", "eye_color", "green", 2)]
@@ -126,7 +143,10 @@ def project(db_session):
     return project
 
 
-def test_run_consistency_pass_persists_and_dedupes(db_session, project):
+def test_run_consistency_pass_persists_and_dedupes(db_session, project, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "use_llm_consistency", False)
     claims = [
         _claim("Sarah", "eye_color", "green", 1, "green eyes"),
         _claim("Sarah", "eye_color", "blue", 3, "blue eyes"),

@@ -9,8 +9,48 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 
+def summarize_semantic_diff_llm(prior_text: str, new_text: str, prior_summary: dict, new_counts: dict) -> str | None:
+    """Summarize narrative and continuity changes between two manuscript drafts."""
+    if not prior_text or prior_text == new_text:
+        return None
+    try:
+        from app.config import settings
+        from app.services.extractor import get_anthropic_client
+
+        if not settings.anthropic_api_key:
+            return None
+
+        diff_lines = list(
+            difflib.unified_diff(
+                prior_text.splitlines(),
+                new_text.splitlines(),
+                lineterm="",
+                n=2,
+            )
+        )[:120]
+        client = get_anthropic_client()
+        resp = client.messages.create(
+            model=settings.chat_model,
+            max_tokens=512,
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Summarize in 2-4 crisp bullet points what changed narratively or structurally "
+                        "between Draft A and Draft B (plot additions, altered facts, resolved/new issues).\n\n"
+                        f"Metrics before: {prior_summary}\nMetrics now: {new_counts}\n\n"
+                        "Diff snippet:\n" + "\n".join(diff_lines)
+                    ),
+                }
+            ],
+        )
+        return resp.content[0].text.strip()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def record_manuscript_version(db: Session, manuscript) -> Any:
-    """Create a ManuscriptVersion snapshot and compute diff summary vs prior draft."""
+    """Create a ManuscriptVersion snapshot and compute structural + semantic diff vs prior draft."""
     from app.models import Character, Claim, Issue, ManuscriptVersion
 
     content_hash = hashlib.sha256((manuscript.raw_text or "").encode("utf-8")).hexdigest()
@@ -49,21 +89,32 @@ def record_manuscript_version(db: Session, manuscript) -> Any:
         db.query(Issue).filter(Issue.project_id == manuscript.project_id, Issue.status == "open").count()
     )
 
+    new_metrics = {
+        "title": manuscript.title,
+        "chapters_total": manuscript.chapters_total,
+        "characters_count": chars_count,
+        "claims_count": claims_count,
+        "open_issues_count": open_issues_count,
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+    }
+    if prior:
+        sem_diff = summarize_semantic_diff_llm(
+            prior.raw_text or "",
+            manuscript.raw_text or "",
+            prior.diff_summary or {},
+            new_metrics,
+        )
+        if sem_diff:
+            new_metrics["semantic_diff"] = sem_diff
+
     version = ManuscriptVersion(
         project_id=manuscript.project_id,
         manuscript_id=manuscript.id,
         version_number=next_version,
         content_hash=content_hash,
         raw_text=manuscript.raw_text,
-        diff_summary={
-            "title": manuscript.title,
-            "chapters_total": manuscript.chapters_total,
-            "characters_count": chars_count,
-            "claims_count": claims_count,
-            "open_issues_count": open_issues_count,
-            "lines_added": lines_added,
-            "lines_removed": lines_removed,
-        },
+        diff_summary=new_metrics,
     )
     db.add(version)
     db.commit()
@@ -79,6 +130,7 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
         Issue,
         Location,
         ObjectCustodyEvent,
+        PlotThread,
         Project,
         Relationship,
         StoryEvent,
@@ -105,6 +157,7 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
     rules = db.query(WorldRule).filter(WorldRule.project_id == pid, WorldRule.status == "active").all()
     claims = db.query(Claim).filter(Claim.project_id == pid, Claim.status == "active").order_by(Claim.chapter.asc()).all()
     issues = db.query(Issue).filter(Issue.project_id == pid).order_by(Issue.severity.asc()).all()
+    threads = db.query(PlotThread).filter(PlotThread.project_id == pid).order_by(PlotThread.setup_chapter.asc()).all()
 
     now_iso = datetime.now(timezone.utc).isoformat()
     lines: list[str] = [
@@ -190,6 +243,15 @@ def export_story_bible_markdown(db: Session, project_id) -> dict[str, str]:
     lines.extend(["## 7. Verified Factual Claims"])
     for cl in claims[:50]:
         lines.append(f"- Ch. {cl.chapter}: **{cl.subject}** `{cl.attribute}` = `{cl.value}` — *\"{cl.evidence_quote}\"*")
+    lines.append("")
+
+    lines.extend(["## 8. Plot Threads & Foreshadowing"])
+    if not threads:
+        lines.append("_No plot threads tracked._")
+    for th in threads:
+        payoff = f" → resolved Ch. {th.payoff_chapter}" if th.payoff_chapter else ""
+        ents = f" ({', '.join(th.related_entities)})" if th.related_entities else ""
+        lines.append(f"- **[{th.status.upper()}] {th.title}** (Setup Ch. {th.setup_chapter}{payoff}){ents}: {th.description}")
 
     return {
         "project_title": title,
