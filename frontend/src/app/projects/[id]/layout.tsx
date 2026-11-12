@@ -201,9 +201,9 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
     .filter((group) => group.items.length > 0);
 
   return (
-    <div className="min-h-screen bg-surface-void flex flex-col selection:bg-wine-accent selection:text-ink-parchment">
+    <div className="h-screen max-h-screen overflow-hidden bg-surface-void flex flex-col selection:bg-wine-accent selection:text-ink-parchment">
       {/* Top Breadcrumb & Telemetry Command Bar */}
-      <header className="sticky top-0 z-40 w-full h-12 border-b border-border-quiet bg-surface-subtle/95 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 shadow-[0_1px_0_0_var(--border-quiet)]">
+      <header className="h-12 shrink-0 border-b border-border-quiet bg-surface-subtle flex items-center justify-between px-4 sm:px-6 z-40">
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/"
@@ -229,7 +229,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
 
           <div className="hidden lg:flex items-center gap-2 ml-4 pl-4 border-l border-border-quiet text-xs">
             <span className="inline-flex items-center gap-1.5 text-emerald-400 font-mono text-[11px] font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse-subtle" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>Checker: Online</span>
             </span>
           </div>
@@ -252,19 +252,19 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
       </header>
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left Literary Navigation Rail / Codex Drawer */}
         <aside
           className={cn(
-            "border-r border-border-quiet bg-surface-subtle flex flex-col shrink-0 transition-all duration-200 select-none z-30 shadow-[1px_0_0_0_var(--border-quiet)]",
+            "h-full border-r border-border-quiet bg-surface-subtle flex flex-col shrink-0 overflow-hidden transition-all duration-200 select-none z-30",
             collapsed ? "w-16" : "w-64"
           )}
         >
           {/* Rail Header */}
-          <div className="p-3 border-b border-border-quiet flex items-center justify-between">
+          <div className="shrink-0 p-3 border-b border-border-quiet flex items-center justify-between">
             {!collapsed && (
               <div className="flex items-center gap-2 px-1">
-                <div className="w-6 h-6 rounded-lg bg-wine-accent/25 border border-wine-accent/50 flex items-center justify-center text-wine-crimson text-xs font-serif font-bold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]">
+                <div className="w-6 h-6 rounded-lg bg-surface-card border border-border-subtle flex items-center justify-center text-wine-crimson text-xs font-serif font-bold">
                   N
                 </div>
                 <span className="text-xs font-serif font-medium text-ink-parchment tracking-tight">
@@ -291,7 +291,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
           </div>
 
           {/* Navigation Links */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-4">
+          <div className="flex-1 overflow-y-auto min-h-0 p-2.5 space-y-4">
             {navItems.map((group, gIdx) => (
               <div key={gIdx} className="space-y-1">
                 {!collapsed && (
@@ -314,14 +314,14 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
                       className={cn(
                         "flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-all duration-150 relative group",
                         isActive
-                          ? "bg-surface-elevated text-ink-parchment font-medium shadow-[inset_0_1px_0_0_var(--edge-highlight),0_2px_8px_rgba(0,0,0,0.3)] border border-border-subtle"
+                          ? "bg-surface-elevated text-ink-parchment font-medium border border-border-subtle"
                           : "text-ink-bone hover:bg-white/[0.04] hover:text-ink-parchment border border-transparent",
                         collapsed && "justify-center px-0 py-2.5"
                       )}
                       title={collapsed ? item.name : undefined}
                     >
                       {isActive && (
-                        <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3.5 bg-wine-crimson rounded-full shadow-[0_0_6px_rgba(168,45,84,0.6)]" />
+                        <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3.5 bg-wine-accent rounded-full" />
                       )}
 
                       <Icon
@@ -355,7 +355,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
 
           {/* Rail Footer Telemetry */}
           {!collapsed && (
-            <div className="p-3 border-t border-border-quiet bg-surface-subtle text-xs text-ink-ash space-y-1.5">
+            <div className="shrink-0 p-3 border-t border-border-quiet bg-surface-subtle text-xs text-ink-ash space-y-1.5">
               <div className="flex justify-between items-center">
                 <span>Folio Daemon</span>
                 <span className="text-emerald-400 font-mono text-[11px] font-medium">v2.4.9</span>
@@ -369,7 +369,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         </aside>
 
         {/* Center Workspace Content Canvas */}
-        <main className="flex-1 overflow-y-auto bg-surface-void flex flex-col">
+        <main className="flex-1 overflow-y-auto min-h-0 bg-surface-void flex flex-col">
           {children}
         </main>
       </div>

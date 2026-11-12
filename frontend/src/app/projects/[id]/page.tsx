@@ -131,7 +131,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             </span>
             <span className="text-border-subtle font-mono">•</span>
             <span className="text-xs text-emerald-400 font-mono flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse-subtle" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>
                 Status: {activeManuscript?.status ? activeManuscript.status.toUpperCase() : "READY"}
               </span>
@@ -163,7 +163,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
             size="sm"
             onClick={handleTriggerAudit}
             isLoading={isAuditing}
-            className="gap-2 shadow-[0_2px_12px_rgba(140,34,66,0.35)]"
+            className="gap-2"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Check Consistency</span>
@@ -301,11 +301,11 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1.5 text-ink-bone font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 <span>Clean</span>
               </span>
               <span className="flex items-center gap-1.5 text-ink-bone font-medium">
-                <span className="w-2 h-2 rounded-full bg-severity-contradiction shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
+                <span className="w-2 h-2 rounded-full bg-severity-contradiction" />
                 <span>Conflict</span>
               </span>
             </div>
@@ -343,11 +343,11 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 const hasCritical = chIssues.some((iss) => iss.severity === "red");
                 const hasMinor = chIssues.some((iss) => iss.severity !== "red");
 
-                let pipColor = "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]";
+                let pipColor = "bg-emerald-500";
                 if (hasCritical) {
-                  pipColor = "bg-severity-contradiction shadow-[0_0_8px_rgba(244,63,94,0.6)]";
+                  pipColor = "bg-severity-contradiction";
                 } else if (hasMinor) {
-                  pipColor = "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]";
+                  pipColor = "bg-amber-500";
                 }
 
                 return (
@@ -355,9 +355,9 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                     key={ch.number}
                     onClick={() => setSelectedChapterNumber(ch.number)}
                     className={cn(
-                      "p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative shadow-[inset_0_1px_0_0_var(--edge-highlight)]",
+                      "p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative",
                       isSelected
-                        ? "bg-surface-elevated border-wine-accent shadow-[0_4px_16px_rgba(140,34,66,0.3),inset_0_1px_0_0_var(--edge-highlight-prominent)] ring-1 ring-wine-accent/50"
+                        ? "bg-surface-elevated border-border-prominent ring-1 ring-border-prominent"
                         : "bg-surface-card border-border-subtle hover:border-border-prominent hover:bg-surface-elevated/60"
                     )}
                   >
@@ -514,7 +514,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 </p>
               </div>
 
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
             </div>
 
             <div className="space-y-3.5 text-xs">

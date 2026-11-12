@@ -140,7 +140,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
             </Link>
             <span className="text-border-subtle font-mono text-xs">•</span>
             <span className="text-xs font-mono text-emerald-400 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse-subtle" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>Checker: Ready</span>
             </span>
           </div>
@@ -157,33 +157,33 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             onClick={() => { setSelectedSeverity("red"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all ${
               selectedSeverity === "red"
-                ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-semibold ring-1 ring-severity-contradiction/40"
+                ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-severity-contradiction shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
+            <span className="w-2 h-2 rounded-full bg-severity-contradiction" />
             <span>{redCount} Major</span>
           </button>
 
           <button
             onClick={() => { setSelectedSeverity("yellow"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all ${
               selectedSeverity === "yellow"
-                ? "bg-severity-warning/15 border-severity-warning text-severity-warning font-semibold ring-1 ring-severity-warning/40"
+                ? "bg-severity-warning/15 border-severity-warning text-severity-warning font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
-            <span className="w-2 h-2 rounded-full bg-severity-warning shadow-[0_0_6px_rgba(251,191,36,0.5)]" />
+            <span className="w-2 h-2 rounded-full bg-severity-warning" />
             <span>{yellowCount} Minor</span>
           </button>
 
           <button
             onClick={() => { setSelectedStatus("intentional"); setSelectedSeverity("all"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all ${
               selectedStatus === "intentional"
-                ? "bg-wine-accent/20 border-wine-accent text-wine-crimson font-semibold ring-1 ring-wine-accent/40"
+                ? "bg-wine-accent/20 border-wine-accent text-wine-crimson font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"
             }`}
           >
@@ -193,7 +193,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
 
           <button
             onClick={() => { setSelectedStatus("all"); setSelectedSeverity("all"); }}
-            className={`px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_var(--edge-highlight)] ${
+            className={`px-3 py-1.5 rounded-full border text-xs transition-all ${
               selectedStatus === "all" && selectedSeverity === "all"
                 ? "bg-surface-field border-border-focus text-ink-parchment font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-bone hover:border-border-prominent"

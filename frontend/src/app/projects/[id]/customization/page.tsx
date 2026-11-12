@@ -362,8 +362,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
               <span>Back to Overview</span>
             </Link>
             <span className="text-border-subtle">•</span>
-            <span className="text-[11px] text-pine-moss font-mono flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-moss animate-pulse-subtle" />
+            <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span>Checker: Online</span>
             </span>
           </div>

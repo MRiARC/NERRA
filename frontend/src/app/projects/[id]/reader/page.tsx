@@ -390,7 +390,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                               className="mt-1 text-primary hover:scale-110 transition-transform"
                               title={`Continuity Alert: ${matchedIssue.type}`}
                             >
-                              <AlertTriangle className="w-3.5 h-3.5 animate-pulse" />
+                              <AlertTriangle className="w-3.5 h-3.5 text-severity-contradiction" />
                             </button>
                           )}
                         </div>

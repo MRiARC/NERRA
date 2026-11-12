@@ -72,11 +72,9 @@ export default function DashboardPage() {
               depth={2}
               border="subtle"
               rounded="lg"
-              className="relative overflow-hidden p-8 sm:p-10 shadow-2xl"
+              className="p-8 sm:p-10"
             >
-              <div className="absolute top-0 right-0 w-96 h-96 bg-wine-accent/10 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="relative z-10 max-w-2xl space-y-3">
+              <div className="max-w-2xl space-y-3">
                 <div className="flex items-center gap-2">
                   <Badge variant="wine" size="sm" className="gap-1.5" dot>
                     <span>Story Checker: Online</span>
@@ -247,11 +245,9 @@ export default function DashboardPage() {
               depth={2}
               border="subtle"
               rounded="lg"
-              className="relative overflow-hidden p-8 sm:p-14 text-center max-w-3xl mx-auto shadow-2xl"
+              className="p-8 sm:p-14 text-center max-w-3xl mx-auto"
             >
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-wine-accent/15 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="relative z-10 space-y-4">
+              <div className="space-y-4">
                 <Badge variant="wine" size="sm" className="gap-1.5" dot>
                   <span>Deterministic Story Intelligence</span>
                 </Badge>
