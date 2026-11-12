@@ -64,6 +64,22 @@ class UserSession(Base):
     expires_at: Mapped[datetime] = mapped_column(index=True)
 
 
+class UserSettings(Base):
+    """User-level sovereign AI engine settings & API key overrides."""
+
+    __tablename__ = "user_settings"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    anthropic_api_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    anthropic_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    primary_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    max_hop_depth: Mapped[int | None] = mapped_column(default=2)
+    extra_config: Mapped[dict] = mapped_column(JSONB, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+
 class Project(Base):
     __tablename__ = "projects"
 

@@ -29,7 +29,10 @@ import {
   BookOpen,
   Trash2,
   Lock,
+  Loader2,
+  Zap,
 } from "lucide-react";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
@@ -51,6 +54,13 @@ export default function GlobalSettingsPage() {
   const [embeddingModel, setEmbeddingModel] = useState(globalSettings.embeddingModel);
   const [maxHopDepth, setMaxHopDepth] = useState(globalSettings.maxHopDepth);
 
+  // Server sync & test connection state
+  const [savingAi, setSavingAi] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState<{ status: "ok" | "error"; message: string } | null>(null);
+  const [backendHasKey, setBackendHasKey] = useState(false);
+  const [backendKeyMasked, setBackendKeyMasked] = useState<string | null>(null);
+
   // Form local state for Presets
   const [defaultStrictness, setDefaultStrictness] = useState(globalSettings.defaultStrictness);
   const [defaultNomenclature, setDefaultNomenclature] = useState(globalSettings.defaultNomenclature);
@@ -59,17 +69,79 @@ export default function GlobalSettingsPage() {
   useEffect(() => {
     checkAuth();
     fetchSessions();
+    api.settings
+      .getAiSettings()
+      .then((data) => {
+        if (data.has_api_key) {
+          setBackendHasKey(true);
+          setBackendKeyMasked(data.anthropic_api_key_masked || null);
+        }
+        if (data.anthropic_base_url && !customBaseUrl) {
+          setCustomBaseUrl(data.anthropic_base_url);
+        }
+        if (data.primary_model && !primaryModel) {
+          setPrimaryModel(data.primary_model);
+        }
+      })
+      .catch(() => {
+        // user might be offline or initial load
+      });
   }, [checkAuth, fetchSessions]);
 
-  const handleSaveAISettings = () => {
-    globalSettings.updateGlobalSettings({
-      primaryModel,
-      customBaseUrl: customBaseUrl.trim(),
-      apiKeyOverride: apiKeyOverride.trim(),
-      embeddingModel,
-      maxHopDepth,
-    });
-    toast.success("Global AI Engine & Sovereign Keys saved successfully.");
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setTestResult(null);
+    try {
+      const res = await api.settings.testAiConnection({
+        anthropic_api_key: apiKeyOverride.trim() || undefined,
+        anthropic_base_url: customBaseUrl.trim() || undefined,
+        primary_model: primaryModel || undefined,
+      });
+      setTestResult(res);
+      if (res.status === "ok") {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err: any) {
+      const msg = err?.data?.detail || err?.message || "Failed to test AI connection";
+      setTestResult({ status: "error", message: msg });
+      toast.error(msg);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleSaveAISettings = async () => {
+    setSavingAi(true);
+    try {
+      globalSettings.updateGlobalSettings({
+        primaryModel,
+        customBaseUrl: customBaseUrl.trim(),
+        apiKeyOverride: apiKeyOverride.trim(),
+        embeddingModel,
+        maxHopDepth,
+      });
+
+      // Save to server database
+      const res = await api.settings.updateAiSettings({
+        anthropic_api_key: apiKeyOverride.trim() || undefined,
+        anthropic_base_url: customBaseUrl.trim() || undefined,
+        primary_model: primaryModel,
+        embedding_model: embeddingModel,
+        max_hop_depth: maxHopDepth,
+      });
+
+      if (res.has_api_key) {
+        setBackendHasKey(true);
+        setBackendKeyMasked(res.anthropic_api_key_masked || null);
+      }
+      toast.success("Global AI Engine & Sovereign Keys saved to account & browser session.");
+    } catch (err: any) {
+      toast.error("Saved locally, but failed to sync to server database: " + (err?.message || ""));
+    } finally {
+      setSavingAi(false);
+    }
   };
 
   const handleSavePresets = () => {
@@ -356,10 +428,18 @@ export default function GlobalSettingsPage() {
               {/* Sovereign API Key Override */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-mono uppercase tracking-wider text-ink-ash font-medium flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-wine-accent" />
-                    Sovereign API Key Override
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-xs font-mono uppercase tracking-wider text-ink-ash font-medium flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-wine-accent" />
+                      Sovereign API Key Override
+                    </label>
+                    {backendHasKey && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-pine-forest/15 text-pine-forest border border-pine-forest/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+                        Server Synced {backendKeyMasked ? `(${backendKeyMasked})` : ""}
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => setShowApiKey(!showApiKey)}
@@ -379,14 +459,14 @@ export default function GlobalSettingsPage() {
                 <div className="relative">
                   <input
                     type={showApiKey ? "text" : "password"}
-                    placeholder="sk-ant-... or sk-proj-..."
+                    placeholder={backendKeyMasked ? `Active key: ${backendKeyMasked} (enter new key to replace)` : "sk-ant-... or sk-proj-..."}
                     value={apiKeyOverride}
                     onChange={(e) => setApiKeyOverride(e.target.value)}
                     className="w-full bg-surface-subtle border border-border-subtle rounded-xl px-3.5 py-2.5 text-xs font-mono text-ink-parchment placeholder:text-ink-faint outline-none focus:border-wine-accent transition-colors"
                   />
                 </div>
                 <p className="text-[11px] text-ink-faint mt-1">
-                  Stored securely in your private browser session. When set, overrides server environment defaults.
+                  Persisted to your authenticated account database and forwarded with manuscript analysis pipelines. Overrides server environment defaults.
                 </p>
               </div>
 
@@ -411,13 +491,50 @@ export default function GlobalSettingsPage() {
                 />
               </div>
 
-              <div className="pt-4 border-t border-border-quiet flex justify-end">
+              <div className="pt-4 border-t border-border-quiet flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    onClick={handleTestConnection}
+                    disabled={testingConnection}
+                    className="gap-2 text-xs font-mono"
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5 text-amber-accent" />
+                    )}
+                    <span>{testingConnection ? "Pinging Model..." : "Test AI Connection"}</span>
+                  </Button>
+
+                  {testResult && (
+                    <span
+                      className={cn(
+                        "text-[11px] font-mono px-2.5 py-1 rounded-md border flex items-center gap-1.5",
+                        testResult.status === "ok"
+                          ? "bg-pine-forest/10 text-pine-forest border-pine-forest/30"
+                          : "bg-wine-crimson/10 text-wine-crimson border-wine-crimson/30"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full",
+                          testResult.status === "ok" ? "bg-pine-forest" : "bg-wine-crimson"
+                        )}
+                      />
+                      {testResult.message}
+                    </span>
+                  )}
+                </div>
+
                 <Button
                   onClick={handleSaveAISettings}
+                  disabled={savingAi}
                   className="gap-2 bg-wine-accent text-ink-parchment hover:bg-wine-crimson text-xs font-mono"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  Save Global AI Engine Configuration
+                  {savingAi ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  <span>{savingAi ? "Persisting..." : "Save Global AI Engine Configuration"}</span>
                 </Button>
               </div>
             </Surface>

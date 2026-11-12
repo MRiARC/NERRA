@@ -202,7 +202,76 @@ def get_roster(db, project_id) -> str:
     return "\n".join(sections)
 
 
-def get_anthropic_client():
+def resolve_ai_credentials(
+    db = None,
+    project_id = None,
+    user_id = None,
+    explicit_api_key: str | None = None,
+    explicit_base_url: str | None = None,
+    explicit_model: str | None = None,
+) -> dict:
+    """Resolve sovereign AI credentials hierarchically:
+    1. Explicit values (passed from request headers/arguments)
+    2. Project Customization (per-story overrides stored in DB)
+    3. User Settings (per-author sovereign credentials stored in DB)
+    4. Default settings (.env)
+    """
+    api_key = explicit_api_key.strip() if explicit_api_key and explicit_api_key.strip() else None
+    base_url = explicit_base_url.strip() if explicit_base_url and explicit_base_url.strip() else None
+    model = explicit_model.strip() if explicit_model and explicit_model.strip() else None
+
+    # 2. Check project customization if DB session and project_id are provided
+    if db and project_id:
+        try:
+            from app.models import Project, ProjectCustomization
+            import uuid
+            pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
+            cust = db.query(ProjectCustomization).filter(ProjectCustomization.project_id == pid).first()
+            if cust and cust.custom_ui_config:
+                cfg = cust.custom_ui_config
+                if not api_key and cfg.get("api_key_override"):
+                    api_key = str(cfg["api_key_override"]).strip()
+                if not base_url and cfg.get("custom_base_url"):
+                    base_url = str(cfg["custom_base_url"]).strip()
+                if not model and cfg.get("primary_model"):
+                    model = str(cfg["primary_model"]).strip()
+
+            if not user_id:
+                proj = db.get(Project, pid)
+                if proj:
+                    user_id = proj.owner_id
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Project AI credential resolution skipped: %s", exc)
+
+    # 3. Check user sovereign settings in DB
+    if db and user_id:
+        try:
+            from app.models import UserSettings
+            import uuid
+            uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+            u_settings = db.query(UserSettings).filter(UserSettings.user_id == uid).first()
+            if u_settings:
+                if not api_key and u_settings.anthropic_api_key:
+                    api_key = u_settings.anthropic_api_key.strip()
+                if not base_url and u_settings.anthropic_base_url:
+                    base_url = u_settings.anthropic_base_url.strip()
+                if not model and u_settings.primary_model:
+                    model = u_settings.primary_model.strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("User sovereign credential resolution skipped: %s", exc)
+
+    final_key = api_key or getattr(settings, "anthropic_api_key", "")
+    final_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
+    final_model = model or getattr(settings, "extraction_model", "claude-3-5-sonnet-20241022")
+
+    return {
+        "api_key": final_key,
+        "base_url": final_base_url,
+        "model": final_model,
+    }
+
+
+def get_anthropic_client(api_key: str | None = None, base_url: str | None = None):
     """Shared Anthropic client with dynamic payload timeout and Retry-After backoff."""
     import random
     import time
@@ -211,18 +280,20 @@ def get_anthropic_client():
 
     from app.services import llm_budget
 
-    if not settings.anthropic_api_key:
+    active_key = (api_key.strip() if api_key else "") or settings.anthropic_api_key
+    if not active_key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
+            "ANTHROPIC_API_KEY is not configured. Please add your Sovereign Key in Global Settings or backend/.env"
         )
     explicit_timeout = getattr(settings, "llm_timeout_seconds", None)
     kwargs = {
-        "api_key": settings.anthropic_api_key,
+        "api_key": active_key,
         "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
         "max_retries": 1,
     }
-    if getattr(settings, "anthropic_base_url", None):
-        kwargs["base_url"] = settings.anthropic_base_url
+    active_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
+    if active_base_url:
+        kwargs["base_url"] = active_base_url
     raw_client = anthropic.Anthropic(**kwargs)
 
     class _ResilientMessages:
@@ -295,10 +366,16 @@ def quote_in_text(quote: str, chapter_text: str) -> bool:
 
 
 def extract_chapter(
-    chapter_number: int, chapter_text: str, roster: str, custom_prompt: str = ""
+    chapter_number: int,
+    chapter_text: str,
+    roster: str,
+    custom_prompt: str = "",
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> ExtractionPayload:
     """Call Claude and return a validated ExtractionPayload."""
-    client = get_anthropic_client()
+    client = get_anthropic_client(api_key=api_key, base_url=base_url)
     prompt = EXTRACTION_PROMPT_TEMPLATE.format(
         chapter_number=chapter_number,
         roster=roster,
@@ -307,7 +384,7 @@ def extract_chapter(
     if custom_prompt and custom_prompt.strip():
         prompt += f"\n\nPROJECT CUSTOM EXTRACTION INSTRUCTIONS:\n{custom_prompt.strip()}"
     response = client.messages.create(
-        model=settings.extraction_model,
+        model=model or settings.extraction_model,
         max_tokens=settings.extraction_max_tokens,
         tools=[{
             "name": "save_extraction",
@@ -335,7 +412,13 @@ def extract_chapter(
 
 
 def extract_chapter_multipass(
-    chapter_number: int, chapter_text: str, story_context: str, custom_prompt: str = ""
+    chapter_number: int,
+    chapter_text: str,
+    story_context: str,
+    custom_prompt: str = "",
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> ExtractionPayload:
     """Run 3 focused parallel Claude Sonnet passes for high-recall chapter extraction."""
     from concurrent.futures import ThreadPoolExecutor
@@ -356,7 +439,7 @@ def extract_chapter_multipass(
         world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
 
     def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
-        client = get_anthropic_client()
+        client = get_anthropic_client(api_key=api_key, base_url=base_url)
         custom_note = (
             f"\nPROJECT CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}\n"
             if custom_prompt and custom_prompt.strip()
@@ -370,7 +453,7 @@ def extract_chapter_multipass(
             f"CHAPTER TEXT:\n---\n{chapter_text}\n---"
         )
         res = client.messages.create(
-            model=settings.extraction_model,
+            model=model or settings.extraction_model,
             max_tokens=settings.extraction_max_tokens,
             tools=[{
                 "name": tool_name,

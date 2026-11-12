@@ -8,6 +8,7 @@
  */
 
 import type {
+  AiConnectionTestResult,
   BibleExport,
   ChapterDetail,
   ChapterSummary,
@@ -28,6 +29,8 @@ import type {
   TokenOut,
   User,
   UserSession,
+  UserSettings,
+  UserSettingsIn,
   ValidationCandidate,
   WorldData,
   WorldRule,
@@ -85,14 +88,41 @@ function onRefreshed(ok: boolean) {
   refreshSubscribers = [];
 }
 
+function getSovereignAiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("nerra_global_studio_settings");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const state = parsed.state || parsed;
+        if (state.apiKeyOverride && typeof state.apiKeyOverride === "string" && state.apiKeyOverride.trim()) {
+          headers["X-Anthropic-Key"] = state.apiKeyOverride.trim();
+        }
+        if (state.customBaseUrl && typeof state.customBaseUrl === "string" && state.customBaseUrl.trim()) {
+          headers["X-Anthropic-Base-Url"] = state.customBaseUrl.trim();
+        }
+        if (state.primaryModel && typeof state.primaryModel === "string" && state.primaryModel.trim()) {
+          headers["X-Primary-Model"] = state.primaryModel.trim();
+        }
+      }
+    } catch {
+      // ignore JSON parse errors in localStorage
+    }
+  }
+  return headers;
+}
+
 async function fetchWithAuth(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const apiBase = getApiBase();
   const url = endpoint.startsWith("http") ? endpoint : `${apiBase}${endpoint}`;
+  const sovereignHeaders = getSovereignAiHeaders();
   const defaultHeaders: Record<string, string> = {
     Accept: "application/json",
+    ...sovereignHeaders,
   };
 
   const token = getAccessToken();
@@ -500,6 +530,24 @@ export const api = {
       return request<ProjectCustomization>(`/projects/${projectId}/customization`, {
         method: "PUT",
         body: JSON.stringify(payload),
+      });
+    },
+  },
+
+  settings: {
+    async getAiSettings(): Promise<UserSettings> {
+      return request<UserSettings>("/settings/ai");
+    },
+    async updateAiSettings(payload: UserSettingsIn): Promise<UserSettings> {
+      return request<UserSettings>("/settings/ai", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    },
+    async testAiConnection(payload?: UserSettingsIn): Promise<AiConnectionTestResult> {
+      return request<AiConnectionTestResult>("/settings/ai/test", {
+        method: "POST",
+        body: payload ? JSON.stringify(payload) : undefined,
       });
     },
   },

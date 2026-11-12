@@ -53,6 +53,8 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
   const { data: manuscripts = [] } = useManuscripts(projectId);
   const { data: customization } = useCustomization(projectId);
 
+  const activeManuscript = manuscripts[0];
+
   const openIssuesCount = issues.filter(
     (i) => i.status === "open" || i.status === "unresolved"
   ).length;
@@ -69,6 +71,22 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
           href: `/projects/${projectId}`,
           icon: LayoutDashboard,
           badge: null,
+        },
+        {
+          id: "ingestion",
+          name: "Ingestion Radar",
+          href: `/projects/${projectId}/ingestion`,
+          icon: Activity,
+          badge:
+            activeManuscript?.status === "failed"
+              ? "FAILED"
+              : activeManuscript?.status === "processing"
+              ? "ACTIVE"
+              : null,
+          badgeVariant:
+            activeManuscript?.status === "failed"
+              ? ("contradiction" as const)
+              : ("warning" as const),
         },
         {
           id: "editor",

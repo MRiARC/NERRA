@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
@@ -65,6 +65,8 @@ def import_manuscript(
     title: str = Form(default=""),
     text: str = Form(default=""),
     file: UploadFile | None = File(default=None),
+    x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
+    x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -95,7 +97,12 @@ def import_manuscript(
     db.refresh(manuscript)
 
     # Run the AI pipeline after the response is sent.
-    background.add_task(run_import_pipeline_guarded, manuscript.id)
+    background.add_task(
+        run_import_pipeline_guarded,
+        manuscript.id,
+        api_key=x_anthropic_key,
+        base_url=x_anthropic_base_url,
+    )
 
     return ImportOut(manuscript_id=manuscript.id, project_id=project.id, status=manuscript.status)
 
@@ -180,6 +187,8 @@ def reanalyze_manuscript(
     manuscript_id: uuid.UUID,
     project_id: uuid.UUID,
     chapter_number: int | None = None,  # optional: re-run a single chapter
+    x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
+    x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -193,13 +202,24 @@ def reanalyze_manuscript(
         from app.services.pipeline import reanalyze_chapter
 
         try:
-            reanalyze_chapter(db, manuscript, chapter_number)
+            reanalyze_chapter(
+                db,
+                manuscript,
+                chapter_number,
+                api_key=x_anthropic_key,
+                base_url=x_anthropic_base_url,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
     else:
         from app.services.pipeline import run_import_pipeline
 
-        run_import_pipeline(manuscript.id, db)
+        run_import_pipeline(
+            manuscript.id,
+            db,
+            api_key=x_anthropic_key,
+            base_url=x_anthropic_base_url,
+        )
 
     db.refresh(manuscript)
     return StatusOut(

@@ -27,6 +27,7 @@ import {
   Upload,
   Clock,
   Layers,
+  RotateCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -130,8 +131,24 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               Story Overview
             </span>
             <span className="text-border-subtle font-mono">•</span>
-            <span className="text-xs text-emerald-400 font-mono flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span
+              className={`text-xs font-mono flex items-center gap-1.5 font-medium ${
+                activeManuscript?.status === "failed"
+                  ? "text-wine-crimson"
+                  : activeManuscript?.status === "processing"
+                  ? "text-amber-400"
+                  : "text-emerald-400"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  activeManuscript?.status === "failed"
+                    ? "bg-wine-crimson"
+                    : activeManuscript?.status === "processing"
+                    ? "bg-amber-400 animate-pulse"
+                    : "bg-emerald-500"
+                }`}
+              />
               <span>
                 Status: {activeManuscript?.status ? activeManuscript.status.toUpperCase() : "READY"}
               </span>
@@ -170,6 +187,75 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </Button>
         </div>
       </div>
+
+      {/* Ingestion Pipeline Status Banners */}
+      {activeManuscript?.status === "failed" && (
+        <div className="rounded-xl border border-wine-crimson/50 bg-wine-crimson/10 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-9 h-9 rounded-full bg-wine-crimson/20 border border-wine-crimson/40 flex items-center justify-center shrink-0 mt-0.5">
+              <AlertTriangle className="w-4 h-4 text-wine-crimson" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-ink-parchment">
+                  Manuscript Extraction Interrupted
+                </h4>
+                <Badge variant="contradiction" size="xs">
+                  FAILED
+                </Badge>
+              </div>
+              <p className="text-xs text-ink-bone mt-1 max-w-2xl leading-relaxed">
+                {activeManuscript.error_note?.includes("401") ||
+                activeManuscript.error_note?.toLowerCase().includes("unauthorized")
+                  ? "The AI pipeline halted because the Anthropic Claude API key is invalid or unauthorized. Review diagnostics to configure sovereign keys or run air-gapped heuristic extraction."
+                  : activeManuscript.error_note || "An unexpected error interrupted the extraction pipeline."}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportModalOpen(true)}
+              className="gap-1.5 text-xs border-wine-crimson/40 text-wine-crimson hover:bg-wine-crimson/10"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Review Diagnostics & Recover</span>
+            </Button>
+
+            <Link href={`/projects/${projectId}/ingestion`}>
+              <Button variant="primary" size="sm" className="gap-1.5 text-xs">
+                <span>Open Ingestion Radar</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {activeManuscript?.status === "processing" && (
+        <div className="rounded-xl border border-amber-400/40 bg-amber-400/5 p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <RotateCw className="w-5 h-5 text-amber-400 animate-spin shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-ink-parchment">
+                Manuscript Analysis in Progress • Chapter {activeManuscript.chapters_done || 0} of {activeManuscript.chapters_total || 4}
+              </p>
+              <p className="text-[11px] text-ink-ash mt-0.5">
+                Extracting entities, checking timeline chronology, and auditing canon consistency.
+              </p>
+            </div>
+          </div>
+
+          <Link href={`/projects/${projectId}/ingestion`}>
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+              <Activity className="w-3.5 h-3.5 text-amber-400" />
+              <span>View Live Radar</span>
+            </Button>
+          </Link>
+        </div>
+      )}
 
       {/* 4 Telemetry Scorecards (Stitch Screen 1) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -645,6 +731,14 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         project={project || null}
+        initialManuscriptId={activeManuscript?.id}
+        initialStep={
+          activeManuscript?.status === "failed"
+            ? "failed"
+            : activeManuscript?.status === "processing"
+            ? "processing"
+            : "select"
+        }
         onImportComplete={() => {
           setImportModalOpen(false);
           refetchProject();

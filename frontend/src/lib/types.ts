@@ -239,6 +239,7 @@ export interface Manuscript {
   status: "pending" | "processing" | "ready" | "failed" | string;
   chapters_done: number;
   chapters_total: number;
+  error_note?: string | null;
   created_at: string;
 }
 
@@ -327,4 +328,30 @@ export interface ManuscriptVersion {
   diff_summary: Record<string, any>;
   created_at: string;
 }
+
+export interface UserSettings {
+  anthropic_api_key_masked?: string | null;
+  has_api_key: boolean;
+  anthropic_base_url?: string | null;
+  primary_model?: string;
+  embedding_model?: string;
+  max_hop_depth?: number;
+  extra_config?: Record<string, any>;
+  updated_at?: string | null;
+}
+
+export interface UserSettingsIn {
+  anthropic_api_key?: string | null;
+  anthropic_base_url?: string | null;
+  primary_model?: string | null;
+  embedding_model?: string | null;
+  max_hop_depth?: number | null;
+  extra_config?: Record<string, any> | null;
+}
+
+export interface AiConnectionTestResult {
+  status: "ok" | "error";
+  message: string;
+}
+
 
