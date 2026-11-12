@@ -98,4 +98,6 @@ def auth_headers(client) -> dict:
     resp = client.post("/auth/login", data={"username": email, "password": "correct horse battery"})
     assert resp.status_code == 200, resp.text
     token = resp.json()["access_token"]
+    # Clear client cookies so the test client doesn't invisibly authenticate subsequent requests via cookie
+    client.cookies.clear()
     return {"Authorization": f"Bearer {token}"}
