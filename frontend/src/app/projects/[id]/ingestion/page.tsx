@@ -177,13 +177,15 @@ export default function IngestionRadarPage({ params }: IngestionRadarPageProps) 
                 </Badge>
               </div>
               <p className="text-xs text-ink-bone leading-relaxed max-w-3xl">
-                {isAuthError ? (
+                {rawErrorMessage.toLowerCase().includes("temporarily_suspended") || rawErrorMessage.toLowerCase().includes("temporarily suspended") ? (
                   <>
-                    The AI extraction pipeline was unable to authenticate with Anthropic Claude because the API key in{" "}
-                    <code className="text-wine-crimson font-mono bg-surface-base px-1.5 py-0.5 rounded border border-border-quiet">
-                      backend/.env
-                    </code>{" "}
-                    is unauthorized or expired. Please configure your sovereign API key in Global Settings and click Retry below.
+                    <strong className="text-wine-crimson font-mono">Account Suspended upstream:</strong> Your local proxy (AWS / Kiro) reported:{" "}
+                    <em>&quot;Your User ID is temporarily suspended. We detected unusual user activity and locked it as a security precaution.&quot;</em>{" "}
+                    Please check your Kiro / AWS account or enter a direct Anthropic (<code>sk-ant-...</code>) or OpenRouter key in Settings.
+                  </>
+                ) : isAuthError ? (
+                  <>
+                    The AI extraction pipeline failed to authenticate (HTTP 401 Unauthorized). The inference endpoint or proxy rejected the supplied credentials. Please verify your Sovereign API Key or Custom Base URL in Global Settings and click Retry.
                   </>
                 ) : (
                   rawErrorMessage || "The background extraction worker reported an unhandled failure."

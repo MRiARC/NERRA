@@ -152,7 +152,15 @@ def test_ai_connection(
             "message": f"Successfully authenticated with {creds.get('model') or 'Claude Sonnet'}!",
         }
     except Exception as exc:
+        msg = str(exc)
+        if "temporarily suspended" in msg.lower() or "kiro" in msg.lower():
+            clean_msg = "Upstream AWS/Kiro proxy error: Your User ID is temporarily suspended by AWS security."
+        elif "401" in msg or "unauthorized" in msg.lower():
+            clean_msg = "Authentication failed (HTTP 401: Unauthorized): Endpoint or proxy rejected key."
+        else:
+            clean_msg = f"Connection failed: {msg[:180]}"
         return {
             "status": "error",
-            "message": f"Authentication failed: {str(exc)}",
+            "message": clean_msg,
+            "raw_error": msg,
         }

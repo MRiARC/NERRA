@@ -399,18 +399,18 @@ export function ImportManuscriptModal({
                       : "Extraction Pipeline Halted"}
                   </h4>
                   <p className="text-xs text-ink-bone leading-relaxed">
-                    {isAuthError ? (
+                    {rawErrorMessage.toLowerCase().includes("temporarily_suspended") || rawErrorMessage.toLowerCase().includes("temporarily suspended") ? (
                       <>
-                        The background AI extraction failed because your Anthropic API key in{" "}
-                        <code className="text-wine-crimson font-mono bg-surface-base/80 px-1 py-0.5 rounded">
-                          backend/.env
-                        </code>{" "}
-                        is invalid, expired, or unconfigured. You can configure your sovereign key in Settings,
-                        or immediately extract using our local <strong>Air-Gapped Heuristic Engine</strong> with zero API keys required.
+                        <strong className="text-wine-crimson font-mono">Upstream Account Suspended:</strong> Your local proxy (AWS / Kiro) reported:{" "}
+                        <em>&quot;Your User ID is temporarily suspended by AWS security.&quot;</em> Please check your proxy account or switch to a direct Anthropic or OpenRouter key in Settings.
+                      </>
+                    ) : isAuthError ? (
+                      <>
+                        The background AI extraction failed because the API key or endpoint returned HTTP 401 Unauthorized. You can verify and update your sovereign key or Base URL in Settings.
                       </>
                     ) : isRateLimit ? (
                       <>
-                        Claude API rate limit reached. Please wait a minute before retrying, or configure your
+                        API rate limit reached. Please wait a moment before retrying, or configure your
                         own sovereign API key in Global Settings.
                       </>
                     ) : (

@@ -209,17 +209,32 @@ def reanalyze_manuscript(
                 api_key=x_anthropic_key,
                 base_url=x_anthropic_base_url,
             )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc))
+        except Exception as exc:
+            db.rollback()
+            manuscript = db.get(Manuscript, manuscript_id)
+            if manuscript:
+                manuscript.status = "failed"
+                manuscript.error_note = str(exc)[:500]
+                db.commit()
+            raise HTTPException(status_code=422, detail=str(exc))
     else:
         from app.services.pipeline import run_import_pipeline
 
-        run_import_pipeline(
-            manuscript.id,
-            db,
-            api_key=x_anthropic_key,
-            base_url=x_anthropic_base_url,
-        )
+        try:
+            run_import_pipeline(
+                manuscript.id,
+                db,
+                api_key=x_anthropic_key,
+                base_url=x_anthropic_base_url,
+            )
+        except Exception as exc:
+            db.rollback()
+            manuscript = db.get(Manuscript, manuscript_id)
+            if manuscript:
+                manuscript.status = "failed"
+                manuscript.error_note = str(exc)[:500]
+                db.commit()
+            raise HTTPException(status_code=422, detail=str(exc))
 
     db.refresh(manuscript)
     return StatusOut(
