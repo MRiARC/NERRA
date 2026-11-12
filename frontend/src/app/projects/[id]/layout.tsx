@@ -355,14 +355,19 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
 
           {/* Rail Footer Telemetry */}
           {!collapsed && (
-            <div className="shrink-0 p-3 border-t border-border-quiet bg-surface-subtle text-xs text-ink-ash space-y-1.5">
-              <div className="flex justify-between items-center">
+            <div className="shrink-0 p-3 border-t border-border-quiet bg-surface-subtle text-xs text-ink-ash space-y-2">
+              <Link
+                href="/settings"
+                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-card hover:text-ink-parchment transition-colors text-xs font-mono text-ink-bone border border-transparent hover:border-border-quiet"
+                title="Global Studio Settings & Sovereign Keys"
+              >
+                <Sliders className="w-3.5 h-3.5 text-wine-accent shrink-0" />
+                <span className="truncate">Studio Settings</span>
+              </Link>
+
+              <div className="flex justify-between items-center text-[11px] pt-1 border-t border-border-quiet">
                 <span>Folio Daemon</span>
-                <span className="text-emerald-400 font-mono text-[11px] font-medium">v2.4.9</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span>Integrity Gate</span>
-                <span className="text-ink-bone font-medium">Passing</span>
+                <span className="text-emerald-400 font-mono text-[10px] font-medium">v2.4.9 Active</span>
               </div>
             </div>
           )}

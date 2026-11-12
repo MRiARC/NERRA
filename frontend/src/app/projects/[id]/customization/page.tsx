@@ -1063,13 +1063,22 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
             className="space-y-6"
           >
             <Surface depth={2} border="subtle" rounded="md" className="p-6 sm:p-8 space-y-6">
-              <div className="border-b border-border-quiet pb-4">
-                <h2 className="font-serif text-lg font-medium text-ink-parchment">
-                  5. AI Engine & Custom Endpoints
-                </h2>
-                <p className="text-xs text-ink-bone mt-1">
-                  Choose your AI model, connect your own sovereign API key, or use a custom endpoint (Ollama, OpenRouter, vLLM).
-                </p>
+              <div className="border-b border-border-quiet pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-serif text-lg font-medium text-ink-parchment">
+                    5. AI Engine &amp; Manuscript Override
+                  </h2>
+                  <p className="text-xs text-ink-bone mt-1">
+                    Inherits your default configuration from Global Studio Settings. Specify options here only to override this novel.
+                  </p>
+                </div>
+                <Link
+                  href="/settings"
+                  className="inline-flex items-center gap-1.5 text-xs font-mono text-wine-accent hover:text-ink-parchment transition-colors px-2.5 py-1 rounded-lg bg-surface-subtle border border-border-quiet shrink-0"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Configure Global AI Settings &rarr;</span>
+                </Link>
               </div>
 
               {/* Model Presets */}

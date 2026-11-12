@@ -13,6 +13,7 @@ import {
   LogOut,
   Laptop,
   LogIn,
+  Sliders,
 } from "lucide-react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
@@ -107,6 +108,15 @@ export function Navbar({ onOpenNewProject, onOpenSessions }: NavbarProps) {
                         </p>
                         <p className="text-[11px] text-ink-ash truncate">{user?.email}</p>
                       </div>
+
+                      <Link
+                        href="/settings"
+                        onClick={() => setDropdownOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-surface-card hover:text-ink-parchment transition-colors text-left"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-wine-accent" />
+                        <span>Studio Settings</span>
+                      </Link>
 
                       <button
                         onClick={() => {
