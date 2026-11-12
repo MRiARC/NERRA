@@ -484,7 +484,13 @@ def validate_payload(payload: ExtractionPayload, chapter_text: str) -> Extractio
     )
 
 
-def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionPayload) -> None:
+def persist_extraction(
+    db,
+    project_id,
+    chapter_number: int,
+    payload: ExtractionPayload,
+    supersede_chapter: bool = False,
+) -> None:
     """Write the extraction into the story tables."""
     from app.models import (
         Character,
@@ -645,55 +651,84 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             obj_map[obj_key] = new_obj
 
-    # 5. Events (idempotent: avoid duplicate summary or scene_order for this chapter)
+    # 5. Events (reconciled & idempotent: avoid duplicate rows on identical re-persist, replace on content rewrite)
     from app.services import timeline
 
-    existing_events = db.query(StoryEvent).filter(
-        StoryEvent.project_id == project_id,
-        StoryEvent.chapter_number == chapter_number,
-    ).all()
-    existing_event_summaries = {e.summary.strip().lower() for e in existing_events}
-    existing_scene_orders = {e.scene_order for e in existing_events}
-
-    for idx, ev in enumerate(payload.events, start=1):
-        clean_sum = ev.summary.strip()
-        if clean_sum.lower() in existing_event_summaries or idx in existing_scene_orders:
-            continue
-        anchor, fb, ff = timeline.detect_temporal_markers(
-            ev.summary,
-            explicit_anchor=ev.temporal_anchor,
-            explicit_flashback=ev.is_flashback,
-            explicit_flashforward=ev.is_flashforward,
+    existing_events = (
+        db.query(StoryEvent)
+        .filter(
+            StoryEvent.project_id == project_id,
+            StoryEvent.chapter_number == chapter_number,
         )
-        new_ev = StoryEvent(
-            project_id=project_id,
-            chapter_number=chapter_number,
-            scene_order=idx,
-            story_time_order=chapter_number * 100 + idx,
-            temporal_anchor=anchor,
-            is_flashback=fb,
-            is_flashforward=ff,
-            summary=clean_sum,
-            participants=ev.participants,
-            location=ev.location,
-        )
-        db.add(new_ev)
-        existing_event_summaries.add(clean_sum.lower())
-        existing_scene_orders.add(idx)
+        .order_by(StoryEvent.scene_order)
+        .all()
+    )
+    existing_event_summaries = [e.summary.strip().lower() for e in existing_events]
+    incoming_event_summaries = [ev.summary.strip().lower() for ev in payload.events]
 
-    # 6. Claims (idempotent: avoid duplicate subject/attribute/value for this chapter)
+    if payload.events:
+        if existing_event_summaries == incoming_event_summaries:
+            # Identical payload: no duplicate insertion
+            pass
+        else:
+            # Events have changed or chapter rewritten: replace stale events for this chapter with new ones
+            for old_ev in existing_events:
+                db.delete(old_ev)
+            db.flush()
+
+            for idx, ev in enumerate(payload.events, start=1):
+                clean_sum = ev.summary.strip()
+                anchor, fb, ff = timeline.detect_temporal_markers(
+                    ev.summary,
+                    explicit_anchor=ev.temporal_anchor,
+                    explicit_flashback=ev.is_flashback,
+                    explicit_flashforward=ev.is_flashforward,
+                )
+                new_ev = StoryEvent(
+                    project_id=project_id,
+                    chapter_number=chapter_number,
+                    scene_order=idx,
+                    story_time_order=chapter_number * 100 + idx,
+                    temporal_anchor=anchor,
+                    is_flashback=fb,
+                    is_flashforward=ff,
+                    summary=clean_sum,
+                    participants=ev.participants,
+                    location=ev.location,
+                )
+                db.add(new_ev)
+
+    # 6. Claims (reconciled & idempotent: restore still-valid claims from superseded state,
+    # add new claims, avoid duplicates for active claims)
     existing_claims = db.query(Claim).filter(
         Claim.project_id == project_id,
         Claim.chapter == chapter_number,
     ).all()
-    claim_keys = {
-        (c.subject.strip().lower(), c.attribute.strip().lower(), c.value.strip().lower())
+
+    if supersede_chapter:
+        for c in existing_claims:
+            if c.status == "active":
+                c.status = "superseded"
+
+    claims_by_key = {
+        (c.subject.strip().lower(), c.attribute.strip().lower(), c.value.strip().lower()): c
         for c in existing_claims
     }
+
     for cl in payload.claims:
         ckey = (cl.subject.strip().lower(), cl.attribute.strip().lower(), cl.value.strip().lower())
-        if ckey in claim_keys:
+        matched = claims_by_key.get(ckey)
+        if matched is not None:
+            # If the claim was superseded/stale, re-extracting confirms it is still valid: restore to active
+            if matched.status in ("superseded", "stale"):
+                matched.status = "active"
+                matched.evidence_quote = cl.evidence_quote.strip()
+                matched.confidence = 1.0
+                matched.validation_state = "AUTO_ACCEPTED"
+            elif matched.status == "active":
+                matched.evidence_quote = cl.evidence_quote.strip()
             continue
+
         new_claim = Claim(
             project_id=project_id,
             subject=cl.subject.strip(),
@@ -703,36 +738,51 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             evidence_quote=cl.evidence_quote.strip(),
             confidence=1.0,
             validation_state="AUTO_ACCEPTED",
+            status="active",
         )
         db.add(new_claim)
-        claim_keys.add(ckey)
+        claims_by_key[ckey] = new_claim
 
-    # 7. Knowledge Updates (idempotent)
+    # 7. Knowledge Updates (reconciled & idempotent)
     existing_kn = db.query(KnowledgeUpdate).filter(
         KnowledgeUpdate.project_id == project_id,
         KnowledgeUpdate.chapter == chapter_number,
     ).all()
-    kn_keys = {(k.character.strip().lower(), k.fact.strip().lower()) for k in existing_kn}
-    for kn in payload.knowledge:
-        kkey = (kn.character.strip().lower(), kn.fact.strip().lower())
-        if kkey in kn_keys:
-            continue
-        new_kn = KnowledgeUpdate(
-            project_id=project_id,
-            character=kn.character.strip(),
-            fact=kn.fact.strip(),
-            chapter=chapter_number,
-            how_learned=kn.how_learned,
-            source_character=kn.source_character.strip() if kn.source_character else None,
-        )
-        db.add(new_kn)
-        kn_keys.add(kkey)
+    existing_kn_keys = {(k.character.strip().lower(), k.fact.strip().lower()): k for k in existing_kn}
+    incoming_kn_keys = {(kn.character.strip().lower(), kn.fact.strip().lower()) for kn in payload.knowledge}
 
-    # 8. Object Custody Events (idempotent)
+    if payload.knowledge:
+        if supersede_chapter and set(existing_kn_keys.keys()) != incoming_kn_keys:
+            for old_kn in existing_kn:
+                db.delete(old_kn)
+            existing_kn_keys = {}
+
+        for kn in payload.knowledge:
+            kkey = (kn.character.strip().lower(), kn.fact.strip().lower())
+            if kkey in existing_kn_keys:
+                continue
+            new_kn = KnowledgeUpdate(
+                project_id=project_id,
+                character=kn.character.strip(),
+                fact=kn.fact.strip(),
+                chapter=chapter_number,
+                how_learned=kn.how_learned,
+                source_character=kn.source_character.strip() if kn.source_character else None,
+            )
+            db.add(new_kn)
+            existing_kn_keys[kkey] = new_kn
+
+    # 8. Object Custody Events (reconciled & idempotent)
     existing_custody = db.query(ObjectCustodyEvent).filter(
         ObjectCustodyEvent.project_id == project_id,
         ObjectCustodyEvent.chapter == chapter_number,
     ).all()
+
+    if payload.custody_events and supersede_chapter:
+        for old_c in existing_custody:
+            db.delete(old_c)
+        existing_custody = []
+
     custody_keys = {
         (c.object_id, (c.holder_name or "").strip().lower(), (c.action or "").strip().lower())
         for c in existing_custody
