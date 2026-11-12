@@ -79,6 +79,30 @@ _MULTI_VALUE_ATTRIBUTES = {
     "ally",
     "behavior",
     "action",
+    "action_performed",
+    "has_feature",
+    "feature",
+    "appearance_note",
+    "observation",
+    "trait",
+    "role",
+    "activity",
+    "detail",
+    "characteristic",
+    "attribute",
+    "physical_trait",
+    "physical_feature",
+    "physical_description",
+    "clothing",
+    "attire",
+    "garment",
+    "injury",
+    "wound",
+    "equipment",
+    "item",
+    "accessory",
+    "habit",
+    "mannerism",
 }
 
 
@@ -666,18 +690,56 @@ def run_consistency_pass(db, project_id) -> int:
     else:
         drafts.extend(detect_world_rule_violations(claims, rules))
 
-    existing = {
-        (issue.type, issue.description)
-        for issue in db.query(Issue)
+    existing_issues = (
+        db.query(Issue)
         .filter(Issue.project_id == project_id, Issue.status == "open")
         .all()
+    )
+    existing_desc = {(issue.type, issue.description) for issue in existing_issues}
+    existing_claims: set[tuple[str, str]] = set()
+    for issue in existing_issues:
+        if issue.claim_a_id and issue.claim_b_id:
+            existing_claims.add((str(issue.claim_a_id), str(issue.claim_b_id)))
+            existing_claims.add((str(issue.claim_b_id), str(issue.claim_a_id)))
+
+    existing_evidence = {
+        (
+            issue.type,
+            frozenset(
+                (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                for e in (issue.evidence or [])
+                if isinstance(e, dict)
+            ),
+        )
+        for issue in existing_issues
+        if issue.evidence
     }
 
     to_persist: list[IssueDraft] = []
     for draft in drafts:
-        if (draft.type, draft.description) in existing:
+        if (draft.type, draft.description) in existing_desc:
             continue
-        existing.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            pair = (str(draft.claim_a_id), str(draft.claim_b_id))
+            if pair in existing_claims:
+                continue
+        if draft.evidence:
+            ev_sig = (
+                draft.type,
+                frozenset(
+                    (e.get("chapter"), (e.get("quote") or "").strip().lower())
+                    for e in draft.evidence
+                    if isinstance(e, dict)
+                ),
+            )
+            if len(ev_sig[1]) >= 2 and ev_sig in existing_evidence:
+                continue
+            existing_evidence.add(ev_sig)
+
+        existing_desc.add((draft.type, draft.description))
+        if draft.claim_a_id and draft.claim_b_id:
+            existing_claims.add((str(draft.claim_a_id), str(draft.claim_b_id)))
+            existing_claims.add((str(draft.claim_b_id), str(draft.claim_a_id)))
         to_persist.append(draft)
 
     _CONFLICT_TYPES = {
@@ -690,22 +752,14 @@ def run_consistency_pass(db, project_id) -> int:
 
     reasons_by_idx: dict[int, dict] = {}
     if to_persist:
-        from concurrent.futures import ThreadPoolExecutor
-
-        def _reason_for(idx_draft: tuple[int, IssueDraft]) -> tuple[int, dict]:
-            idx, d = idx_draft
-            should_llm = llm_enabled and d.type in _CONFLICT_TYPES
-            return idx, contradiction_reasoner.analyze_issue_intent(
-                project_id=project_id,
-                issue_type=d.type,
-                description=d.description,
-                evidence=d.evidence,
-                use_llm=should_llm,
-            )
-
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            for idx, res in pool.map(_reason_for, enumerate(to_persist)):
-                reasons_by_idx[idx] = res
+        batch_reasons = contradiction_reasoner.analyze_issues_batch_intent(
+            project_id=project_id,
+            drafts=to_persist,
+            conflict_types=_CONFLICT_TYPES,
+            use_llm=llm_enabled,
+        )
+        for idx, res in enumerate(batch_reasons):
+            reasons_by_idx[idx] = res
 
     created = 0
     for idx, draft in enumerate(to_persist):

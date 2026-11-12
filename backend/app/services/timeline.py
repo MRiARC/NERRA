@@ -12,13 +12,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 _FLASHBACK_PATTERNS = [
-    re.compile(r"\b(\d+|one|two|three|four|five|ten|twenty)\s+years?\s+(earlier|ago|before)\b", re.I),
-    re.compile(r"\b(\d+|one|two|three|four|five)\s+(months?|weeks?|days?)\s+(earlier|ago|before)\b", re.I),
-    re.compile(r"\b(the\s+year\s+before|remembered\s+when|flashback|in\s+his\s+youth|in\s+her\s+childhood|back\s+then)\b", re.I),
+    re.compile(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+years?\s+before\s+the\s+[\w-]+\b", re.I),
+    re.compile(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|hundred|several|a\s+few)\s+years?\s+(earlier|ago|before|prior)\b", re.I),
+    re.compile(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|several|a\s+few)\s+(months?|weeks?|days?|decades?)\s+(earlier|ago|before|prior)\b", re.I),
+    re.compile(r"\b(the\s+year\s+before|remembered\s+when|flashback|in\s+his\s+youth|in\s+her\s+childhood|back\s+then|prior\s+to\s+the\s+deluge|before\s+the\s+deluge)\b", re.I),
 ]
 
 _FLASHFORWARD_PATTERNS = [
-    re.compile(r"\b(\d+|one|two|three|four|five|ten)\s+years?\s+(later|hence|afterward)\b", re.I),
+    re.compile(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty)\s+years?\s+(later|hence|afterward)\b", re.I),
     re.compile(r"\b(years\s+from\s+now|flashforward|in\s+the\s+future|epilogue)\b", re.I),
 ]
 
@@ -88,13 +89,19 @@ def order_events_chronologically_llm(events: list, use_llm: bool = True) -> list
 Use identical `story_time_order` integers for events happening SIMULTANEOUSLY in parallel locations.
 Identify flashbacks (`is_flashback=true`) and flashforwards (`is_flashforward=true`) even without explicit keywords.
 
+CRITICAL TIMELINE GUIDELINES:
+- For historical flashbacks: calculate elapsed time from story present (e.g. an event 27 years ago occurred BEFORE an event 12 years ago, which occurred BEFORE present day).
+- Order from OLDEST / EARLIEST in history (order=1) to LATEST / MOST RECENT.
+- Assign an ordered entry for EVERY event_index from 0 to {len(events) - 1}.
+
 EVENTS:
 {event_lines}"""
 
         client = get_anthropic_client()
+        dynamic_max_tokens = min(8192, max(2048, len(events) * 45))
         response = client.messages.create(
             model=settings.chat_model,
-            max_tokens=2048,
+            max_tokens=dynamic_max_tokens,
             tools=[
                 {
                     "name": "save_chronology",
@@ -109,14 +116,17 @@ EVENTS:
             if getattr(block, "type", None) == "tool_use" and block.name == "save_chronology":
                 parsed = ChronologyPlan.model_validate(block.input)
                 by_idx = {item.event_index: item for item in parsed.ordered}
-                if len(by_idx) == len(events):
+                if len(by_idx) >= int(len(events) * 0.7):
                     for idx, ev in enumerate(events):
-                        plan_item = by_idx[idx]
-                        ev.story_time_order = plan_item.story_time_order
-                        ev.is_flashback = plan_item.is_flashback
-                        ev.is_flashforward = plan_item.is_flashforward
-                        if plan_item.temporal_anchor:
-                            ev.temporal_anchor = plan_item.temporal_anchor
+                        plan_item = by_idx.get(idx)
+                        if plan_item is not None:
+                            ev.story_time_order = plan_item.story_time_order
+                            ev.is_flashback = plan_item.is_flashback
+                            ev.is_flashforward = plan_item.is_flashforward
+                            if plan_item.temporal_anchor:
+                                ev.temporal_anchor = plan_item.temporal_anchor
+                        else:
+                            ev.story_time_order = max(1, ev.chapter_number * 10 + ev.scene_order)
                     return sorted(events, key=lambda e: (e.story_time_order, e.chapter_number, e.scene_order))
     except Exception as exc:  # noqa: BLE001
         import logging
