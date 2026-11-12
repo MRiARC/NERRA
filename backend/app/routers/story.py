@@ -41,6 +41,11 @@ from app.schemas import (
     KnowledgeOut,
     ManuscriptVersionOut,
     ObjectCustodyOut,
+    PlotThreadCreate,
+    PlotThreadOut,
+    PlotThreadPatch,
+    ProjectCustomizationIn,
+    ProjectCustomizationOut,
     RelationshipOut,
     StoryGraphOut,
     TimelineOut,
@@ -49,7 +54,7 @@ from app.schemas import (
     WorldRuleCreate,
     WorldRuleOut,
 )
-from app.services import consistency, exporter, feedback, graph, knowledge, timeline, validator
+from app.services import consistency, exporter, feedback, graph, knowledge, plot_threads, timeline, validator
 
 router = APIRouter(tags=["story"])
 
@@ -569,3 +574,82 @@ def delete_correction_rule(
         feedback.deactivate_correction(db, project.id, correction_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/projects/{project_id}/plot-threads", response_model=list[PlotThreadOut])
+def get_plot_threads(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """List tracked cross-chapter plot threads, mysteries, and payoffs."""
+    return plot_threads.list_plot_threads(db, project.id)
+
+
+@router.post(
+    "/projects/{project_id}/plot-threads",
+    response_model=PlotThreadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_plot_thread_endpoint(
+    project_id: uuid.UUID,
+    payload: PlotThreadCreate,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Create or update a plot thread manually."""
+    return plot_threads.create_plot_thread(db, project.id, payload.model_dump())
+
+
+@router.patch("/projects/{project_id}/plot-threads/{thread_id}", response_model=PlotThreadOut)
+def patch_plot_thread_endpoint(
+    project_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    payload: PlotThreadPatch,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update a plot thread status, payoff chapter, description, or entities."""
+    try:
+        return plot_threads.patch_plot_thread(
+            db, project.id, thread_id, payload.model_dump(exclude_unset=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/plot-threads/sync", response_model=list[PlotThreadOut])
+def sync_plot_threads_endpoint(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Run Claude Sonnet cross-chapter synthesis to refresh all plot threads."""
+    return plot_threads.synthesize_all_plot_threads_llm(db, project.id, use_llm=True)
+
+
+@router.get("/projects/{project_id}/customization", response_model=ProjectCustomizationOut)
+def get_project_customization(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return the project's 5 Feature Customization hooks."""
+    return plot_threads.get_customization(db, project.id)
+
+
+@router.put("/projects/{project_id}/customization", response_model=ProjectCustomizationOut)
+def put_project_customization(
+    project_id: uuid.UUID,
+    payload: ProjectCustomizationIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update the project's 5 Feature Customization hooks."""
+    return plot_threads.upsert_customization(db, project.id, payload.model_dump())

@@ -35,6 +35,22 @@ class UserOut(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str | None = None
+    session_id: str | None = None
+    expires_in: int | None = None
+
+
+class RefreshIn(BaseModel):
+    refresh_token: str | None = None
+
+
+class SessionOut(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    last_active_at: datetime
+    user_agent: str | None = None
+    ip_address: str | None = None
+    is_current: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +427,59 @@ class FeedbackActionOut(BaseModel):
     re_audit_chapters: list[int] = Field(default_factory=list)
     issues_created: int = 0
     impact_notes: list[str] = Field(default_factory=list)
+
+
+PlotThreadStatus = Literal["open", "resolved", "abandoned", "red_herring"]
+
+
+class PlotThreadCreate(BaseModel):
+    title: str
+    description: str
+    setup_chapter: int = 1
+    payoff_chapter: int | None = None
+    status: PlotThreadStatus = "open"
+    related_entities: list[str] = Field(default_factory=list)
+    evidence_quote: str | None = None
+
+
+class PlotThreadPatch(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    payoff_chapter: int | None = None
+    status: PlotThreadStatus | None = None
+    related_entities: list[str] | None = None
+
+
+class PlotThreadOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    title: str
+    description: str
+    setup_chapter: int
+    payoff_chapter: int | None = None
+    status: str
+    related_entities: list[str] = Field(default_factory=list)
+    evidence_quote: str | None = None
+    updated_at: datetime
+
+
+class ProjectCustomizationIn(BaseModel):
+    custom_context: str | None = None
+    custom_prompt: str | None = None
+    custom_validation: dict = Field(default_factory=dict)
+    custom_graph_write: dict = Field(default_factory=dict)
+    custom_ui_config: dict = Field(default_factory=dict)
+
+
+class ProjectCustomizationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    project_id: uuid.UUID
+    custom_context: str | None = None
+    custom_prompt: str | None = None
+    custom_validation: dict = Field(default_factory=dict)
+    custom_graph_write: dict = Field(default_factory=dict)
+    custom_ui_config: dict = Field(default_factory=dict)
+    updated_at: datetime | None = None

@@ -63,13 +63,19 @@ def _build_projection_from_sql(
     db: Session, project_id: uuid.UUID, max_chapter: int | None = None
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     """Read Postgres story tables and build canonical node & edge lists."""
-    from app.models import Character, Location, Relationship, StoryEvent, StoryObject
+    from app.models import Character, Location, PlotThread, Relationship, StoryEvent, StoryObject
+    from app.services import plot_threads
+
+    cust_graph = plot_threads.get_customization(db, project_id).get("custom_graph_write") or {}
+    include_threads = cust_graph.get("include_plot_threads", True)
+    project_tag = cust_graph.get("project_tag")
 
     chars = db.query(Character).filter(Character.project_id == project_id).all()
     locs = db.query(Location).filter(Location.project_id == project_id).all()
     objs = db.query(StoryObject).filter(StoryObject.project_id == project_id).all()
     events = db.query(StoryEvent).filter(StoryEvent.project_id == project_id).all()
     rels = db.query(Relationship).filter(Relationship.project_id == project_id).all()
+    threads = db.query(PlotThread).filter(PlotThread.project_id == project_id).all() if include_threads else []
 
     highest_chapter = 1
     for c in chars:
@@ -220,6 +226,46 @@ def _build_projection_from_sql(
             }
         )
 
+    for th in threads:
+        if not _in_window(th.setup_chapter):
+            continue
+        tid = f"thread:{th.id}"
+        nodes.append(
+            {
+                "id": tid,
+                "label": th.title,
+                "kind": "plot_thread",
+                "chapter": th.setup_chapter,
+                "metadata": {
+                    "status": th.status,
+                    "description": th.description,
+                    "setup_chapter": th.setup_chapter,
+                    "payoff_chapter": th.payoff_chapter,
+                    "project_tag": project_tag,
+                },
+            }
+        )
+        for ent in th.related_entities or []:
+            c_node_id = char_by_name.get(ent.strip().lower())
+            if c_node_id:
+                edges.append(
+                    {
+                        "id": f"th_ent:{th.id}:{c_node_id}",
+                        "source": tid,
+                        "target": c_node_id,
+                        "relation": "THREAD_INVOLVES",
+                        "sentiment": "neutral",
+                        "since_chapter": th.setup_chapter,
+                        "until_chapter": th.payoff_chapter,
+                        "description": th.status,
+                    }
+                )
+
+    if project_tag:
+        for n in nodes:
+            if isinstance(n.get("metadata"), dict):
+                n["metadata"]["project_tag"] = project_tag
+
     return nodes, edges, highest_chapter
 
 
@@ -251,6 +297,7 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
         locs = [n for n in nodes if n["kind"] == "location"]
         objs = [n for n in nodes if n["kind"] == "object"]
         events = [n for n in nodes if n["kind"] == "event"]
+        threads = [n for n in nodes if n["kind"] == "plot_thread"]
 
         if chars:
             session.run(
@@ -319,10 +366,29 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
                 pid=pid_str,
             )
 
+        if threads:
+            session.run(
+                """
+                UNWIND $rows AS row
+                CREATE (t:PlotThread:StoryEntity {
+                    id: row.id,
+                    project_id: $pid,
+                    name: row.label,
+                    chapter: row.chapter,
+                    status: row.metadata.status,
+                    description: row.metadata.description,
+                    payoff_chapter: row.metadata.payoff_chapter
+                })
+                """,
+                rows=threads,
+                pid=pid_str,
+            )
+
         # Create edges
-        rel_edges = [e for e in edges if e["relation"] not in ("PARTICIPATED_IN", "OCCURRED_AT")]
+        rel_edges = [e for e in edges if e["relation"] not in ("PARTICIPATED_IN", "OCCURRED_AT", "THREAD_INVOLVES")]
         part_edges = [e for e in edges if e["relation"] == "PARTICIPATED_IN"]
         loc_edges = [e for e in edges if e["relation"] == "OCCURRED_AT"]
+        thread_edges = [e for e in edges if e["relation"] == "THREAD_INVOLVES"]
 
         if rel_edges:
             session.run(
@@ -372,6 +438,22 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
                 }]->(b)
                 """,
                 rows=loc_edges,
+                pid=pid_str,
+            )
+
+        if thread_edges:
+            session.run(
+                """
+                UNWIND $rows AS row
+                MATCH (a:StoryEntity {id: row.source, project_id: $pid})
+                MATCH (b:StoryEntity {id: row.target, project_id: $pid})
+                CREATE (a)-[:THREAD_INVOLVES {
+                    id: row.id,
+                    since_chapter: row.since_chapter,
+                    status: row.description
+                }]->(b)
+                """,
+                rows=thread_edges,
                 pid=pid_str,
             )
 

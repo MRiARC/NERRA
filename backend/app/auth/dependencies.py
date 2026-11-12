@@ -15,20 +15,21 @@ than 403 so we don't leak that someone else's project exists).
 import uuid
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.auth.security import decode_access_token
 from app.database import get_db
-from app.models import Project, User
+from app.models import Project, User, UserSession
 
 # tokenUrl points at the login route so Swagger's 'Authorize' button works.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    bearer_token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     credentials_error = HTTPException(
@@ -36,14 +37,54 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        user_id = decode_access_token(token)
-    except jwt.PyJWTError:
+
+    token = bearer_token or request.cookies.get("access_token")
+    if not token:
         raise credentials_error
+
+    try:
+        user_id, sid = decode_access_token(token)
+    except (jwt.PyJWTError, ValueError):
+        raise credentials_error
+
     user = db.get(User, user_id)
     if user is None:
         raise credentials_error
+
+    # If the token is bound to a server session, ensure the session is active
+    if sid is not None:
+        user_session = db.get(UserSession, sid)
+        if user_session is None or user_session.is_revoked:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session has been revoked or expired",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     return user
+
+
+def get_current_session_id(
+    request: Request,
+    bearer_token: str | None = None,
+) -> uuid.UUID | None:
+    """Extract active session ID from bearer token or cookie if present."""
+    token = None
+    if isinstance(bearer_token, str) and bearer_token:
+        token = bearer_token
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+    if not token:
+        token = request.cookies.get("access_token")
+    if not token:
+        return None
+    try:
+        _, sid = decode_access_token(token)
+        return sid
+    except Exception:
+        return None
 
 
 def get_owned_project(
