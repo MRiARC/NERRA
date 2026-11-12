@@ -78,7 +78,7 @@ export function ImportManuscriptModal({
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-[4px] p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
+          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
             isDragOver
               ? "border-wine-accent bg-wine-accent/10"
               : selectedFile

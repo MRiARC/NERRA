@@ -21,7 +21,7 @@ export default function RegisterPage() {
       {/* Top Header Bar */}
       <header className="relative z-10 w-full max-w-6xl mx-auto flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group select-none">
-          <div className="w-8 h-8 rounded-[4px] bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson shadow-sm group-hover:bg-wine-accent/30 transition-colors">
+          <div className="w-8 h-8 rounded-xl bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)] group-hover:bg-wine-accent/30 transition-colors">
             <Feather className="w-4 h-4" />
           </div>
           <div>

@@ -21,7 +21,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={id}
           type={type}
           className={cn(
-            "w-full rounded-[4px] bg-surface-subtle border border-border-subtle px-3 py-2 text-xs text-ink-parchment placeholder:text-ink-faint transition-all duration-150 outline-none focus:border-border-focus focus:ring-1 focus:ring-wine-accent/30 disabled:opacity-40",
+            "w-full rounded-xl bg-surface-field border border-border-subtle px-3.5 py-2.5 text-xs text-ink-parchment placeholder:text-ink-faint transition-all duration-150 outline-none focus:border-border-focus focus:ring-1 focus:ring-wine-accent/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] disabled:opacity-40",
             error && "border-severity-contradiction focus:border-severity-contradiction focus:ring-severity-contradiction/20",
             className
           )}

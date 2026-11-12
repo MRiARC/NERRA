@@ -174,7 +174,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       {/* 4 Telemetry Scorecards (Stitch Screen 1) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Coherence Scorecard */}
-        <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-3 relative overflow-hidden">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3 relative overflow-hidden">
           <div className="flex items-center justify-between text-xs text-ink-ash">
             <span>Story Consistency</span>
             <Badge variant={coherenceScore >= 90 ? "thread" : "warning"} size="xs">
@@ -200,7 +200,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         </Surface>
 
         {/* Volume & Velocity Scorecard */}
-        <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-3">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
           <div className="flex items-center justify-between text-xs text-ink-ash">
             <span>Word Count & Progress</span>
             <BookOpen className="w-4 h-4 text-wine-crimson" />
@@ -226,7 +226,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         </Surface>
 
         {/* Continuity Paradox Index */}
-        <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-3">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
           <div className="flex items-center justify-between text-xs text-ink-ash">
             <span>Plot Contradictions</span>
             <AlertTriangle className="w-4 h-4 text-severity-contradiction" />
@@ -255,7 +255,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         </Surface>
 
         {/* Entity & Lore Topology */}
-        <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-3">
+        <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
           <div className="flex items-center justify-between text-xs text-ink-ash">
             <span>Entity & Lore Topology</span>
             <Compass className="w-4 h-4 text-pine-moss" />
@@ -311,7 +311,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
           {/* Chapter Matrix Grid */}
           {chapters.length === 0 ? (
-            <Surface depth={1} border="quiet" rounded="sm" className="p-8 text-center space-y-4">
+            <Surface depth={1} border="quiet" rounded="md" className="p-8 text-center space-y-4">
               <BookOpen className="w-10 h-10 text-ink-ash mx-auto opacity-50" />
               <div>
                 <h3 className="font-serif text-base text-ink-parchment font-medium">
@@ -355,9 +355,9 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                   <button
                     key={ch.number}
                     onClick={() => setSelectedChapterNumber(ch.number)}
-                    className={`p-3.5 rounded-[4px] border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative ${
+                    className={`p-3.5 rounded-xl border text-left transition-all duration-150 flex flex-col justify-between h-24 select-none relative shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
                       isSelected
-                        ? "bg-wine-accent/20 border-wine-accent shadow-[0_4px_16px_rgba(122,29,57,0.3)]"
+                        ? "bg-wine-accent/20 border-wine-accent shadow-[0_4px_16px_rgba(140,34,66,0.35),inset_0_1px_0_0_rgba(255,255,255,0.12)]"
                         : `bg-surface-card ${cardBorder}`
                     }`}
                   >
@@ -390,9 +390,9 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
           {/* Selected Folio Inspector Bar */}
           {activeSelectedChapter && (
-            <Surface depth={1} border="quiet" rounded="sm" className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <Surface depth={1} border="quiet" rounded="md" className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="p-2 rounded-[4px] bg-surface-card border border-border-subtle text-wine-crimson shrink-0">
+                <div className="p-2 rounded-xl bg-surface-card border border-border-subtle text-wine-crimson shrink-0 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]">
                   <BookOpen className="w-4 h-4" />
                 </div>
                 <div className="truncate">
@@ -448,12 +448,12 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                   key={issue.id}
                   depth={2}
                   border={issue.severity === "red" ? "contradiction" : "subtle"}
-                  rounded="sm"
+                  rounded="md"
                   className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
                   <div className="flex items-start gap-3 min-w-0">
                     <div
-                      className={`p-1.5 rounded-[3px] shrink-0 mt-0.5 ${
+                      className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
                         issue.severity === "red"
                           ? "bg-severity-contradiction-bg text-severity-contradiction border border-severity-contradiction-border"
                           : "bg-severity-warning-bg text-severity-warning border border-severity-warning-border"
@@ -489,7 +489,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               ))}
 
               {issues.length === 0 && (
-                <Surface depth={1} border="quiet" rounded="sm" className="p-5 text-center text-xs text-ink-ash">
+                <Surface depth={1} border="quiet" rounded="md" className="p-5 text-center text-xs text-ink-ash">
                   <CheckCircle2 className="w-5 h-5 text-pine-moss mx-auto mb-1.5" />
                   <span>No outstanding priority adjudication flags. Your narrative graph is canonical.</span>
                 </Surface>
@@ -501,7 +501,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         {/* Right 1 Column: Continuous Daemon Feed & Dramatic Anchors */}
         <div className="space-y-6">
           {/* Continuous Daemon Log Feed */}
-          <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-4">
+          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-border-quiet">
               <div>
                 <h3 className="font-serif text-sm font-medium text-ink-parchment flex items-center gap-2">
@@ -562,7 +562,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </Surface>
 
           {/* Dramatic Anchors (Cast Preview) */}
-          <Surface depth={2} border="subtle" rounded="sm" className="p-5 space-y-3">
+          <Surface depth={2} border="subtle" rounded="md" className="p-5 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-border-quiet">
               <div>
                 <h3 className="font-serif text-sm font-medium text-ink-parchment">
@@ -584,7 +584,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               {characters.slice(0, 4).map((char) => (
                 <div
                   key={char.id}
-                  className="p-2.5 rounded-[4px] bg-surface-subtle border border-border-quiet flex items-center justify-between"
+                  className="p-2.5 rounded-xl bg-surface-subtle border border-border-quiet flex items-center justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
                 >
                   <div className="space-y-0.5 truncate mr-2">
                     <p className="font-medium text-ink-parchment truncate">{char.name}</p>
@@ -599,7 +599,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               ))}
 
               {characters.length === 0 && (
-                <div className="p-2.5 rounded-[4px] bg-surface-subtle border border-border-quiet text-ink-ash text-center py-4">
+                <div className="p-2.5 rounded-xl bg-surface-subtle border border-border-quiet text-ink-ash text-center py-4">
                   Upload a manuscript to automatically discover characters.
                 </div>
               )}
@@ -607,7 +607,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </Surface>
 
           {/* Quick Actions */}
-          <Surface depth={1} border="quiet" rounded="sm" className="p-5 space-y-2.5 text-xs">
+          <Surface depth={1} border="quiet" rounded="md" className="p-5 space-y-2.5 text-xs">
             <h3 className="font-serif text-sm font-medium text-ink-parchment mb-1">
               Quick Actions
             </h3>

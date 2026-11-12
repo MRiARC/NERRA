@@ -3,7 +3,7 @@
 import React, { useState, use } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useProject, useIssues, useManuscripts } from "@/hooks/useStoryData";
+import { useProject, useIssues, useManuscripts, useCustomization } from "@/hooks/useStoryData";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -51,28 +51,34 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
   const { data: project, isLoading: projectLoading } = useProject(projectId);
   const { data: issues = [] } = useIssues(projectId);
   const { data: manuscripts = [] } = useManuscripts(projectId);
+  const { data: customization } = useCustomization(projectId);
 
   const openIssuesCount = issues.filter(
     (i) => i.status === "open" || i.status === "unresolved"
   ).length;
 
-  const navItems = [
+  const enabledFeatures = customization?.custom_ui_config?.enabled_features as string[] | undefined;
+
+  const rawNavItems = [
     {
       group: "Writing & Reading",
       items: [
         {
+          id: "overview",
           name: "Overview",
           href: `/projects/${projectId}`,
           icon: LayoutDashboard,
           badge: null,
         },
         {
+          id: "editor",
           name: "Editor",
           href: `/projects/${projectId}/editor`,
           icon: PenTool,
           badge: null,
         },
         {
+          id: "reader",
           name: "Reader",
           href: `/projects/${projectId}/reader`,
           icon: BookOpen,
@@ -84,30 +90,35 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
       group: "Characters & World",
       items: [
         {
+          id: "timeline",
           name: "Timeline",
           href: `/projects/${projectId}/timeline`,
           icon: Clock,
           badge: null,
         },
         {
+          id: "knowledge",
           name: "Who Knows What",
           href: `/projects/${projectId}/knowledge`,
           icon: Compass,
           badge: null,
         },
         {
+          id: "characters",
           name: "Characters",
           href: `/projects/${projectId}/characters`,
           icon: Users,
           badge: null,
         },
         {
+          id: "graph",
           name: "Items & Relationships",
           href: `/projects/${projectId}/graph`,
           icon: GitBranch,
           badge: null,
         },
         {
+          id: "plot-threads",
           name: "Plot Threads",
           href: `/projects/${projectId}/plot-threads`,
           icon: GitPullRequest,
@@ -119,6 +130,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
       group: "Story Checks & AI",
       items: [
         {
+          id: "issues",
           name: "Consistency & Issues",
           href: `/projects/${projectId}/issues`,
           icon: AlertTriangle,
@@ -126,36 +138,42 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
           badgeVariant: "contradiction" as const,
         },
         {
+          id: "chat",
           name: "Ask Your Story",
           href: `/projects/${projectId}/chat`,
           icon: MessageSquare,
           badge: null,
         },
         {
+          id: "validation",
           name: "Fact Approvals",
           href: `/projects/${projectId}/validation`,
           icon: ShieldAlert,
           badge: null,
         },
         {
+          id: "bible",
           name: "World Rules",
           href: `/projects/${projectId}/bible`,
           icon: Scroll,
           badge: null,
         },
         {
+          id: "versions",
           name: "Version History",
           href: `/projects/${projectId}/versions`,
           icon: History,
           badge: null,
         },
         {
+          id: "telemetry",
           name: "Usage & Analytics",
           href: `/projects/${projectId}/telemetry`,
           icon: Activity,
           badge: null,
         },
         {
+          id: "settings",
           name: "Story Settings",
           href: `/projects/${projectId}/customization`,
           icon: Sliders,
@@ -165,6 +183,23 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
     },
   ];
 
+  // Filter items if author configured modular feature toggles
+  const navItems = rawNavItems
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => {
+        // Essential items always stay
+        if (["overview", "editor", "reader", "settings", "telemetry", "versions"].includes(item.id)) {
+          return true;
+        }
+        if (!enabledFeatures || !Array.isArray(enabledFeatures)) {
+          return true;
+        }
+        return enabledFeatures.includes(item.id);
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
+
   return (
     <div className="min-h-screen bg-surface-void flex flex-col selection:bg-wine-accent selection:text-ink-parchment">
       {/* Top Breadcrumb & Telemetry Command Bar */}
@@ -172,7 +207,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         <div className="flex items-center gap-3 min-w-0">
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs text-ink-ash hover:text-ink-parchment transition-colors p-1 rounded-[4px] hover:bg-surface-card"
+            className="flex items-center gap-1.5 text-xs text-ink-ash hover:text-ink-parchment transition-colors p-1.5 rounded-lg hover:bg-surface-card"
             title="Back to All Projects"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
@@ -229,7 +264,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
           <div className="p-3 border-b border-border-quiet flex items-center justify-between">
             {!collapsed && (
               <div className="flex items-center gap-2 px-1">
-                <div className="w-6 h-6 rounded-[3px] bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson text-xs font-serif font-bold">
+                <div className="w-6 h-6 rounded-lg bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson text-xs font-serif font-bold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
                   N
                 </div>
                 <span className="text-xs font-serif font-medium text-ink-parchment tracking-tight">
@@ -241,7 +276,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
             <button
               onClick={() => setCollapsed(!collapsed)}
               className={cn(
-                "p-1.5 rounded-[4px] text-ink-ash hover:text-ink-parchment hover:bg-surface-card transition-colors",
+                "p-1.5 rounded-lg text-ink-ash hover:text-ink-parchment hover:bg-surface-card transition-colors",
                 collapsed && "mx-auto"
               )}
               title={collapsed ? "Expand rail" : "Collapse rail"}
@@ -277,11 +312,11 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "flex items-center gap-2.5 px-2.5 py-1.5 rounded-[4px] text-xs transition-colors duration-150 relative group",
+                        "flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors duration-150 relative group",
                         isActive
-                          ? "bg-wine-accent/15 text-ink-parchment font-medium shadow-sm"
-                          : "text-ink-bone hover:bg-surface-card hover:text-ink-parchment",
-                        collapsed && "justify-center px-0 py-2"
+                          ? "bg-wine-accent/15 text-ink-parchment font-medium shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] border border-wine-accent/30"
+                          : "text-ink-bone hover:bg-surface-card hover:text-ink-parchment border border-transparent",
+                        collapsed && "justify-center px-0 py-2.5"
                       )}
                       title={collapsed ? item.name : undefined}
                     >

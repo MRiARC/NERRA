@@ -13,7 +13,7 @@ export type SurfaceBorder =
   | "thread"
   | "warning";
 export type SurfaceGlow = "none" | "wine" | "pine" | "contradiction";
-export type SurfaceRounded = "none" | "sm" | "md" | "lg" | "full";
+export type SurfaceRounded = "none" | "sm" | "md" | "lg" | "xl" | "full";
 
 export interface SurfaceProps extends React.HTMLAttributes<HTMLDivElement> {
   depth?: SurfaceDepth;
@@ -33,7 +33,7 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
       innerHighlight,
       interactive = false,
       glow = "none",
-      rounded = "sm",
+      rounded = "md",
       as: Component = "div",
       className,
       children,
@@ -41,7 +41,7 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
     },
     ref
   ) => {
-    // Default innerHighlight to true for depth 2 and 3
+    // Top specular rim light for depth 2 and 3
     const shouldHighlight = innerHighlight !== undefined ? innerHighlight : depth >= 2;
 
     const depthClasses: Record<SurfaceDepth, string> = {
@@ -57,33 +57,35 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
       subtle: "border border-border-subtle",
       prominent: "border border-border-prominent",
       focus: "border border-border-focus",
-      contradiction: "border border-severity-contradiction/40",
-      knowledge: "border border-severity-knowledge/40",
-      thread: "border border-severity-thread/40",
-      warning: "border border-severity-warning/40",
+      contradiction: "border border-severity-contradiction/30",
+      knowledge: "border border-severity-knowledge/30",
+      thread: "border border-severity-thread/30",
+      warning: "border border-severity-warning/30",
     };
 
     const roundedClasses: Record<SurfaceRounded, string> = {
       none: "rounded-none",
-      sm: "rounded-[4px]", // Stitch standard ROUND_FOUR
-      md: "rounded-[6px]",
-      lg: "rounded-[8px]",
-      full: "rounded-full",
+      sm: "rounded-lg",         // 8px
+      md: "rounded-xl",         // 12px (Antigravity standard card)
+      lg: "rounded-2xl",        // 16px (Prominent containers / modals)
+      xl: "rounded-[20px]",     // 20px (Floating prompt docks)
+      full: "rounded-full",     // Pills & tokens
     };
 
     const glowClasses: Record<SurfaceGlow, string> = {
       none: "",
-      wine: "shadow-[0_0_24px_-4px_rgba(122,29,57,0.4)]",
-      pine: "shadow-[0_0_24px_-4px_rgba(23,61,47,0.4)]",
-      contradiction: "shadow-[0_0_24px_-4px_rgba(224,49,84,0.35)]",
+      wine: "shadow-[0_0_24px_-4px_rgba(140,34,66,0.35)]",
+      pine: "shadow-[0_0_24px_-4px_rgba(23,61,47,0.35)]",
+      contradiction: "shadow-[0_0_24px_-4px_rgba(244,63,94,0.25)]",
     };
 
+    // The physical 1px top-edge specular rim light
     const highlightClass = shouldHighlight
-      ? "shadow-[inset_0_1px_0_0_var(--edge-highlight)]"
+      ? "shadow-[inset_0_1px_0_0_var(--edge-highlight),0_8px_32px_-4px_rgba(0,0,0,0.45)]"
       : "";
 
     const interactiveClasses = interactive
-      ? "cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-border-prominent hover:shadow-[0_8px_24px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_0_var(--edge-highlight-prominent)] active:translate-y-0 active:scale-[0.995]"
+      ? "cursor-pointer transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-border-prominent hover:shadow-[0_12px_36px_-4px_rgba(0,0,0,0.55),inset_0_1px_0_0_var(--edge-highlight-prominent)] active:translate-y-0 active:scale-[0.995]"
       : "transition-colors duration-200";
 
     return (
@@ -107,6 +109,3 @@ export const Surface = forwardRef<HTMLDivElement, SurfaceProps>(
 );
 
 Surface.displayName = "Surface";
-
-/** Alias Box for convenience */
-export const Box = Surface;

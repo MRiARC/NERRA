@@ -31,7 +31,7 @@ export function ThemeSwitcher({ className }: { className?: string }) {
     <div ref={containerRef} className={cn("relative inline-block", className)}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] bg-surface-subtle hover:bg-surface-card border border-border-subtle hover:border-border-prominent text-ink-bone hover:text-ink-parchment text-xs font-medium transition-all duration-150 select-none"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-subtle hover:bg-surface-card border border-border-subtle hover:border-border-prominent text-ink-bone hover:text-ink-parchment text-xs font-medium transition-all duration-150 select-none shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]"
         title="Switch Studio Palette Theme"
         aria-label="Theme selector"
       >
@@ -50,13 +50,13 @@ export function ThemeSwitcher({ className }: { className?: string }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.98 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-0 mt-1.5 w-60 rounded-[4px] bg-surface-elevated border border-border-prominent shadow-2xl p-1.5 z-50 text-xs"
+            className="absolute right-0 mt-2 w-60 rounded-2xl bg-surface-elevated border border-border-subtle shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08),0_12px_36px_rgba(0,0,0,0.6)] p-2 z-50 text-xs"
           >
             <div className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider font-semibold text-ink-ash border-b border-border-quiet mb-1">
               Studio Aesthetic
             </div>
 
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {(Object.keys(THEMES) as ThemeId[]).map((themeKey) => {
                 const config = THEMES[themeKey];
                 const isActive = theme === themeKey;
@@ -69,10 +69,10 @@ export function ThemeSwitcher({ className }: { className?: string }) {
                       setIsOpen(false);
                     }}
                     className={cn(
-                      "w-full flex items-center justify-between px-2.5 py-2 rounded-[3px] text-left transition-colors duration-150",
+                      "w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors duration-150",
                       isActive
-                        ? "bg-wine-accent/15 text-ink-parchment font-medium"
-                        : "text-ink-bone hover:bg-surface-card hover:text-ink-parchment"
+                        ? "bg-wine-accent/15 text-ink-parchment font-medium border border-wine-accent/30"
+                        : "text-ink-bone hover:bg-surface-card hover:text-ink-parchment border border-transparent"
                     )}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">

@@ -47,7 +47,7 @@ export function Modal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" }}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/80 backdrop-blur-md"
             onClick={onClose}
           />
 
@@ -61,20 +61,20 @@ export function Modal({
           >
             <Surface
               depth={3}
-              border="prominent"
-              rounded="sm"
-              className={cn("p-6 text-ink-parchment relative", className)}
+              border="subtle"
+              rounded="lg"
+              className={cn("p-6 sm:p-7 text-ink-parchment relative shadow-2xl", className)}
             >
               <button
                 onClick={onClose}
-                className="absolute right-4 top-4 p-1.5 rounded-[4px] text-ink-ash hover:text-ink-parchment hover:bg-surface-subtle transition-colors"
+                className="absolute right-5 top-5 p-2 rounded-xl text-ink-ash hover:text-ink-parchment hover:bg-surface-subtle transition-colors"
                 aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
 
               {title && (
-                <div className="mb-4 pr-6">
+                <div className="mb-5 pr-8">
                   <h2 className="text-lg font-serif font-medium tracking-tight text-ink-parchment">
                     {title}
                   </h2>

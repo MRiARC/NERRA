@@ -157,7 +157,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
             onClick={() => { setSelectedSeverity("red"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-[4px] border text-xs transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
               selectedSeverity === "red"
                 ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
@@ -169,7 +169,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
 
           <button
             onClick={() => { setSelectedSeverity("yellow"); setSelectedStatus("open"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-[4px] border text-xs transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
               selectedSeverity === "yellow"
                 ? "bg-severity-warning/15 border-severity-warning text-severity-warning font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
@@ -181,7 +181,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
 
           <button
             onClick={() => { setSelectedStatus("intentional"); setSelectedSeverity("all"); }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-[4px] border text-xs transition-all ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
               selectedStatus === "intentional"
                 ? "bg-wine-accent/20 border-wine-accent text-wine-crimson font-semibold"
                 : "bg-surface-card border-border-subtle text-ink-ash hover:border-border-focus"
@@ -193,7 +193,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
 
           <button
             onClick={() => { setSelectedStatus("all"); setSelectedSeverity("all"); }}
-            className={`px-3 py-1.5 rounded-[4px] border text-xs text-ink-ash transition-all ${
+            className={`px-3 py-1.5 rounded-full border text-xs text-ink-ash transition-all shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] ${
               selectedStatus === "all" && selectedSeverity === "all"
                 ? "bg-surface-field border-border-focus text-ink-parchment font-semibold"
                 : "bg-surface-card border-border-subtle hover:border-border-focus"
@@ -211,13 +211,13 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
           {/* Search & Filter Bar */}
           <div className="p-4 border-b border-border-quiet space-y-3 bg-surface-base">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search paradoxes, characters, or quotes..."
-                className="w-full pl-9 pr-3.5 py-1.5 rounded-[4px] bg-surface-field border border-border-subtle text-xs text-ink-parchment focus:outline-none focus:border-wine-accent transition-colors"
+                className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-surface-field border border-border-subtle text-xs text-ink-parchment focus:outline-none focus:border-wine-accent transition-colors shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
               />
             </div>
 
@@ -226,7 +226,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
               <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
                 <button
                   onClick={() => setSelectedStatus(selectedStatus === "open" ? "all" : "open")}
-                  className={`px-2 py-0.5 rounded-[3px] border ${
+                  className={`px-2.5 py-1 rounded-full border text-[11px] ${
                     selectedStatus === "open"
                       ? "bg-wine-accent/15 border-wine-accent text-wine-crimson font-medium"
                       : "bg-surface-card border-border-subtle"
@@ -236,7 +236,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                 </button>
                 <button
                   onClick={() => setSelectedSeverity(selectedSeverity === "red" ? "all" : "red")}
-                  className={`px-2 py-0.5 rounded-[3px] border ${
+                  className={`px-2.5 py-1 rounded-full border text-[11px] ${
                     selectedSeverity === "red"
                       ? "bg-severity-contradiction/15 border-severity-contradiction text-severity-contradiction font-medium"
                       : "bg-surface-card border-border-subtle"
@@ -351,7 +351,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
               className="max-w-4xl space-y-6"
             >
               {/* Issue Header & Metadata Card */}
-              <Surface depth={2} border="subtle" rounded="sm" className="p-6 space-y-4">
+              <Surface depth={2} border="subtle" rounded="md" className="p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border-quiet pb-4">
                   <div className="flex items-center gap-2">
                     <Badge
@@ -407,7 +407,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                 </div>
 
                 {/* AI Explanation / Analysis */}
-                <div className="p-4 rounded-[4px] bg-surface-card border border-border-subtle space-y-2">
+                <div className="p-4 rounded-xl bg-surface-card border border-border-subtle space-y-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-pine-moss flex items-center gap-1.5">
                       <BrainCircuit className="w-4 h-4" />
@@ -450,7 +450,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                   <Surface
                     depth={1}
                     border="subtle"
-                    rounded="sm"
+                    rounded="md"
                     className="p-5 space-y-3 flex flex-col justify-between"
                   >
                     <div className="space-y-2.5">
@@ -461,7 +461,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                         <span className="text-[10px] text-ink-ash">Original statement</span>
                       </div>
 
-                      <blockquote className="p-3.5 rounded-[4px] bg-surface-card border-l-2 border-pine-moss font-serif text-xs text-ink-parchment leading-relaxed italic">
+                      <blockquote className="p-3.5 rounded-xl bg-surface-card border-l-2 border-pine-moss font-serif text-xs text-ink-parchment leading-relaxed italic shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
                         &ldquo;{activeIssue.evidence?.[0]?.quote || "No explicit quote recorded."}&rdquo;
                       </blockquote>
                     </div>
@@ -487,7 +487,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                   <Surface
                     depth={1}
                     border="contradiction"
-                    rounded="sm"
+                    rounded="md"
                     className="p-5 space-y-3 flex flex-col justify-between bg-severity-contradiction/5"
                   >
                     <div className="space-y-2.5">
@@ -498,7 +498,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                         <span className="text-[10px] text-severity-contradiction font-medium">Conflicting statement</span>
                       </div>
 
-                      <blockquote className="p-3.5 rounded-[4px] bg-surface-card border-l-2 border-severity-contradiction font-serif text-xs text-ink-parchment leading-relaxed italic">
+                      <blockquote className="p-3.5 rounded-xl bg-surface-card border-l-2 border-severity-contradiction font-serif text-xs text-ink-parchment leading-relaxed italic shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
                         &ldquo;{activeIssue.evidence?.[1]?.quote || "No explicit conflicting quote recorded."}&rdquo;
                       </blockquote>
                     </div>
@@ -523,7 +523,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
               </div>
 
               {/* Authorial Arbitration & Decision Bar */}
-              <Surface depth={2} border="subtle" rounded="sm" className="p-6 space-y-4">
+              <Surface depth={2} border="subtle" rounded="md" className="p-6 space-y-4">
                 <div className="space-y-1">
                   <h3 className="font-serif text-sm font-medium text-ink-parchment">
                     How would you like to handle this?
@@ -538,7 +538,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                   <button
                     onClick={() => handleSetStatus("accepted")}
                     disabled={isPatching}
-                    className={`p-4 rounded-[4px] border text-left transition-all space-y-2 flex flex-col justify-between ${
+                    className={`p-4 rounded-xl border text-left transition-all space-y-2 flex flex-col justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ${
                       activeIssue.status === "accepted"
                         ? "bg-severity-warning/20 border-severity-warning shadow-sm"
                         : "bg-surface-card border-border-subtle hover:border-severity-warning/60"
@@ -562,7 +562,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                   <button
                     onClick={() => handleSetStatus("intentional")}
                     disabled={isPatching}
-                    className={`p-4 rounded-[4px] border text-left transition-all space-y-2 flex flex-col justify-between ${
+                    className={`p-4 rounded-xl border text-left transition-all space-y-2 flex flex-col justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ${
                       activeIssue.status === "intentional"
                         ? "bg-wine-accent/20 border-wine-accent shadow-sm"
                         : "bg-surface-card border-border-subtle hover:border-wine-accent/60"
@@ -586,7 +586,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
                   <button
                     onClick={() => handleSetStatus("rejected")}
                     disabled={isPatching}
-                    className={`p-4 rounded-[4px] border text-left transition-all space-y-2 flex flex-col justify-between ${
+                    className={`p-4 rounded-xl border text-left transition-all space-y-2 flex flex-col justify-between shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] ${
                       activeIssue.status === "rejected"
                         ? "bg-surface-field border-border-focus shadow-sm"
                         : "bg-surface-card border-border-subtle hover:border-border-focus"

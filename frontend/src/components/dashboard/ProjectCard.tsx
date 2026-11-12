@@ -32,8 +32,8 @@ export function ProjectCard({ project, onUploadClick }: ProjectCardProps) {
       depth={2}
       border="subtle"
       interactive
-      rounded="sm"
-      className="flex flex-col justify-between h-[230px] p-5 relative overflow-hidden group"
+      rounded="md"
+      className="flex flex-col justify-between h-[236px] p-5 relative overflow-hidden group"
     >
       {/* Subtle top ambient wine glow */}
       <div className="absolute -top-12 -right-12 w-32 h-32 bg-wine-accent/10 rounded-full blur-2xl pointer-events-none group-hover:bg-wine-accent/20 transition-all duration-500" />

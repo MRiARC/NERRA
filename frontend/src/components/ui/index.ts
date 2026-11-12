@@ -6,3 +6,5 @@ export * from "./Input";
 export * from "./Divider";
 export * from "./Modal";
 export * from "./Drawer";
+export * from "./PromptDeck";
+export * from "./ThemeSwitcher";
