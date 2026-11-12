@@ -91,16 +91,29 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
         logger.warning("Embedding skipped for chapter %s: %s", chapter_number, exc)
         embedding = None
 
-    db.add(
-        Chunk(
-            manuscript_id=manuscript.id,
-            chapter_number=chapter_number,
-            content=content,
-            content_hash=_content_hash(content),
-            paragraph_hashes=change_detector.compute_paragraph_hashes(content),
-            embedding=embedding,
-        )
+    content_hash = _content_hash(content)
+    p_hashes = change_detector.compute_paragraph_hashes(content)
+    existing_chunk = (
+        db.query(Chunk)
+        .filter(Chunk.manuscript_id == manuscript.id, Chunk.chapter_number == chapter_number)
+        .first()
     )
+    if existing_chunk is not None:
+        existing_chunk.content = content
+        existing_chunk.content_hash = content_hash
+        existing_chunk.paragraph_hashes = p_hashes
+        existing_chunk.embedding = embedding
+    else:
+        db.add(
+            Chunk(
+                manuscript_id=manuscript.id,
+                chapter_number=chapter_number,
+                content=content,
+                content_hash=content_hash,
+                paragraph_hashes=p_hashes,
+                embedding=embedding,
+            )
+        )
     db.commit()
 
 
@@ -138,7 +151,8 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         manuscript.raw_text,
         exclude_manuscript_id=manuscript.id,
     )
-    for stale_ch in change_report.get("stale_claim_chapters") or []:
+    stale_chapters = set(change_report.get("stale_claim_chapters") or [])
+    for stale_ch in stale_chapters:
         change_detector.mark_chapter_claims_stale(db, manuscript.project_id, stale_ch)
 
     chapters = splitter.split_chapters(manuscript.raw_text)
@@ -148,10 +162,25 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
 
     extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
 
+    from app.models import Chunk
+
     for chapter in chapters:
         content_hash = _content_hash(chapter.content)
         cached = _find_cached_analysis(db, manuscript.id, chapter.number, content_hash)
         if cached:
+            already_chunked = (
+                db.query(Chunk)
+                .filter(
+                    Chunk.manuscript_id == manuscript.id,
+                    Chunk.chapter_number == chapter.number,
+                    Chunk.content_hash == content_hash,
+                )
+                .first()
+            )
+            if already_chunked is not None:
+                manuscript.chapters_done += 1
+                db.commit()
+                continue
             if isinstance(cached.result, dict):
                 payload = ExtractionPayload.model_validate(cached.result)
             elif isinstance(cached.result, str):
@@ -177,6 +206,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
 
+        is_rewritten = chapter.number in stale_chapters
         validator.gate_and_commit_extraction(
             db,
             manuscript.project_id,
@@ -185,6 +215,7 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
             chapter.content,
             payload,
             use_llm=not extract_is_mocked,
+            supersede_chapter=is_rewritten,
         )
         _embed_and_store_chunk(db, manuscript, chapter.number, chapter.content)
         manuscript.chapters_done += 1

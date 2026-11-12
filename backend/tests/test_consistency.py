@@ -143,7 +143,10 @@ def project(db_session):
     return project
 
 
-def test_run_consistency_pass_persists_and_dedupes(db_session, project):
+def test_run_consistency_pass_persists_and_dedupes(db_session, project, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "use_llm_consistency", False)
     claims = [
         _claim("Sarah", "eye_color", "green", 1, "green eyes"),
         _claim("Sarah", "eye_color", "blue", 3, "blue eyes"),

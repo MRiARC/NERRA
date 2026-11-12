@@ -138,7 +138,7 @@ def extract_and_update_plot_threads_llm(
     """Use Claude Sonnet to detect new setups/mysteries and resolve existing open threads."""
     from app.config import settings
     from app.models import PlotThread
-    from app.services import extractor
+    from app.services import extractor, llm_budget
 
     pid = _as_uuid(project_id)
     if not use_llm or not settings.anthropic_api_key or not (chapter_text or "").strip():
@@ -156,54 +156,59 @@ def extract_and_update_plot_threads_llm(
     class PlotThreadBatch(BaseModel):
         threads: list[ThreadUpdateItem] = Field(default_factory=list)
 
-    prior = db.query(PlotThread).filter(PlotThread.project_id == pid).all()
-    prior_summary = (
-        "\n".join(
-            f"- [{t.status}] Ch.{t.setup_chapter} '{t.title}': {t.description}"
-            for t in prior
-        )
-        or "None yet"
+    budget = llm_budget.compute_input_char_budget(
+        settings.chat_model, max_output_tokens=2048, overhead_tokens=4000
     )
-    prompt = (
-        f"Analyze Chapter {chapter_number} for narrative Plot Threads (mysteries, promises, setups, clues, and payoffs).\n"
-        "- Introduce NEW threads when a setup, unanswered question, prophecy, secret object, or goal opens.\n"
-        "- Update EXISTING open threads to `resolved` (with `payoff_chapter`), `abandoned`, or `red_herring` when this chapter resolves or subverts them.\n\n"
-        f"EXISTING PLOT THREADS:\n{prior_summary}\n\n"
-        f"CHAPTER {chapter_number} TEXT:\n{chapter_text[:12000]}"
-    )
+    windows = llm_budget.split_text_windows(chapter_text, budget)
 
     try:
         client = extractor.get_anthropic_client()
-        resp = client.messages.create(
-            model=settings.chat_model,
-            max_tokens=2048,
-            tools=[
-                {
-                    "name": "save_plot_threads",
-                    "description": "Save new and updated narrative plot threads",
-                    "input_schema": PlotThreadBatch.model_json_schema(),
-                }
-            ],
-            tool_choice={"type": "tool", "name": "save_plot_threads"},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        for block in resp.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == "save_plot_threads":
-                parsed = PlotThreadBatch.model_validate(block.input)
-                for item in parsed.threads:
-                    _upsert_thread(
-                        db,
-                        pid,
-                        title=item.title,
-                        description=item.description,
-                        setup_chapter=item.setup_chapter or chapter_number,
-                        payoff_chapter=item.payoff_chapter,
-                        status=item.status,
-                        related_entities=item.related_entities,
-                        evidence_quote=item.evidence_quote,
-                    )
-                db.commit()
-                break
+        for win in windows:
+            prior = db.query(PlotThread).filter(PlotThread.project_id == pid).all()
+            prior_summary = (
+                "\n".join(
+                    f"- [{t.status}] Ch.{t.setup_chapter} '{t.title}': {t.description}"
+                    for t in prior
+                )
+                or "None yet"
+            )
+            prompt = (
+                f"Analyze Chapter {chapter_number} for narrative Plot Threads (mysteries, promises, setups, clues, and payoffs).\n"
+                "- Introduce NEW threads when a setup, unanswered question, prophecy, secret object, or goal opens.\n"
+                "- Update EXISTING open threads to `resolved` (with `payoff_chapter`), `abandoned`, or `red_herring` when this chapter resolves or subverts them.\n\n"
+                f"EXISTING PLOT THREADS:\n{prior_summary}\n\n"
+                f"CHAPTER {chapter_number} TEXT:\n{win}"
+            )
+            resp = client.messages.create(
+                model=settings.chat_model,
+                max_tokens=2048,
+                tools=[
+                    {
+                        "name": "save_plot_threads",
+                        "description": "Save new and updated narrative plot threads",
+                        "input_schema": PlotThreadBatch.model_json_schema(),
+                    }
+                ],
+                tool_choice={"type": "tool", "name": "save_plot_threads"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in resp.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "save_plot_threads":
+                    parsed = PlotThreadBatch.model_validate(block.input)
+                    for item in parsed.threads:
+                        _upsert_thread(
+                            db,
+                            pid,
+                            title=item.title,
+                            description=item.description,
+                            setup_chapter=item.setup_chapter or chapter_number,
+                            payoff_chapter=item.payoff_chapter,
+                            status=item.status,
+                            related_entities=item.related_entities,
+                            evidence_quote=item.evidence_quote,
+                        )
+                    db.commit()
+                    break
     except Exception as exc:  # noqa: BLE001
         logger.debug("Plot thread LLM extraction skipped/fallback: %s", exc)
 

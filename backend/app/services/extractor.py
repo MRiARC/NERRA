@@ -203,17 +203,72 @@ def get_roster(db, project_id) -> str:
 
 
 def get_anthropic_client():
-    """Shared Anthropic client with a helpful error when the key is missing."""
+    """Shared Anthropic client with dynamic payload timeout and Retry-After backoff."""
+    import random
+    import time
+
     import anthropic
+
+    from app.services import llm_budget
 
     if not settings.anthropic_api_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set — add it to backend/.env (see .env.example)"
         )
-    kwargs = {"api_key": settings.anthropic_api_key, "timeout": 60.0}
+    explicit_timeout = getattr(settings, "llm_timeout_seconds", None)
+    kwargs = {
+        "api_key": settings.anthropic_api_key,
+        "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
+        "max_retries": 1,
+    }
     if getattr(settings, "anthropic_base_url", None):
         kwargs["base_url"] = settings.anthropic_base_url
-    return anthropic.Anthropic(**kwargs)
+    raw_client = anthropic.Anthropic(**kwargs)
+
+    class _ResilientMessages:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def create(self, **call_kwargs):
+            if "timeout" not in call_kwargs:
+                if explicit_timeout is not None:
+                    call_kwargs["timeout"] = float(explicit_timeout)
+                else:
+                    in_chars = sum(
+                        len(str(m.get("content", ""))) for m in (call_kwargs.get("messages") or [])
+                    )
+                    max_toks = int(call_kwargs.get("max_tokens") or 4096)
+                    call_kwargs["timeout"] = llm_budget.compute_dynamic_timeout_seconds(in_chars, max_toks)
+
+            delay = 2.0
+            for attempt in range(4):
+                try:
+                    return self._inner.create(**call_kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    status = getattr(exc, "status_code", None)
+                    msg = str(exc).lower()
+                    is_transient = (
+                        isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError, anthropic.InternalServerError))
+                        or (isinstance(status, int) and (status == 429 or status >= 500))
+                        or "quota exhausted" in msg
+                        or "timed out" in msg
+                    )
+                    if not is_transient or attempt == 3:
+                        raise
+                    retry_after = llm_budget.parse_retry_after_seconds(exc)
+                    wait_s = retry_after if retry_after is not None else (delay + random.uniform(0.2, 1.2))
+                    time.sleep(wait_s)
+                    delay *= 2.0
+
+    class _ResilientClient:
+        def __init__(self, inner):
+            self._inner = inner
+            self.messages = _ResilientMessages(inner.messages)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    return _ResilientClient(raw_client)
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +317,21 @@ def extract_chapter(
         tool_choice={"type": "tool", "name": "save_extraction"},
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = next(block.input for block in response.content if getattr(block, "type", None) == "tool_use")
-    return ExtractionPayload.model_validate(raw)
+    tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
+    if tool_block is not None:
+        return ExtractionPayload.model_validate(tool_block.input)
+    for b in response.content:
+        txt = getattr(b, "text", "")
+        if "{" in txt:
+            import json
+            import re
+            m = re.search(r"\{.*\}", txt, re.DOTALL)
+            if m:
+                try:
+                    return ExtractionPayload.model_validate(json.loads(m.group(0)))
+                except Exception:
+                    pass
+    return ExtractionPayload()
 
 
 def extract_chapter_multipass(
@@ -312,28 +380,52 @@ def extract_chapter_multipass(
             tool_choice={"type": "tool", "name": tool_name},
             messages=[{"role": "user", "content": prompt}],
         )
-        raw = next(block.input for block in res.content if getattr(block, "type", None) == "tool_use")
-        return schema_cls.model_validate(raw)
+        tool_block = next((block for block in res.content if getattr(block, "type", None) == "tool_use"), None)
+        if tool_block is not None:
+            raw = tool_block.input
+            if isinstance(raw, dict):
+                return schema_cls.model_validate(raw)
+            if isinstance(raw, str):
+                import json
+                try:
+                    return schema_cls.model_validate(json.loads(raw))
+                except Exception:
+                    pass
+        for block in res.content:
+            txt = getattr(block, "text", "")
+            if "{" in txt:
+                import json
+                import re
+                m = re.search(r"\{.*\}", txt, re.DOTALL)
+                if m:
+                    try:
+                        return schema_cls.model_validate(json.loads(m.group(0)))
+                    except Exception:
+                        pass
+        return schema_cls()
 
+    from app.services import llm_budget
+
+    low_beats, high_beats = llm_budget.compute_event_beat_range(chapter_text)
     passes = [
         (
             "save_entities",
             EntitiesPassPayload,
-            "Extract EVERY character (resolving pronouns/epithets and recording aliases), relationships "
-            "(with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
+            "Extract EVERY character (resolving pronouns/epithets to proper names and recording ONLY true character aliases/titles, NEVER bare pronouns like 'he', 'she', 'her', 'his', 'they'), "
+            "relationships (with sentiment and evidence_quote), locations, and plot-significant recurring objects.",
         ),
         (
             "save_timeline_custody",
             TimelineCustodyPassPayload,
-            "Extract EVERY chronological/narrative scene beat (participants, location, temporal_anchor, "
+            f"Extract SIGNIFICANT narrative scene beats, plot reveals, state transitions, and confrontations "
+            f"(group closely connected paragraph actions into ~{low_beats}-{high_beats} key events for this chapter rather than micro-movements; include participants, location, temporal_anchor, "
             "is_flashback/is_flashforward), knowledge acquisition ('witnessed'|'told'|'deduced'|'overheard' with source_character), "
-            "and object custody transfer/use.",
+            "and object custody transfers.",
         ),
         (
             "save_claims_rules",
             ClaimsRulesPassPayload,
-            "Extract ALL verifiable factual claims (physical traits, ages, possessions, behavior, and 'knows_about' assertions) "
-            "with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
+            "Extract ALL verifiable factual claims with specific attributes where applicable (e.g. 'eye_color', 'hair_color', 'age', 'height', 'status', 'rank', 'profession', rather than generic 'physical_trait'; use 'physical_trait' for scars, build, prosthetics, and general features) with EXACT verbatim evidence_quote substrings from the text, plus any universe-level magic/physics/society World Rules.",
         ),
     ]
 
@@ -392,7 +484,13 @@ def validate_payload(payload: ExtractionPayload, chapter_text: str) -> Extractio
     )
 
 
-def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionPayload) -> None:
+def persist_extraction(
+    db,
+    project_id,
+    chapter_number: int,
+    payload: ExtractionPayload,
+    supersede_chapter: bool = False,
+) -> None:
     """Write the extraction into the story tables."""
     from app.models import (
         Character,
@@ -410,10 +508,25 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     existing_characters = db.query(Character).filter(Character.project_id == project_id).all()
     char_map: dict[str, Character] = {}
 
+    _PRONOUN_ALIASES = {
+        "he", "she", "him", "her", "his", "hers", "they", "them", "their", "theirs",
+        "it", "its", "i", "me", "my", "we", "us", "our", "you", "your",
+    }
+
+    def _clean_aliases(raw_aliases: list[str], canonical_name: str) -> list[str]:
+        canon_low = canonical_name.strip().lower()
+        return sorted({
+            a.strip()
+            for a in (raw_aliases or [])
+            if a and a.strip() and a.strip().lower() not in _PRONOUN_ALIASES and a.strip().lower() != canon_low
+        })
+
     def _index_char(ch: Character):
         char_map[ch.name.strip().lower()] = ch
         for a in (ch.aliases or []):
-            char_map[a.strip().lower()] = ch
+            low = a.strip().lower()
+            if low and low not in _PRONOUN_ALIASES:
+                char_map[low] = ch
 
     for ch in existing_characters:
         _index_char(ch)
@@ -421,11 +534,12 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
     for c in payload.characters:
         name_clean = c.name.strip()
         lookup_key = name_clean.lower()
+        cleaned_input_aliases = _clean_aliases(c.aliases, name_clean)
         matched = char_map.get(lookup_key)
         if not matched:
-            for alias in c.aliases:
-                if alias.strip().lower() in char_map:
-                    matched = char_map[alias.strip().lower()]
+            for alias in cleaned_input_aliases:
+                if alias.lower() in char_map:
+                    matched = char_map[alias.lower()]
                     break
 
         if matched:
@@ -433,8 +547,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 matched.description = c.description
             if c.status and c.status != "unknown":
                 matched.status = c.status
-            new_aliases = set(matched.aliases or []) | set(c.aliases)
-            matched.aliases = sorted(list(new_aliases))
+            matched.aliases = _clean_aliases(list(matched.aliases or []) + cleaned_input_aliases, matched.name)
             matched.last_chapter = max(matched.last_chapter or chapter_number, chapter_number)
             matched.first_chapter = min(matched.first_chapter or chapter_number, chapter_number)
             _index_char(matched)
@@ -442,7 +555,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             new_char = Character(
                 project_id=project_id,
                 name=name_clean,
-                aliases=c.aliases,
+                aliases=cleaned_input_aliases,
                 description=c.description,
                 status=c.status,
                 first_chapter=chapter_number,
@@ -538,32 +651,84 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             db.flush()
             obj_map[obj_key] = new_obj
 
-    # 5. Events (with scene_order & flashback/temporal marker detection)
+    # 5. Events (reconciled & idempotent: avoid duplicate rows on identical re-persist, replace on content rewrite)
     from app.services import timeline
 
-    for idx, ev in enumerate(payload.events, start=1):
-        anchor, fb, ff = timeline.detect_temporal_markers(
-            ev.summary,
-            explicit_anchor=ev.temporal_anchor,
-            explicit_flashback=ev.is_flashback,
-            explicit_flashforward=ev.is_flashforward,
+    existing_events = (
+        db.query(StoryEvent)
+        .filter(
+            StoryEvent.project_id == project_id,
+            StoryEvent.chapter_number == chapter_number,
         )
-        new_ev = StoryEvent(
-            project_id=project_id,
-            chapter_number=chapter_number,
-            scene_order=idx,
-            story_time_order=chapter_number * 100 + idx,
-            temporal_anchor=anchor,
-            is_flashback=fb,
-            is_flashforward=ff,
-            summary=ev.summary,
-            participants=ev.participants,
-            location=ev.location,
-        )
-        db.add(new_ev)
+        .order_by(StoryEvent.scene_order)
+        .all()
+    )
+    existing_event_summaries = [e.summary.strip().lower() for e in existing_events]
+    incoming_event_summaries = [ev.summary.strip().lower() for ev in payload.events]
 
-    # 6. Claims
+    if payload.events:
+        if existing_event_summaries == incoming_event_summaries:
+            # Identical payload: no duplicate insertion
+            pass
+        else:
+            # Events have changed or chapter rewritten: replace stale events for this chapter with new ones
+            for old_ev in existing_events:
+                db.delete(old_ev)
+            db.flush()
+
+            for idx, ev in enumerate(payload.events, start=1):
+                clean_sum = ev.summary.strip()
+                anchor, fb, ff = timeline.detect_temporal_markers(
+                    ev.summary,
+                    explicit_anchor=ev.temporal_anchor,
+                    explicit_flashback=ev.is_flashback,
+                    explicit_flashforward=ev.is_flashforward,
+                )
+                new_ev = StoryEvent(
+                    project_id=project_id,
+                    chapter_number=chapter_number,
+                    scene_order=idx,
+                    story_time_order=chapter_number * 100 + idx,
+                    temporal_anchor=anchor,
+                    is_flashback=fb,
+                    is_flashforward=ff,
+                    summary=clean_sum,
+                    participants=ev.participants,
+                    location=ev.location,
+                )
+                db.add(new_ev)
+
+    # 6. Claims (reconciled & idempotent: restore still-valid claims from superseded state,
+    # add new claims, avoid duplicates for active claims)
+    existing_claims = db.query(Claim).filter(
+        Claim.project_id == project_id,
+        Claim.chapter == chapter_number,
+    ).all()
+
+    if supersede_chapter:
+        for c in existing_claims:
+            if c.status == "active":
+                c.status = "superseded"
+
+    claims_by_key = {
+        (c.subject.strip().lower(), c.attribute.strip().lower(), c.value.strip().lower()): c
+        for c in existing_claims
+    }
+
     for cl in payload.claims:
+        ckey = (cl.subject.strip().lower(), cl.attribute.strip().lower(), cl.value.strip().lower())
+        matched = claims_by_key.get(ckey)
+        if matched is not None:
+            # If the claim was superseded/stale, re-extracting confirms it is still valid: restore to active
+            if matched.status in ("superseded", "stale"):
+                matched.status = "active"
+                matched.evidence_quote = cl.evidence_quote.strip()
+                matched.confidence = 1.0
+                matched.validation_state = "AUTO_ACCEPTED"
+            elif matched.status == "active":
+                matched.evidence_quote = cl.evidence_quote.strip()
+            continue
+
         new_claim = Claim(
             project_id=project_id,
             subject=cl.subject.strip(),
@@ -573,22 +738,55 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             evidence_quote=cl.evidence_quote.strip(),
             confidence=1.0,
             validation_state="AUTO_ACCEPTED",
+            status="active",
         )
         db.add(new_claim)
+        claims_by_key[ckey] = new_claim
 
-    # 7. Knowledge Updates
-    for kn in payload.knowledge:
-        new_kn = KnowledgeUpdate(
-            project_id=project_id,
-            character=kn.character.strip(),
-            fact=kn.fact.strip(),
-            chapter=chapter_number,
-            how_learned=kn.how_learned,
-            source_character=kn.source_character.strip() if kn.source_character else None,
-        )
-        db.add(new_kn)
+    # 7. Knowledge Updates (reconciled & idempotent)
+    existing_kn = db.query(KnowledgeUpdate).filter(
+        KnowledgeUpdate.project_id == project_id,
+        KnowledgeUpdate.chapter == chapter_number,
+    ).all()
+    existing_kn_keys = {(k.character.strip().lower(), k.fact.strip().lower()): k for k in existing_kn}
+    incoming_kn_keys = {(kn.character.strip().lower(), kn.fact.strip().lower()) for kn in payload.knowledge}
 
-    # 8. Object Custody Events
+    if payload.knowledge:
+        if supersede_chapter and set(existing_kn_keys.keys()) != incoming_kn_keys:
+            for old_kn in existing_kn:
+                db.delete(old_kn)
+            existing_kn_keys = {}
+
+        for kn in payload.knowledge:
+            kkey = (kn.character.strip().lower(), kn.fact.strip().lower())
+            if kkey in existing_kn_keys:
+                continue
+            new_kn = KnowledgeUpdate(
+                project_id=project_id,
+                character=kn.character.strip(),
+                fact=kn.fact.strip(),
+                chapter=chapter_number,
+                how_learned=kn.how_learned,
+                source_character=kn.source_character.strip() if kn.source_character else None,
+            )
+            db.add(new_kn)
+            existing_kn_keys[kkey] = new_kn
+
+    # 8. Object Custody Events (reconciled & idempotent)
+    existing_custody = db.query(ObjectCustodyEvent).filter(
+        ObjectCustodyEvent.project_id == project_id,
+        ObjectCustodyEvent.chapter == chapter_number,
+    ).all()
+
+    if payload.custody_events and supersede_chapter:
+        for old_c in existing_custody:
+            db.delete(old_c)
+        existing_custody = []
+
+    custody_keys = {
+        (c.object_id, (c.holder_name or "").strip().lower(), (c.action or "").strip().lower())
+        for c in existing_custody
+    }
     for ce in payload.custody_events:
         obj_key = ce.object_name.strip().lower()
         matched_obj = obj_map.get(obj_key)
@@ -607,6 +805,9 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
             mentions.add(chapter_number)
             matched_obj.mention_chapters = sorted(list(mentions))
 
+        ckey = (matched_obj.id, ce.holder_name.strip().lower(), (ce.action or "").strip().lower())
+        if ckey in custody_keys:
+            continue
         db.add(
             ObjectCustodyEvent(
                 project_id=project_id,
@@ -618,6 +819,7 @@ def persist_extraction(db, project_id, chapter_number: int, payload: ExtractionP
                 evidence_quote=ce.evidence_quote,
             )
         )
+        custody_keys.add(ckey)
 
     # 9. Discovered World Rules
     existing_rules = {

@@ -54,6 +54,7 @@ def _evaluate_entities_and_claims_llm(
 
     try:
         from app.config import settings
+        from app.services import llm_budget
         from app.services.extractor import get_anthropic_client
 
         if not settings.anthropic_api_key:
@@ -87,7 +88,14 @@ def _evaluate_entities_and_claims_llm(
             for cl in payload.claims
         )
 
-        prompt = f"""Act as NERRA's pre-graph Validation Judge.
+        budget = llm_budget.compute_input_char_budget(
+            settings.chat_model, max_output_tokens=2048, overhead_tokens=4000
+        )
+        windows = llm_budget.split_text_windows(chapter_text, budget)
+        client = get_anthropic_client()
+
+        for win in windows:
+            prompt = f"""Act as NERRA's pre-graph Validation Judge.
 Inspect candidate characters and claims before committing to the canon Story Graph:
 1. Junk Entities (`confidence <= 0.35`): calendar days ("Monday"), months, pronouns ("She"), or generic nouns misclassified as Characters.
 2. Ambiguous Entity Collisions (`0.45 - 0.75`): e.g. a title+surname ("Miss Mitchell") when "Sarah Mitchell" already exists AND the passage hints they might be two different family members (mother/daughter) or ambiguous alias.
@@ -100,40 +108,46 @@ CANDIDATE CLAIMS:
 {claims_str}
 
 CHAPTER TEXT:
-{chapter_text[:12000]}"""
+{win}"""
 
-        client = get_anthropic_client()
-        response = client.messages.create(
-            model=settings.chat_model,
-            max_tokens=2048,
-            tools=[
-                {
-                    "name": "save_validation_judgments",
-                    "description": "Record pre-graph validation confidence & ambiguity reasons",
-                    "input_schema": ValidationJudgments.model_json_schema(),
-                }
-            ],
-            tool_choice={"type": "tool", "name": "save_validation_judgments"},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        for block in response.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == "save_validation_judgments":
-                parsed = ValidationJudgments.model_validate(block.input)
-                result["narrator_unreliable"] = parsed.narrator_unreliable
-                for ej in parsed.entity_judgments:
-                    result["character_judgments"][ej.name.strip().lower()] = {
-                        "confidence": ej.confidence,
-                        "ambiguity_reason": ej.ambiguity_reason,
-                        "resolved_to": ej.resolved_to,
+            response = client.messages.create(
+                model=settings.chat_model,
+                max_tokens=2048,
+                tools=[
+                    {
+                        "name": "save_validation_judgments",
+                        "description": "Record pre-graph validation confidence & ambiguity reasons",
+                        "input_schema": ValidationJudgments.model_json_schema(),
                     }
-                for cj in parsed.claim_judgments:
-                    key = (cj.subject.strip().lower(), cj.attribute.strip().lower(), cj.value.strip().lower())
-                    result["claim_judgments"][key] = {
-                        "confidence": cj.confidence,
-                        "ambiguity_reason": cj.ambiguity_reason,
-                        "resolved_subject": cj.resolved_subject,
-                    }
-                break
+                ],
+                tool_choice={"type": "tool", "name": "save_validation_judgments"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            for block in response.content:
+                if getattr(block, "type", None) == "tool_use" and block.name == "save_validation_judgments":
+                    parsed = ValidationJudgments.model_validate(block.input)
+                    result["narrator_unreliable"] = bool(
+                        result["narrator_unreliable"] or parsed.narrator_unreliable
+                    )
+                    for ej in parsed.entity_judgments:
+                        ek = ej.name.strip().lower()
+                        prev_ej = result["character_judgments"].get(ek)
+                        if prev_ej is None or ej.confidence < prev_ej["confidence"]:
+                            result["character_judgments"][ek] = {
+                                "confidence": ej.confidence,
+                                "ambiguity_reason": ej.ambiguity_reason,
+                                "resolved_to": ej.resolved_to,
+                            }
+                    for cj in parsed.claim_judgments:
+                        key = (cj.subject.strip().lower(), cj.attribute.strip().lower(), cj.value.strip().lower())
+                        prev_cj = result["claim_judgments"].get(key)
+                        if prev_cj is None or cj.confidence > prev_cj["confidence"]:
+                            result["claim_judgments"][key] = {
+                                "confidence": cj.confidence,
+                                "ambiguity_reason": cj.ambiguity_reason,
+                                "resolved_subject": cj.resolved_subject,
+                            }
+                    break
     except Exception as exc:  # noqa: BLE001
         logger.debug("LLM validation judge skipped/fallback: %s", exc)
 
@@ -148,6 +162,7 @@ def gate_and_commit_extraction(
     chapter_text: str,
     payload,
     use_llm: bool = True,
+    supersede_chapter: bool = False,
 ) -> tuple[Any, list]:
     """Validate extracted items before Story Graph persistence.
 
@@ -166,6 +181,21 @@ def gate_and_commit_extraction(
     blocked_tokens = _NON_ENTITY_TOKENS | extra_ignored
 
     existing_chars = db.query(Character).filter(Character.project_id == pid).all()
+    existing_pending_sigs: set[tuple[str, str]] = set()
+    if manuscript_id is not None:
+        import json as _json
+
+        for prev in (
+            db.query(ValidationCandidate)
+            .filter(
+                ValidationCandidate.project_id == pid,
+                ValidationCandidate.manuscript_id == manuscript_id,
+                ValidationCandidate.chapter == chapter_number,
+                ValidationCandidate.status == "pending",
+            )
+            .all()
+        ):
+            existing_pending_sigs.add((prev.candidate_type, _json.dumps(prev.payload or {}, sort_keys=True)))
     existing_exact = {c.name.strip().lower() for c in existing_chars}
     existing_aliases = {a.strip().lower() for c in existing_chars for a in (c.aliases or [])}
     existing_surnames = {
@@ -211,19 +241,25 @@ def gate_and_commit_extraction(
         if route == "auto_accepted":
             accepted_chars.append(ch)
         else:
-            row = ValidationCandidate(
-                project_id=pid,
-                manuscript_id=manuscript_id,
-                chapter=chapter_number,
-                candidate_type="character",
-                payload=ch.model_dump(),
-                confidence=conf,
-                route=route,
-                ambiguity_reason=reason,
-                status="pending",
-            )
-            db.add(row)
-            staged_rows.append(row)
+            import json as _json
+
+            payload_dict = ch.model_dump()
+            sig = ("character", _json.dumps(payload_dict, sort_keys=True))
+            if sig not in existing_pending_sigs:
+                existing_pending_sigs.add(sig)
+                row = ValidationCandidate(
+                    project_id=pid,
+                    manuscript_id=manuscript_id,
+                    chapter=chapter_number,
+                    candidate_type="character",
+                    payload=payload_dict,
+                    confidence=conf,
+                    route=route,
+                    ambiguity_reason=reason,
+                    status="pending",
+                )
+                db.add(row)
+                staged_rows.append(row)
 
     accepted_claims = []
     for cl in payload.claims:
@@ -254,20 +290,26 @@ def gate_and_commit_extraction(
         if route == "auto_accepted":
             accepted_claims.append(cl)
         else:
-            row = ValidationCandidate(
-                project_id=pid,
-                manuscript_id=manuscript_id,
-                chapter=chapter_number,
-                candidate_type="claim",
-                payload=cl.model_dump(),
-                confidence=conf,
-                route=route,
-                ambiguity_reason=reason,
-                evidence_quote=cl.evidence_quote,
-                status="pending",
-            )
-            db.add(row)
-            staged_rows.append(row)
+            import json as _json
+
+            payload_dict = cl.model_dump()
+            sig = ("claim", _json.dumps(payload_dict, sort_keys=True))
+            if sig not in existing_pending_sigs:
+                existing_pending_sigs.add(sig)
+                row = ValidationCandidate(
+                    project_id=pid,
+                    manuscript_id=manuscript_id,
+                    chapter=chapter_number,
+                    candidate_type="claim",
+                    payload=payload_dict,
+                    confidence=conf,
+                    route=route,
+                    ambiguity_reason=reason,
+                    evidence_quote=cl.evidence_quote,
+                    status="pending",
+                )
+                db.add(row)
+                staged_rows.append(row)
 
     approved_payload = ExtractionPayload(
         characters=accepted_chars,
@@ -280,7 +322,17 @@ def gate_and_commit_extraction(
         custody_events=payload.custody_events,
         world_rules=getattr(payload, "world_rules", []),
     )
-    extractor.persist_extraction(db, pid, chapter_number, approved_payload)
+    import inspect
+
+    sig = inspect.signature(extractor.persist_extraction)
+    if "supersede_chapter" in sig.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    ):
+        extractor.persist_extraction(
+            db, pid, chapter_number, approved_payload, supersede_chapter=supersede_chapter
+        )
+    else:
+        extractor.persist_extraction(db, pid, chapter_number, approved_payload)
     db.commit()
     return approved_payload, staged_rows
 
