@@ -317,3 +317,14 @@ export interface ChatOut {
   intent: string;
   graph_entities: string[];
 }
+
+export interface ManuscriptVersion {
+  id: string;
+  project_id?: string;
+  manuscript_id: string;
+  version_number: number;
+  content_hash: string;
+  diff_summary: Record<string, any>;
+  created_at: string;
+}
+

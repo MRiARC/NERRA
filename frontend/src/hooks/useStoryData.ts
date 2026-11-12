@@ -138,3 +138,21 @@ export function useCustomization(projectId: string) {
   });
 }
 
+export function useCandidates(projectId: string) {
+  return useQuery({
+    queryKey: ["candidates", projectId],
+    queryFn: () => api.story.getCandidates(projectId),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useVersions(projectId: string) {
+  return useQuery({
+    queryKey: ["versions", projectId],
+    queryFn: () => api.story.getVersions(projectId),
+    enabled: Boolean(projectId),
+  });
+}
+
+
+
