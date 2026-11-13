@@ -67,7 +67,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
     <Surface
       depth={2}
       border="subtle"
-      rounded="sm"
+      rounded="lg"
       className="w-full max-w-md p-8 shadow-2xl relative overflow-hidden backdrop-blur-sm"
     >
       {/* Subtle top wine accent line */}
@@ -75,7 +75,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
 
       {/* Header */}
       <div className="mb-6 text-center">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-wine-accent/15 border border-wine-accent/30 text-wine-crimson mb-3">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-wine-accent/15 border border-wine-accent/30 text-wine-crimson mb-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
           <BookOpen className="w-5 h-5" />
         </div>
         <h1 className="font-serif text-2xl font-medium tracking-tight text-ink-parchment">
@@ -89,7 +89,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
       </div>
 
       {/* Mode Switcher Tabs */}
-      <div className="grid grid-cols-2 p-1 rounded-[4px] bg-surface-subtle border border-border-quiet mb-6 relative">
+      <div className="grid grid-cols-2 p-1 rounded-xl bg-surface-subtle border border-border-quiet mb-6 relative">
         <button
           type="button"
           onClick={() => {
@@ -105,7 +105,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           {mode === "login" && (
             <motion.div
               layoutId="auth-tab-pill"
-              className="absolute inset-0 bg-surface-card border border-border-subtle rounded-[3px] -z-10 shadow-sm"
+              className="absolute inset-0 bg-surface-card border border-border-subtle rounded-lg -z-10 shadow-sm"
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             />
           )}
@@ -126,7 +126,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
           {mode === "register" && (
             <motion.div
               layoutId="auth-tab-pill"
-              className="absolute inset-0 bg-surface-card border border-border-subtle rounded-[3px] -z-10 shadow-sm"
+              className="absolute inset-0 bg-surface-card border border-border-subtle rounded-lg -z-10 shadow-sm"
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             />
           )}
@@ -142,7 +142,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
             exit={{ opacity: 0, height: 0, marginBottom: 0 }}
             className="overflow-hidden"
           >
-            <div className="p-3 rounded-[4px] bg-severity-contradiction-bg border border-severity-contradiction-border flex items-start gap-2.5 text-xs text-severity-contradiction">
+            <div className="p-3.5 rounded-xl bg-severity-contradiction-bg border border-severity-contradiction-border flex items-start gap-2.5 text-xs text-severity-contradiction">
               <span className="w-1.5 h-1.5 rounded-full bg-severity-contradiction shrink-0 mt-1.5" />
               <div className="flex-1 leading-relaxed">{activeError}</div>
             </div>
@@ -197,7 +197,7 @@ export function AuthCard({ initialMode = "login" }: AuthCardProps) {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete={mode === "login" ? "current-password" : "new-password"}
-              className="w-full rounded-[4px] bg-surface-subtle border border-border-subtle px-3 py-2 pr-9 text-xs text-ink-parchment placeholder:text-ink-faint transition-all duration-150 outline-none focus:border-border-focus focus:ring-1 focus:ring-wine-accent/30"
+              className="w-full rounded-xl bg-surface-subtle border border-border-subtle px-3.5 py-2.5 pr-9 text-xs text-ink-parchment placeholder:text-ink-faint transition-all duration-150 outline-none focus:border-border-focus focus:ring-1 focus:ring-wine-accent/30 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
             />
             <button
               type="button"

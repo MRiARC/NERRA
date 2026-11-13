@@ -34,14 +34,14 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium rounded-[4px] tracking-wide select-none transition-all duration-150 ease-out disabled:opacity-40 disabled:pointer-events-none active:scale-[0.985]";
+      "inline-flex items-center justify-center font-medium rounded-xl tracking-wide select-none transition-all duration-150 ease-out disabled:opacity-40 disabled:pointer-events-none active:scale-[0.985] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)]";
 
     const sizeStyles = {
-      xs: "text-[11px] px-2 py-1 gap-1",
-      sm: "text-xs px-3 py-1.5 gap-1.5",
-      md: "text-xs px-4 py-2 gap-2",
-      lg: "text-sm px-5 py-2.5 gap-2.5",
-      icon: "p-2 w-8 h-8",
+      xs: "text-[11px] px-2.5 py-1 gap-1 rounded-lg",
+      sm: "text-xs px-3.5 py-1.5 gap-1.5 rounded-lg",
+      md: "text-xs px-4 py-2 gap-2 rounded-xl",
+      lg: "text-sm px-5 py-2.5 gap-2.5 rounded-xl",
+      icon: "p-2 w-9 h-9 rounded-xl",
     };
 
     let normalizedVariant = variant;
@@ -49,19 +49,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variantStyles: Record<string, string> = {
       primary:
-        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/60 shadow-[0_2px_8px_rgba(122,29,57,0.3)]",
+        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_4px_16px_rgba(140,34,66,0.35)]",
       wine:
-        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/60 shadow-[0_2px_8px_rgba(122,29,57,0.3)]",
+        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_4px_16px_rgba(140,34,66,0.35)]",
       outline:
         "bg-surface-subtle hover:bg-surface-card text-ink-bone hover:text-ink-parchment border border-border-subtle hover:border-border-prominent",
       secondary:
-        "bg-surface-subtle hover:bg-surface-card text-ink-bone hover:text-ink-parchment border border-border-subtle hover:border-border-prominent",
+        "bg-surface-card hover:bg-surface-elevated text-ink-bone hover:text-ink-parchment border border-border-subtle hover:border-border-prominent",
       ghost:
-        "text-ink-bone hover:text-ink-parchment hover:bg-surface-subtle border border-transparent",
+        "text-ink-bone hover:text-ink-parchment hover:bg-surface-subtle border border-transparent shadow-none",
       forest:
-        "bg-pine-accent hover:bg-pine-moss text-ink-parchment border border-pine-moss/60 shadow-[0_2px_8px_rgba(23,61,47,0.3)]",
+        "bg-pine-accent hover:bg-pine-moss text-ink-parchment border border-pine-moss/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_4px_16px_rgba(23,61,47,0.35)]",
       danger:
-        "bg-severity-contradiction-bg text-severity-contradiction hover:bg-severity-contradiction/20 border border-severity-contradiction-border",
+        "bg-surface-card hover:bg-severity-contradiction/15 text-severity-contradiction border border-severity-contradiction/30 hover:border-severity-contradiction/60 transition-colors shadow-none",
       subtle:
         "bg-surface-card hover:bg-surface-elevated text-ink-parchment border border-border-subtle",
     };

@@ -71,12 +71,10 @@ export default function DashboardPage() {
             <Surface
               depth={2}
               border="subtle"
-              rounded="sm"
-              className="relative overflow-hidden p-8 shadow-2xl"
+              rounded="lg"
+              className="p-8 sm:p-10"
             >
-              <div className="absolute top-0 right-0 w-96 h-96 bg-wine-accent/10 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="relative z-10 max-w-2xl space-y-3">
+              <div className="max-w-2xl space-y-3">
                 <div className="flex items-center gap-2">
                   <Badge variant="wine" size="sm" className="gap-1.5" dot>
                     <span>Story Checker: Online</span>
@@ -111,57 +109,57 @@ export default function DashboardPage() {
 
             {/* High-Level Telemetry Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Surface depth={1} border="quiet" rounded="sm" className="p-4 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Total Words</span>
                   <ScrollText className="w-4 h-4 text-wine-crimson" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   {formatWords(totalWords)}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Across {projects.length} {projects.length === 1 ? "story" : "stories"}
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="sm" className="p-4 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Chapters Ingested</span>
-                  <BookOpen className="w-4 h-4 text-pine-moss" />
+                  <BookOpen className="w-4 h-4 text-emerald-400" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   {totalChapters}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Ready in your workspace
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="sm" className="p-4 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Plot Alerts</span>
                   <AlertTriangle className="w-4 h-4 text-severity-contradiction" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment flex items-baseline gap-2">
                   <span>{totalIssues}</span>
                   {totalIssues === 0 && (
-                    <span className="text-xs font-sans text-pine-moss">All Consistent</span>
+                    <span className="text-xs font-sans text-emerald-400 font-medium">All Consistent</span>
                   )}
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   {totalIssues === 0 ? "No contradictions found" : "Items to review"}
                 </div>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="sm" className="p-4 space-y-1">
-                <div className="flex items-center justify-between text-ink-ash text-xs">
+              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
+                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
                   <span>Consistency Engine</span>
                   <Sparkles className="w-4 h-4 text-wine-crimson" />
                 </div>
                 <div className="font-serif text-2xl font-medium text-ink-parchment">
                   Ready
                 </div>
-                <div className="text-[11px] text-ink-ash">
+                <div className="text-xs text-ink-ash font-medium">
                   Monitoring your story
                 </div>
               </Surface>
@@ -195,7 +193,7 @@ export default function DashboardPage() {
                   {[1, 2, 3].map((n) => (
                     <div
                       key={n}
-                      className="h-[230px] rounded-[4px] bg-surface-subtle border border-border-quiet animate-pulse"
+                      className="h-[236px] rounded-xl bg-surface-subtle border border-border-quiet animate-pulse"
                     />
                   ))}
                 </div>
@@ -246,12 +244,10 @@ export default function DashboardPage() {
             <Surface
               depth={2}
               border="subtle"
-              rounded="sm"
-              className="relative overflow-hidden p-8 sm:p-14 text-center max-w-3xl mx-auto shadow-2xl"
+              rounded="lg"
+              className="p-8 sm:p-14 text-center max-w-3xl mx-auto"
             >
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-wine-accent/15 rounded-full blur-3xl pointer-events-none" />
-
-              <div className="relative z-10 space-y-4">
+              <div className="space-y-4">
                 <Badge variant="wine" size="sm" className="gap-1.5" dot>
                   <span>Deterministic Story Intelligence</span>
                 </Badge>
@@ -283,8 +279,8 @@ export default function DashboardPage() {
 
             {/* Feature Modules Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto text-xs">
-              <Surface depth={1} border="quiet" rounded="sm" className="p-5 space-y-2">
-                <div className="w-8 h-8 rounded-[4px] bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson">
+              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
+                <div className="w-9 h-9 rounded-xl bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
                   <Compass className="w-4 h-4" />
                 </div>
                 <h3 className="font-serif text-base font-medium text-ink-parchment">
@@ -295,8 +291,8 @@ export default function DashboardPage() {
                 </p>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="sm" className="p-5 space-y-2">
-                <div className="w-8 h-8 rounded-[4px] bg-pine-accent/20 border border-pine-accent/40 flex items-center justify-center text-pine-moss">
+              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
+                <div className="w-9 h-9 rounded-xl bg-pine-accent/20 border border-pine-accent/40 flex items-center justify-center text-pine-moss shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
                   <Clock className="w-4 h-4" />
                 </div>
                 <h3 className="font-serif text-base font-medium text-ink-parchment">
@@ -307,8 +303,8 @@ export default function DashboardPage() {
                 </p>
               </Surface>
 
-              <Surface depth={1} border="quiet" rounded="sm" className="p-5 space-y-2">
-                <div className="w-8 h-8 rounded-[4px] bg-severity-knowledge-bg border border-severity-knowledge-border flex items-center justify-center text-severity-knowledge">
+              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
+                <div className="w-9 h-9 rounded-xl bg-severity-knowledge-bg border border-severity-knowledge-border flex items-center justify-center text-severity-knowledge shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
                   <GitBranch className="w-4 h-4" />
                 </div>
                 <h3 className="font-serif text-base font-medium text-ink-parchment">

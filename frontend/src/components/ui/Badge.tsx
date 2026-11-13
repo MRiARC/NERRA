@@ -34,12 +34,12 @@ export function Badge({
   ...props
 }: BadgeProps) {
   const baseStyles =
-    "inline-flex items-center font-medium rounded-[4px] tracking-wide uppercase transition-colors select-none";
+    "inline-flex items-center font-medium rounded-full tracking-wide transition-colors select-none";
 
   const sizeStyles = {
-    xs: "text-[9px] px-1.5 py-0.5 gap-1 font-semibold",
-    sm: "text-[10px] px-2 py-0.5 gap-1.5 font-medium leading-[14px]", // Stitch standard label-sm
-    md: "text-xs px-2.5 py-1 gap-1.5",
+    xs: "text-[9px] px-2 py-0.5 gap-1 font-semibold",
+    sm: "text-[10px] px-2.5 py-0.5 gap-1.5 font-medium leading-[14px]",
+    md: "text-xs px-3 py-1 gap-1.5",
   };
 
   // Normalize legacy variants
@@ -64,7 +64,7 @@ export function Badge({
     pine:
       "bg-pine-accent/20 text-pine-moss border border-pine-accent/40",
     subtle:
-      "bg-surface-subtle text-ink-bone border border-border-subtle",
+      "bg-surface-field text-ink-bone border border-border-subtle shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]",
   };
 
   const dotColor: Record<string, string> = {
@@ -88,19 +88,19 @@ export function Badge({
       {...props}
     >
       {(dot || pulse) && (
-        <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
           {pulse && (
             <span
               className={cn(
                 "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                dotColor[normalizedVariant] || dotColor.subtle
+                dotColor[normalizedVariant] || "bg-ink-ash"
               )}
             />
           )}
           <span
             className={cn(
               "relative inline-flex rounded-full h-1.5 w-1.5",
-              dotColor[normalizedVariant] || dotColor.subtle
+              dotColor[normalizedVariant] || "bg-ink-ash"
             )}
           />
         </span>

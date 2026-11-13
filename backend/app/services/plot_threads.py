@@ -134,6 +134,9 @@ def extract_and_update_plot_threads_llm(
     chapter_number: int,
     chapter_text: str,
     use_llm: bool = True,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> list:
     """Use Claude Sonnet to detect new setups/mysteries and resolve existing open threads."""
     from app.config import settings
@@ -141,7 +144,8 @@ def extract_and_update_plot_threads_llm(
     from app.services import extractor, llm_budget
 
     pid = _as_uuid(project_id)
-    if not use_llm or not settings.anthropic_api_key or not (chapter_text or "").strip():
+    active_key = api_key or settings.anthropic_api_key
+    if not use_llm or not active_key or not (chapter_text or "").strip():
         return db.query(PlotThread).filter(PlotThread.project_id == pid).order_by(PlotThread.setup_chapter.asc()).all()
 
     class ThreadUpdateItem(BaseModel):
@@ -156,13 +160,14 @@ def extract_and_update_plot_threads_llm(
     class PlotThreadBatch(BaseModel):
         threads: list[ThreadUpdateItem] = Field(default_factory=list)
 
+    active_model = model or settings.chat_model
     budget = llm_budget.compute_input_char_budget(
-        settings.chat_model, max_output_tokens=2048, overhead_tokens=4000
+        active_model, max_output_tokens=2048, overhead_tokens=4000
     )
     windows = llm_budget.split_text_windows(chapter_text, budget)
 
     try:
-        client = extractor.get_anthropic_client()
+        client = extractor.get_anthropic_client(api_key=active_key, base_url=base_url)
         for win in windows:
             prior = db.query(PlotThread).filter(PlotThread.project_id == pid).all()
             prior_summary = (
@@ -180,7 +185,7 @@ def extract_and_update_plot_threads_llm(
                 f"CHAPTER {chapter_number} TEXT:\n{win}"
             )
             resp = client.messages.create(
-                model=settings.chat_model,
+                model=active_model,
                 max_tokens=2048,
                 tools=[
                     {

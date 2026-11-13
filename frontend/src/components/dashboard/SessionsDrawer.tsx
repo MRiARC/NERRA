@@ -40,10 +40,10 @@ export function SessionsDrawer({ isOpen, onClose }: SessionsDrawerProps) {
           {sessions.map((session) => (
             <div
               key={session.id}
-              className="p-3.5 rounded-[4px] bg-surface-card border border-border-subtle flex items-start justify-between gap-3 text-xs"
+              className="p-3.5 rounded-xl bg-surface-card border border-border-subtle flex items-start justify-between gap-3 text-xs shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]"
             >
               <div className="flex items-start gap-2.5">
-                <div className="p-2 rounded-[4px] bg-surface-subtle border border-border-quiet text-ink-bone shrink-0">
+                <div className="p-2 rounded-lg bg-surface-subtle border border-border-quiet text-ink-bone shrink-0 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
                   <Laptop className="w-4 h-4" />
                 </div>
                 <div className="space-y-1">
@@ -66,7 +66,7 @@ export function SessionsDrawer({ isOpen, onClose }: SessionsDrawerProps) {
               {!session.is_current && (
                 <button
                   onClick={() => revokeSession(session.id)}
-                  className="p-1.5 text-ink-ash hover:text-severity-contradiction hover:bg-severity-contradiction-bg rounded-[4px] transition-colors"
+                  className="p-1.5 text-ink-ash hover:text-severity-contradiction hover:bg-severity-contradiction-bg rounded-lg transition-colors"
                   title="Revoke session"
                   aria-label="Revoke session"
                 >

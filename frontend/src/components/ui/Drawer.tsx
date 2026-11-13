@@ -93,7 +93,7 @@ export function Drawer({
                 </div>
                 <button
                   onClick={onClose}
-                  className="p-1.5 rounded-[4px] text-ink-ash hover:text-ink-parchment hover:bg-surface-card transition-colors"
+                  className="p-1.5 rounded-xl text-ink-ash hover:text-ink-parchment hover:bg-surface-card transition-colors"
                   aria-label="Close drawer"
                 >
                   <X className="w-4 h-4" />

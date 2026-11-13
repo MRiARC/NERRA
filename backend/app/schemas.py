@@ -518,3 +518,30 @@ class ChapterUpdateIn(BaseModel):
     content: str = Field(min_length=1)
     title: str | None = None
 
+
+# ---------------------------------------------------------------------------
+# Sovereign AI & User Settings
+# ---------------------------------------------------------------------------
+
+
+class UserSettingsIn(BaseModel):
+    anthropic_api_key: str | None = None
+    anthropic_base_url: str | None = None
+    primary_model: str | None = None
+    embedding_model: str | None = None
+    max_hop_depth: int | None = 2
+    extra_config: dict = Field(default_factory=dict)
+
+
+class UserSettingsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    anthropic_api_key_masked: str | None = None
+    has_api_key: bool = False
+    anthropic_base_url: str | None = None
+    primary_model: str | None = None
+    embedding_model: str | None = None
+    max_hop_depth: int = 2
+    extra_config: dict = Field(default_factory=dict)
+    updated_at: datetime | None = None
+

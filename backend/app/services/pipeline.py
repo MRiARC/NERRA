@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def run_import_pipeline_guarded(manuscript_id) -> None:
+def run_import_pipeline_guarded(
+    manuscript_id,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> None:
     """Entry point scheduled by the import endpoint (BackgroundTasks).
 
     Runs the real pipeline, and if ANYTHING goes wrong — a bug, a bad API
@@ -27,7 +31,7 @@ def run_import_pipeline_guarded(manuscript_id) -> None:
     """
     db: Session = SessionLocal()
     try:
-        run_import_pipeline(manuscript_id, db)
+        run_import_pipeline(manuscript_id, db, api_key=api_key, base_url=base_url)
     except Exception as exc:  # noqa: BLE001 — the guard's whole job is to catch
         logger.exception("Pipeline failed for manuscript %s", manuscript_id)
         db.rollback()
@@ -122,7 +126,12 @@ def _embed_and_store_chunk(db: Session, manuscript: Manuscript, chapter_number: 
 # ---------------------------------------------------------------------------
 
 
-def run_import_pipeline(manuscript_id, db: Session) -> None:
+def run_import_pipeline(
+    manuscript_id,
+    db: Session,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> None:
     """Analyze a manuscript end to end with signal scanning, deep context building, multi-pass extraction, timeline, consistency, Neo4j sync, and versioning."""
     from app.services import (
         change_detector,
@@ -144,6 +153,16 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         return
 
     _set_status(db, manuscript, "processing")
+
+    creds = extractor.resolve_ai_credentials(
+        db=db,
+        project_id=manuscript.project_id,
+        explicit_api_key=api_key,
+        explicit_base_url=base_url,
+    )
+    resolved_api_key = creds.get("api_key")
+    resolved_base_url = creds.get("base_url")
+    resolved_model = creds.get("model")
 
     change_report = change_detector.detect_changes(
         db,
@@ -190,7 +209,14 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
         else:
             if extract_is_mocked:
                 roster = extractor.get_roster(db, manuscript.project_id)
-                payload = extractor.extract_chapter(chapter.number, chapter.content, roster)
+                payload = extractor.extract_chapter(
+                    chapter.number,
+                    chapter.content,
+                    roster,
+                    api_key=resolved_api_key,
+                    base_url=resolved_base_url,
+                    model=resolved_model,
+                )
             else:
                 signals = signal_scanner.scan_chapter_signals(chapter.content)
                 ctx_packet = context_builder.build_story_context_packet(
@@ -202,6 +228,9 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
                     chapter.content,
                     ctx_packet["prompt_text"],
                     custom_prompt=cust.get("custom_prompt") or "",
+                    api_key=resolved_api_key,
+                    base_url=resolved_base_url,
+                    model=resolved_model,
                 )
             payload = extractor.validate_payload(payload, chapter.content)
             _save_analysis(db, manuscript.id, chapter.number, content_hash, payload.model_dump())
@@ -233,6 +262,8 @@ def run_import_pipeline(manuscript_id, db: Session) -> None:
                 ch_item.number,
                 ch_item.content,
                 use_llm=True,
+                api_key=resolved_api_key,
+                base_url=resolved_base_url,
             )
     consistency.run_consistency_pass(db, manuscript.project_id)
     try:
@@ -280,6 +311,11 @@ def append_chapter_to_manuscript(
     ctx_packet = context_builder.build_story_context_packet(
         db, manuscript.project_id, next_num, body, signals=signals
     )
+    creds = extractor.resolve_ai_credentials(db=db, project_id=manuscript.project_id)
+    resolved_api_key = creds.get("api_key")
+    resolved_base_url = creds.get("base_url")
+    resolved_model = creds.get("model")
+
     extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
     if extract_is_mocked:
         payload = extractor.extract_chapter(next_num, body, ctx_packet["prompt_text"])
@@ -290,6 +326,9 @@ def append_chapter_to_manuscript(
             body,
             ctx_packet["prompt_text"],
             custom_prompt=cust.get("custom_prompt") or "",
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+            model=resolved_model,
         )
     payload = extractor.validate_payload(payload, body)
 
@@ -331,7 +370,13 @@ def append_chapter_to_manuscript(
     return manuscript
 
 
-def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) -> None:
+def reanalyze_chapter(
+    db: Session,
+    manuscript: Manuscript,
+    chapter_number: int,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> None:
     """Re-extract a single chapter (backs POST /manuscripts/{id}/reanalyze).
 
     Steps: load the chapter's text via splitter (or stored Chunk), DELETE its
@@ -339,7 +384,7 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     for just that chapter, then re-run the consistency pass.
     """
     from app.models import Chunk
-    from app.services import consistency, extractor, graph, splitter, timeline
+    from app.services import consistency, extractor, graph, plot_threads, splitter, timeline
 
     chapters = splitter.split_chapters(manuscript.raw_text)
     target = next((c for c in chapters if c.number == chapter_number), None)
@@ -359,9 +404,32 @@ def reanalyze_chapter(db: Session, manuscript: Manuscript, chapter_number: int) 
     ).delete()
     db.commit()
 
+    creds = extractor.resolve_ai_credentials(
+        db=db,
+        project_id=manuscript.project_id,
+        explicit_api_key=api_key,
+        explicit_base_url=base_url,
+    )
+    resolved_api_key = creds.get("api_key")
+    resolved_base_url = creds.get("base_url")
+    resolved_model = creds.get("model")
+
     content_hash = _content_hash(target.content)
     roster = extractor.get_roster(db, manuscript.project_id)
-    payload = extractor.extract_chapter(target.number, target.content, roster)
+    extract_is_mocked = getattr(extractor.extract_chapter, "__module__", "") != "app.services.extractor"
+    if extract_is_mocked:
+        payload = extractor.extract_chapter(target.number, target.content, roster)
+    else:
+        cust = plot_threads.get_customization(db, manuscript.project_id)
+        payload = extractor.extract_chapter_multipass(
+            target.number,
+            target.content,
+            roster,
+            custom_prompt=cust.get("custom_prompt") or "",
+            api_key=resolved_api_key,
+            base_url=resolved_base_url,
+            model=resolved_model,
+        )
     payload = extractor.validate_payload(payload, target.content)
     extractor.persist_extraction(db, manuscript.project_id, target.number, payload)
     _save_analysis(db, manuscript.id, target.number, content_hash, payload.model_dump())

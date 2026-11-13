@@ -1,11 +1,12 @@
 import React, { forwardRef } from "react";
 import { cn } from "@/lib/utils";
-import { Surface, type SurfaceDepth, type SurfaceBorder } from "./Surface";
+import { Surface, type SurfaceDepth, type SurfaceBorder, type SurfaceRounded } from "./Surface";
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   depth?: SurfaceDepth;
   border?: SurfaceBorder;
   hoverEffect?: boolean;
+  rounded?: SurfaceRounded;
   /** Legacy variant prop for backward compatibility */
   variant?: "burgundy" | "forest" | "void" | "subtle" | string;
 }
@@ -17,6 +18,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
       depth = 2,
       border = "subtle",
       hoverEffect = false,
+      rounded = "md",
       variant,
       children,
       ...props
@@ -47,7 +49,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
         depth={resolvedDepth}
         border={resolvedBorder}
         interactive={hoverEffect}
-        rounded="sm"
+        rounded={rounded}
         className={cn("p-5 text-ink-parchment", className)}
         {...props}
       >
