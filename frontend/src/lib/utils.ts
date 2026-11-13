@@ -36,6 +36,20 @@ export function formatDate(dateStr: string | null | undefined): string {
 }
 
 /**
+ * Extract a human-readable message from an unknown thrown value.
+ * Keeps `catch` blocks type-safe without `any`.
+ */
+export function getErrorMessage(err: unknown, fallback = "An unexpected error occurred"): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string" && err) return err;
+  if (err && typeof err === "object" && "message" in err) {
+    const message = (err as { message?: unknown }).message;
+    if (typeof message === "string" && message) return message;
+  }
+  return fallback;
+}
+
+/**
  * Estimated reading time in minutes (based on standard 225 wpm).
  */
 export function estimateReadingTime(words: number | null | undefined): string {

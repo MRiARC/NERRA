@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, use } from "react";
+import React, { useState, use, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuthStore } from "@/stores/useAuthStore";
 import { useProject, useIssues, useManuscripts, useCustomization } from "@/hooks/useStoryData";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
@@ -44,6 +45,18 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
   const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated, isCheckingAuth: authLoading, checkAuth } = useAuthStore();
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+  }, [authLoading, isAuthenticated, router, pathname]);
 
   const [collapsed, setCollapsed] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -217,6 +230,17 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
       }),
     }))
     .filter((group) => group.items.length > 0);
+
+  if (authLoading || !isAuthenticated) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-surface-void">
+        <div className="flex items-center gap-2.5 text-xs font-mono text-ink-ash">
+          <span className="w-1.5 h-1.5 rounded-full bg-wine-crimson animate-pulse" />
+          <span>Opening your study…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen max-h-screen overflow-hidden bg-surface-void flex flex-col selection:bg-wine-accent selection:text-ink-parchment">

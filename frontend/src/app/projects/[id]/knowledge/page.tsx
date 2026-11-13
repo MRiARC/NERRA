@@ -2,7 +2,8 @@
 
 import React, { useState, use, useMemo } from "react";
 import Link from "next/link";
-import { useKnowledgeMatrix, useClaims, useProject } from "@/hooks/useStoryData";
+import { useKnowledgeMatrix, useClaims } from "@/hooks/useStoryData";
+import type { KnowledgeMatrixCell } from "@/lib/types";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -36,14 +37,7 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
 
   const [activeTab, setActiveTab] = useState<"matrix" | "claims">("matrix");
   const [chapterScrubber, setChapterScrubber] = useState<number | null>(null);
-  const [selectedCell, setSelectedCell] = useState<{
-    character: string;
-    fact: string;
-    state?: string;
-    learned_chapter?: number;
-    evidence_quote?: string;
-    propagation_path?: string[];
-  } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<KnowledgeMatrixCell | null>(null);
 
   const [claimSearch, setClaimSearch] = useState("");
   const [claimSubjectFilter, setClaimSubjectFilter] = useState("all");
@@ -63,7 +57,7 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
 
   // Fast cell lookup
   const cellLookup = useMemo(() => {
-    const map = new Map<string, any>();
+    const map = new Map<string, KnowledgeMatrixCell>();
     for (const cell of matrixData?.cells || []) {
       map.set(`${cell.character}::${cell.fact}`, cell);
     }
@@ -108,8 +102,8 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
               Epistemic Verification Engine
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               Dramatic Irony Sentinel Active
             </span>
           </div>
@@ -239,7 +233,7 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                         </td>
                         {characters.map((char) => {
                           const cell = cellLookup.get(`${char}::${fact}`);
-                          const knows = cell && cell.state === "knows";
+                          const knows = cell?.knows === true;
                           const isSelected =
                             selectedCell?.character === char && selectedCell?.fact === fact;
 
@@ -247,15 +241,14 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                             <td
                               key={char}
                               onClick={() => {
-                                if (cell) {
-                                  setSelectedCell(cell);
-                                } else {
-                                  setSelectedCell({
+                                setSelectedCell(
+                                  cell ?? {
                                     character: char,
                                     fact: fact,
-                                    state: "unaware",
-                                  });
-                                }
+                                    knows: false,
+                                    propagated: false,
+                                  }
+                                );
                               }}
                               className={cn(
                                 "p-3.5 text-center cursor-pointer transition-all duration-150 border-r border-border-quiet last:border-r-0",
@@ -265,10 +258,10 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                               )}
                             >
                               {knows ? (
-                                <div className="inline-flex items-center justify-center gap-1 text-pine-forest">
+                                <div className="inline-flex items-center justify-center gap-1 text-severity-thread">
                                   <CheckCircle2 className="w-4 h-4" />
                                   <span className="font-mono text-[10px] text-ink-ash">
-                                    Ch.{cell.learned_chapter || 1}
+                                    Ch.{cell.since_chapter ?? "?"}
                                   </span>
                                 </div>
                               ) : (
@@ -297,8 +290,8 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                     </div>
                     {selectedCell && (
                       <span className="font-mono text-[11px] text-ink-ash">
-                        {selectedCell.state === "knows" ? (
-                          <span className="text-pine-forest font-semibold">● Confirmed Aware</span>
+                        {selectedCell.knows ? (
+                          <span className="text-severity-thread font-semibold">● Confirmed Aware</span>
                         ) : (
                           <span className="text-ink-ash">○ Unaware in Canon</span>
                         )}
@@ -322,48 +315,39 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                         </p>
                       </div>
 
-                      {selectedCell.state === "knows" ? (
+                      {selectedCell.knows ? (
                         <>
                           <div className="flex items-center justify-between text-xs font-mono">
                             <span className="text-ink-ash">Learned in Chapter:</span>
                             <span className="text-ink-parchment px-2 py-0.5 bg-surface-subtle border border-border-quiet rounded">
-                              Ch. {selectedCell.learned_chapter || 1}
+                              Ch. {selectedCell.since_chapter ?? "?"}
                             </span>
                           </div>
 
-                          {selectedCell.evidence_quote && (
-                            <div>
-                              <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                                Textual Evidence
-                              </p>
-                              <blockquote className="text-xs font-serif italic text-ink-parchment bg-surface-subtle p-3 rounded-lg border-l-2 border-wine-accent">
-                                &ldquo;{selectedCell.evidence_quote}&rdquo;
-                              </blockquote>
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-ink-ash">How Learned:</span>
+                            <span className="text-ink-parchment capitalize">
+                              {(selectedCell.how_learned || "unknown").replace(/_/g, " ")}
+                            </span>
+                          </div>
+
+                          {selectedCell.source_character && (
+                            <div className="flex items-center justify-between text-xs font-mono">
+                              <span className="text-ink-ash">Source:</span>
+                              <span className="text-ink-parchment">{selectedCell.source_character}</span>
                             </div>
                           )}
 
-                          {selectedCell.propagation_path && selectedCell.propagation_path.length > 0 && (
-                            <div>
-                              <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                                Propagation Path
-                              </p>
-                              <div className="space-y-1">
-                                {selectedCell.propagation_path.map((step, sIdx) => (
-                                  <div
-                                    key={sIdx}
-                                    className="text-[11px] font-mono text-ink-ash flex items-center gap-1.5"
-                                  >
-                                    <ChevronRight className="w-3 h-3 text-wine-accent" />
-                                    <span>{step}</span>
-                                  </div>
-                                ))}
-                              </div>
+                          {selectedCell.propagated && (
+                            <div className="p-3 rounded-lg bg-surface-subtle border border-border-quiet text-[11px] font-mono text-ink-bone flex items-center gap-2">
+                              <ChevronRight className="w-3 h-3 text-wine-accent" />
+                              Inferred through secret propagation
                             </div>
                           )}
 
                           <div className="pt-2">
                             <Link
-                              href={`/projects/${projectId}/reader?chapter=${selectedCell.learned_chapter || 1}`}
+                              href={`/projects/${projectId}/reader?chapter=${selectedCell.since_chapter ?? 1}`}
                               className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-surface-subtle hover:bg-surface-elevated border border-border-quiet text-xs font-mono text-ink-parchment transition-colors"
                             >
                               <BookOpen className="w-3.5 h-3.5 text-wine-accent" />
@@ -378,7 +362,7 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                             {selectedCell.character} has not been exposed to this fact as of Chapter{" "}
                             {chapterScrubber ?? maxChapter}.
                           </p>
-                          <p className="text-[11px] font-mono text-pine-forest">
+                          <p className="text-[11px] font-mono text-severity-thread">
                             ✓ Dramatic irony opportunity available
                           </p>
                         </div>
@@ -473,7 +457,7 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                         {claim.validation_state === "contradicted" ? (
                           <span className="w-2 h-2 rounded-full bg-wine-crimson" title="Contradicted" />
                         ) : (
-                          <span className="w-2 h-2 rounded-full bg-pine-forest" title="Verified" />
+                          <span className="w-2 h-2 rounded-full bg-severity-thread" title="Verified" />
                         )}
                       </div>
                     </div>

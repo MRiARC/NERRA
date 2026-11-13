@@ -2,7 +2,13 @@
 
 import React, { use } from "react";
 import Link from "next/link";
-import { useProject, useCustomization, useManuscripts, useIssues } from "@/hooks/useStoryData";
+import {
+  useProject,
+  useCustomization,
+  useManuscripts,
+  useIssues,
+  useSystemHealth,
+} from "@/hooks/useStoryData";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -33,18 +39,40 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
   const { data: customization } = useCustomization(projectId);
   const { data: manuscripts = [] } = useManuscripts(projectId);
   const { data: issues = [] } = useIssues(projectId);
+  const { data: health } = useSystemHealth();
 
   const activeManuscript = manuscripts[0];
+  const configuredPrimary = customization?.custom_ui_config?.primary_model;
+  const configuredEmbedding = customization?.custom_ui_config?.embedding_model;
   const primaryModel =
-    customization?.custom_ui_config?.primary_model || "claude-3-7-sonnet";
+    typeof configuredPrimary === "string" && configuredPrimary
+      ? configuredPrimary
+      : "claude-3-7-sonnet";
   const embeddingModel =
-    customization?.custom_ui_config?.embedding_model || "text-embedding-3-large";
+    typeof configuredEmbedding === "string" && configuredEmbedding
+      ? configuredEmbedding
+      : "text-embedding-3-large";
+  const configuredHopDepth = customization?.custom_graph_write?.max_hop_depth;
+  const hopDepth =
+    typeof configuredHopDepth === "number" ? configuredHopDepth : 2;
 
-  const totalWords = project?.word_count ?? 5159;
-  const totalChapters = project?.chapter_count ?? 6;
+  const totalWords = project?.word_count ?? 0;
+  const totalChapters = project?.chapter_count ?? 0;
   const openIssues = issues.filter(
     (i) => i.status === "open" || i.status === "unresolved"
   ).length;
+  const knowledgeNodes =
+    (project?.character_count ?? 0) +
+    (project?.location_count ?? 0) +
+    (project?.object_count ?? 0);
+  const systemsNominal = Boolean(health?.database);
+  const healthLabel = !health
+    ? "Checking system health…"
+    : health.database && health.neo4j
+    ? "All Subsystems Nominal"
+    : health.database
+    ? "Graph Offline · SQL Fallback"
+    : "Backend Degraded";
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in pb-24">
@@ -56,9 +84,17 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
               Pipeline Telemetry &amp; System Health
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
-              All Subsystems Nominal
+            <span
+              className={`inline-flex items-center gap-1.5 font-mono text-[11px] ${
+                systemsNominal ? "text-severity-thread" : "text-severity-warning"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  systemsNominal ? "bg-severity-thread" : "bg-severity-warning"
+                }`}
+              />
+              {healthLabel}
             </span>
           </div>
           <h1 className="text-3xl font-serif font-normal tracking-tight text-ink-parchment flex items-center gap-3">
@@ -97,9 +133,7 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
             Knowledge Nodes
           </p>
           <p className="text-2xl font-serif text-ink-parchment font-medium">
-            {(project?.character_count ?? 5) +
-              (project?.location_count ?? 24) +
-              (project?.object_count ?? 71)}
+            {knowledgeNodes}
           </p>
           <p className="text-xs font-mono text-ink-ash">Neo4j Entity Topology</p>
         </Surface>
@@ -109,7 +143,7 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
             Factual Claims
           </p>
           <p className="text-2xl font-serif text-ink-parchment font-medium">
-            {project?.claim_count ?? 96}
+            {project?.claim_count ?? 0}
           </p>
           <p className="text-xs font-mono text-ink-ash">Epistemic Truth Triples</p>
         </Surface>
@@ -140,13 +174,17 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
               <span className="text-ink-ash">Max Graph Traversal Hop Depth:</span>
               <span className="text-ink-parchment font-semibold">
-                {customization?.custom_graph_write?.max_hop_depth ?? 2} hops
+                {hopDepth} hops
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
-              <span className="text-ink-ash">Extraction Pipeline Latency:</span>
-              <span className="text-pine-forest font-semibold">~1.4s / chapter</span>
+              <span className="text-ink-ash">Manuscript Progress:</span>
+              <span className="text-ink-parchment font-semibold">
+                {activeManuscript
+                  ? `${activeManuscript.chapters_done}/${activeManuscript.chapters_total} chapters`
+                  : "No manuscript"}
+              </span>
             </div>
           </div>
 
@@ -172,33 +210,49 @@ export default function TelemetryPage({ params }: TelemetryPageProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
               <span className="text-ink-ash">PostgreSQL Relational DB:</span>
-              <span className="text-pine-forest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
-                Connected (Port 5434)
+              <span
+                className={`flex items-center gap-1.5 ${
+                  health?.database ? "text-severity-thread" : "text-severity-contradiction"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    health?.database ? "bg-severity-thread" : "bg-severity-contradiction"
+                  }`}
+                />
+                {health ? (health.database ? "Connected" : "Unavailable") : "Checking…"}
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
               <span className="text-ink-ash">Neo4j Cypher Graph:</span>
-              <span className="text-pine-forest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
-                Connected (Bolt 7687)
+              <span
+                className={`flex items-center gap-1.5 ${
+                  health?.neo4j ? "text-severity-thread" : "text-severity-warning"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    health?.neo4j ? "bg-severity-thread" : "bg-severity-warning"
+                  }`}
+                />
+                {health ? (health.neo4j ? "Connected" : "Offline · SQL fallback") : "Checking…"}
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
               <span className="text-ink-ash">pgvector Semantic Embeddings:</span>
-              <span className="text-pine-forest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
-                Cosine Index Active
+              <span className="text-ink-parchment flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-wine-crimson" />
+                384-dim · cosine index
               </span>
             </div>
 
             <div className="flex items-center justify-between p-3 rounded-lg bg-surface-subtle border border-border-quiet text-xs font-mono">
-              <span className="text-ink-ash">Continuous Ingestion Daemon:</span>
-              <span className="text-pine-forest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
-                Ready &amp; Listening
+              <span className="text-ink-ash">Ingestion Jobs:</span>
+              <span className="text-ink-parchment flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-severity-warning" />
+                In-process background tasks
               </span>
             </div>
           </div>

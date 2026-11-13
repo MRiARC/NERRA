@@ -22,7 +22,7 @@ import {
   Layers,
   CheckCircle2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import type { ChatCitation } from "@/lib/types";
@@ -55,8 +55,11 @@ export default function StoryChatPage({ params }: ChatPageProps) {
   const { data: project } = useProject(projectId);
   const { data: customization } = useCustomization(projectId);
 
+  const configuredModel = customization?.custom_ui_config?.primary_model;
   const activeModelName =
-    customization?.custom_ui_config?.primary_model || "Claude 3.7 Sonnet";
+    typeof configuredModel === "string" && configuredModel
+      ? configuredModel
+      : "Claude 3.7 Sonnet";
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -64,13 +67,14 @@ export default function StoryChatPage({ params }: ChatPageProps) {
       sender: "nerra",
       content: `Welcome to the Story Intelligence Atelier for "${project?.title || "your manuscript"}". I have ingested your chapters into the vector index and Neo4j knowledge graph. Ask me anything about character movements, secret propagation, plot threads, or potential continuity plot holes.`,
       timestamp: "Just now",
-      graphEntities: ["Julian Sterling", "Clara Bennett", "Highcliff Manor"],
     },
   ]);
 
   const [inputVal, setInputVal] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const messageSeq = useRef(0);
+  const nextMessageId = (prefix: string) => `${prefix}-${++messageSeq.current}`;
 
   // Auto-scroll on new message
   useEffect(() => {
@@ -84,7 +88,7 @@ export default function StoryChatPage({ params }: ChatPageProps) {
     if (!question || isLoading) return;
 
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: nextMessageId("user"),
       sender: "user",
       content: question,
       timestamp: "Just now",
@@ -98,7 +102,7 @@ export default function StoryChatPage({ params }: ChatPageProps) {
       const res = await api.story.chat(projectId, question);
 
       const nerraMsg: ChatMessage = {
-        id: `nerra-${Date.now()}`,
+        id: nextMessageId("nerra"),
         sender: "nerra",
         content: res.answer,
         timestamp: "Just now",
@@ -108,12 +112,12 @@ export default function StoryChatPage({ params }: ChatPageProps) {
       };
 
       setMessages((prev) => [...prev, nerraMsg]);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to receive response from story engine.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to receive response from story engine."));
       setMessages((prev) => [
         ...prev,
         {
-          id: `err-${Date.now()}`,
+          id: nextMessageId("err"),
           sender: "nerra",
           content:
             "I encountered an error querying the story memory graph. Please ensure your backend is reachable and try again.",
@@ -145,8 +149,8 @@ export default function StoryChatPage({ params }: ChatPageProps) {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-card border border-border-quiet text-pine-forest flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-card border border-border-quiet text-severity-thread flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               Graph Synced
             </span>
           </div>

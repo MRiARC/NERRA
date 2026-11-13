@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/ui/Surface";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Project } from "@/lib/types";
 import { useManuscriptStatus } from "@/hooks/useStoryData";
@@ -50,29 +51,30 @@ export function ImportManuscriptModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [step, setStep] = useState<"select" | "processing" | "failed" | "completed">("select");
-  const [activeManuscriptId, setActiveManuscriptId] = useState<string | null>(null);
+  const [manualStep, setManualStep] = useState<"select" | "processing" | "failed" | "completed">(
+    initialStep ?? (initialManuscriptId ? "processing" : "select")
+  );
+  const [activeManuscriptId, setActiveManuscriptId] = useState<string | null>(
+    initialManuscriptId ?? null
+  );
   const [syncError, setSyncError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [showRawTrace, setShowRawTrace] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Synchronize initial manuscript id if provided
-  useEffect(() => {
-    if (initialManuscriptId) {
-      setActiveManuscriptId(initialManuscriptId);
-      if (initialStep) {
-        setStep(initialStep);
-      } else {
-        setStep("processing");
-      }
-    } else if (isOpen && !activeManuscriptId) {
-      setStep("select");
+  // Reset the flow each time the modal opens (adjusting state during render
+  // instead of in an effect avoids a second render pass after paint).
+  const [previousOpen, setPreviousOpen] = useState(isOpen);
+  if (isOpen !== previousOpen) {
+    setPreviousOpen(isOpen);
+    if (isOpen) {
+      setManualStep(initialStep ?? (initialManuscriptId ? "processing" : "select"));
+      setActiveManuscriptId(initialManuscriptId ?? null);
       setSelectedFile(null);
       setSyncError(null);
     }
-  }, [initialManuscriptId, initialStep, isOpen]);
+  }
 
   // Status Poller
   const { data: statusData, refetch: refetchStatus } = useManuscriptStatus(
@@ -80,21 +82,23 @@ export function ImportManuscriptModal({
     activeManuscriptId || undefined
   );
 
-  // Reactive state progression based on polling
-  useEffect(() => {
-    if (!statusData) return;
+  // Progress is derived from the polled job status, not copied into state.
+  const liveStep: "processing" | "failed" | "completed" | null =
+    statusData && statusData.manuscript_id === activeManuscriptId
+      ? statusData.status === "failed"
+        ? "failed"
+        : statusData.status === "ready"
+        ? "completed"
+        : "processing"
+      : null;
+  const step = liveStep ?? manualStep;
 
-    if (statusData.status === "failed") {
-      setStep("failed");
-    } else if (statusData.status === "ready") {
-      setStep("completed");
-      if (onImportComplete) {
-        onImportComplete();
-      }
-    } else if (statusData.status === "processing" || statusData.status === "pending") {
-      setStep("processing");
+  // Notify the parent once the job finishes; no local state is written here.
+  useEffect(() => {
+    if (statusData?.status === "ready") {
+      onImportComplete?.();
     }
-  }, [statusData, onImportComplete]);
+  }, [statusData?.status, onImportComplete]);
 
   if (!project) return null;
 
@@ -120,12 +124,12 @@ export function ImportManuscriptModal({
     try {
       const res = await api.projects.importManuscript(project.id, selectedFile);
       setActiveManuscriptId(res.manuscript_id);
-      setStep("processing");
+      setManualStep("processing");
       toast.info(`Draft "${selectedFile.name}" uploaded. Live ingestion started.`);
-    } catch (err: any) {
-      const msg = err.message || "Failed to upload manuscript draft";
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, "Failed to upload manuscript draft");
       setSyncError(msg);
-      setStep("failed");
+      setManualStep("failed");
       toast.error(msg);
     } finally {
       setIsUploading(false);
@@ -137,11 +141,11 @@ export function ImportManuscriptModal({
     setIsRetrying(true);
     try {
       await api.projects.reanalyzeChapter(project.id, activeManuscriptId);
-      setStep("processing");
+      setManualStep("processing");
       toast.info("Re-analysis triggered. Monitoring pipeline...");
       await refetchStatus();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to retry analysis");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to retry analysis"));
     } finally {
       setIsRetrying(false);
     }
@@ -433,7 +437,7 @@ export function ImportManuscriptModal({
                   </button>
 
                   {showRawTrace && (
-                    <div className="mt-2 p-3 rounded bg-surface-base border border-border-quiet font-mono text-[10px] text-ink-ash max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-text">
+                    <div className="mt-2 p-3 rounded bg-surface-subtle border border-border-quiet font-mono text-[10px] text-ink-ash max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-text">
                       {rawErrorMessage}
                     </div>
                   )}
@@ -497,7 +501,7 @@ export function ImportManuscriptModal({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setStep("select")}
+                  onClick={() => setManualStep("select")}
                   className="text-xs"
                 >
                   Upload Another File

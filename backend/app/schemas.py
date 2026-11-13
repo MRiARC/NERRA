@@ -297,7 +297,9 @@ class ClaimOut(BaseModel):
 
 
 class WorldRuleCreate(BaseModel):
-    category: Literal["magic", "physics", "society", "setting"] = "setting"
+    category: Literal[
+        "magic", "physics", "society", "social", "biological", "setting", "general"
+    ] = "setting"
     rule_text: str = Field(min_length=3, max_length=1000)
     source_chapter: int | None = None
 

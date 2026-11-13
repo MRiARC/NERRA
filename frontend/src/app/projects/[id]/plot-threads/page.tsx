@@ -23,7 +23,7 @@ import {
   Tag,
   Filter,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import type { PlotThread } from "@/lib/types";
@@ -34,7 +34,7 @@ interface PlotThreadsPageProps {
 
 const COLUMNS = [
   { id: "open", label: "Open & Developing", dot: "bg-wine-accent", border: "border-wine-accent/30" },
-  { id: "resolved", label: "Paid Off / Resolved", dot: "bg-pine-forest", border: "border-pine-forest/30" },
+  { id: "resolved", label: "Paid Off / Resolved", dot: "bg-severity-thread", border: "border-severity-thread/30" },
   { id: "abandoned", label: "Dropped / Forgotten", dot: "bg-wine-crimson", border: "border-wine-crimson/30" },
   { id: "red_herring", label: "Red Herring", dot: "bg-amber-400", border: "border-amber-400/30" },
 ];
@@ -95,8 +95,8 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
       await api.story.syncPlotThreads(projectId);
       await queryClient.invalidateQueries({ queryKey: ["plot-threads", projectId] });
       toast.success("Cross-chapter plot threads synthesized from manuscript.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to sync plot threads.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to sync plot threads."));
     } finally {
       setIsSyncing(false);
     }
@@ -108,8 +108,8 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
       await api.story.patchPlotThread(projectId, threadId, { status: nextStatus });
       await queryClient.invalidateQueries({ queryKey: ["plot-threads", projectId] });
       toast.success(`Plot thread marked as ${nextStatus}.`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update plot thread.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to update plot thread."));
     }
   };
 
@@ -139,8 +139,8 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
       setNewDescription("");
       setNewRelatedEntities("");
       toast.success("Plot thread registered into narrative canon.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create plot thread.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to create plot thread."));
     } finally {
       setIsSubmitting(false);
     }
@@ -156,8 +156,8 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
               Narrative Arcs &amp; Payoff Engine
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               {threads.length} Plot Threads Tracked
             </span>
           </div>
@@ -212,7 +212,7 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
             <span className="w-2 h-2 rounded-full bg-wine-accent" /> Open: {groupedThreads.open.length}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-pine-forest" /> Resolved: {groupedThreads.resolved.length}
+            <span className="w-2 h-2 rounded-full bg-severity-thread" /> Resolved: {groupedThreads.resolved.length}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-wine-crimson" /> Dropped: {groupedThreads.abandoned.length}
@@ -448,7 +448,7 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
                           {thread.payoff_chapter && (
                             <Link
                               href={`/projects/${projectId}/reader?chapter=${thread.payoff_chapter}`}
-                              className="text-[10px] text-pine-forest hover:text-ink-parchment flex items-center gap-1 transition-colors"
+                              className="text-[10px] text-severity-thread hover:text-ink-parchment flex items-center gap-1 transition-colors"
                             >
                               Read Payoff <ArrowRight className="w-2.5 h-2.5" />
                             </Link>

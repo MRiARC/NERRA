@@ -12,7 +12,7 @@ import {
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { formatWords, cn } from "@/lib/utils";
+import { formatWords, cn, getErrorMessage } from "@/lib/utils";
 import {
   BookOpen,
   Sparkles,
@@ -105,20 +105,24 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       link.click();
       URL.revokeObjectURL(url);
       toast.success("Story Bible compiled and downloaded.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to compile Story Bible");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to compile Story Bible"));
     }
   };
 
-  const handleTriggerAudit = () => {
+  const handleTriggerAudit = async () => {
     setIsAuditing(true);
-    toast.info("Triggered deep canon consistency audit across all chapters.");
-    setTimeout(() => {
-      refetchIssues();
-      refetchProject();
+    try {
+      const result = await api.story.audit(projectId);
+      await Promise.all([refetchIssues(), refetchProject()]);
+      toast.success(
+        `Consistency audit complete: ${result.issues_open} open of ${result.issues_total} recorded.`
+      );
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to run consistency audit"));
+    } finally {
       setIsAuditing(false);
-      toast.success("Canon consistency audit complete. All graph vectors verified.");
-    }, 1500);
+    }
   };
 
   return (

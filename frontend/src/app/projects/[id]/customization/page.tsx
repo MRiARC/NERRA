@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, use, useMemo } from "react";
+import React, { useState, use, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { formatWords } from "@/lib/utils";
+import { formatWords, getErrorMessage } from "@/lib/utils";
 import type { WorldRule } from "@/lib/types";
 import {
   Sliders,
@@ -46,6 +46,7 @@ import {
   Globe,
   KeyRound,
   Layers,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "motion/react";
@@ -122,20 +123,34 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
   const [deleteConfirmationTitle, setDeleteConfirmationTitle] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Populate initial state from backend
-  useEffect(() => {
-    if (project) {
-      setTitle(project.title || "");
-      setGenre(project.genre || "");
-    }
-  }, [project]);
+  // Populate the form from the backend once per payload. React supports setting
+  // state during render for this "adjust state when data arrives" case; it
+  // re-renders before committing, so there is no flash of empty inputs.
+  const [syncedProjectId, setSyncedProjectId] = useState<string | null>(null);
+  if (project && project.id !== syncedProjectId) {
+    setSyncedProjectId(project.id);
+    setTitle(project.title || "");
+    setGenre(project.genre || "");
+  }
 
-  useEffect(() => {
-    if (customization) {
+  const [syncedCustomization, setSyncedCustomization] = useState<typeof customization>(undefined);
+  if (customization && customization !== syncedCustomization) {
+    setSyncedCustomization(customization);
+    {
       setCustomPrompt(customization.custom_prompt || "");
       setCustomContext(customization.custom_context || "");
 
-      const uiConfig = customization.custom_ui_config || {};
+      const uiConfig = (customization.custom_ui_config || {}) as {
+        nomenclature?: string;
+        structure?: string;
+        target_word_count?: number | string;
+        target_chapter_words?: number | string;
+        primary_model?: string;
+        custom_base_url?: string;
+        embedding_model?: string;
+        api_key_override?: string;
+        enabled_features?: string[];
+      };
       if (uiConfig.nomenclature) setNomenclature(uiConfig.nomenclature);
       if (uiConfig.structure) setStructure(uiConfig.structure);
       if (uiConfig.target_word_count) setTargetWordCount(Number(uiConfig.target_word_count));
@@ -148,17 +163,25 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
         setEnabledFeatures(uiConfig.enabled_features);
       }
 
-      const valConfig = customization.custom_validation || {};
+      const valConfig = (customization.custom_validation || {}) as {
+        alias_sensitivity?: number;
+        auto_admit_cutoff?: number;
+        triage_policy?: string;
+        auto_adjudicate_minor?: boolean;
+        strictness_preset?: "strict" | "balanced" | "relaxed";
+      };
       if (valConfig.alias_sensitivity !== undefined) setAliasSensitivity(Number(valConfig.alias_sensitivity));
       if (valConfig.auto_admit_cutoff !== undefined) setAutoAdmitCutoff(Number(valConfig.auto_admit_cutoff));
       if (valConfig.triage_policy) setTriagePolicy(valConfig.triage_policy);
       if (valConfig.auto_adjudicate_minor !== undefined) setAutoAdjudicateMinor(Boolean(valConfig.auto_adjudicate_minor));
       if (valConfig.strictness_preset) setStrictnessPreset(valConfig.strictness_preset);
 
-      const graphConfig = customization.custom_graph_write || {};
+      const graphConfig = (customization.custom_graph_write || {}) as {
+        max_hop_depth?: number;
+      };
       if (graphConfig.max_hop_depth !== undefined) setMaxHopDepth(Number(graphConfig.max_hop_depth));
     }
-  }, [customization]);
+  }
 
   // Handle Strictness Preset Change
   const handleApplyStrictness = (preset: "strict" | "balanced" | "relaxed") => {
@@ -245,8 +268,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       await queryClient.invalidateQueries({ queryKey: ["customization", projectId] });
 
       toast.success("Story settings and modules updated successfully.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save project settings.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to save project settings."));
     } finally {
       setIsSaving(false);
     }
@@ -267,8 +290,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       setNewRuleText("");
       setNewRuleModalOpen(false);
       toast.success("Story rule saved to your lore ledger.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save story rule.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to save story rule."));
     } finally {
       setIsAddingRule(false);
     }
@@ -279,8 +302,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       await api.story.deleteWorldRule(projectId, ruleId);
       await refetchWorldRules();
       toast.success("Story rule deleted.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to delete world rule.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to delete world rule."));
     }
   };
 
@@ -294,8 +317,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       toast.success("Fresh consistency check started across all chapters.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to trigger re-audit.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to trigger re-audit."));
     } finally {
       setIsReauditing(false);
     }
@@ -315,8 +338,8 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       toast.success("Story Bible downloaded as Markdown.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to export Story Bible.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to export Story Bible."));
     }
   };
 
@@ -333,13 +356,13 @@ export default function ProjectCustomizationPage({ params }: CustomizationPagePr
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project deleted.");
       router.push("/");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to delete project.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to delete project."));
       setIsDeleting(false);
     }
   };
 
-  const tabs: Array<{ id: TabType; label: string; icon: any; count?: number }> = [
+  const tabs: Array<{ id: TabType; label: string; icon: LucideIcon; count?: number }> = [
     { id: "identity", label: "Book Details", icon: BookOpen },
     { id: "features", label: "Studio Modules", icon: Sliders, count: enabledFeatures.length },
     { id: "canon", label: "Story Rules", icon: Scroll, count: worldRules.length },

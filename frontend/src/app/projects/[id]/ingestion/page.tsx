@@ -14,6 +14,7 @@ import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Activity,
@@ -88,8 +89,8 @@ export default function IngestionRadarPage({ params }: IngestionRadarPageProps) 
       await api.projects.reanalyzeChapter(projectId, activeManuscript.id);
       toast.info("Re-analysis pipeline started. Tracking live progress...");
       await refetchStatus();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to trigger re-analysis");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to trigger re-analysis"));
     } finally {
       setIsRetrying(false);
     }
@@ -251,7 +252,7 @@ export default function IngestionRadarPage({ params }: IngestionRadarPageProps) 
               </button>
 
               {showRawTrace && (
-                <div className="mt-2 p-3 rounded bg-surface-base border border-border-quiet font-mono text-[10px] text-ink-ash max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-text">
+                <div className="mt-2 p-3 rounded bg-surface-subtle border border-border-quiet font-mono text-[10px] text-ink-ash max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed select-text">
                   {rawErrorMessage}
                 </div>
               )}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, use, useMemo, useEffect } from "react";
+import React, { useState, use, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -9,12 +9,13 @@ import {
   useChapters,
   useChapter,
   useIssues,
+  useManuscriptStatus,
 } from "@/hooks/useStoryData";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Divider } from "@/components/ui/Divider";
-import { formatWords } from "@/lib/utils";
+import { formatWords, getErrorMessage } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -45,11 +46,10 @@ export default function EditorPage({ params }: EditorPageProps) {
 
   const chapterFromQuery = Number(searchParams.get("chapter")) || 1;
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number>(chapterFromQuery);
-  const [content, setContent] = useState<string>("");
-  const [chapterTitle, setChapterTitle] = useState<string>("");
-  const [isDirty, setIsDirty] = useState<boolean>(false);
+  // The draft is keyed by chapter so switching chapters never leaks stale prose.
+  const [draft, setDraft] = useState<{ chapter: number; content: string; title: string } | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [isReanalyzing, setIsReanalyzing] = useState<boolean>(false);
+  const [isTriggeringReanalysis, setIsReanalyzing] = useState<boolean>(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState<boolean>(true);
 
   // Queries
@@ -65,15 +65,50 @@ export default function EditorPage({ params }: EditorPageProps) {
     selectedChapterNumber
   );
   const { data: allIssues = [], refetch: refetchIssues } = useIssues(projectId);
+  const { data: manuscriptStatus } = useManuscriptStatus(projectId, manuscriptId);
 
-  // Sync state when chapter changes or loads
+  // Derive the editable draft from server state instead of syncing it in an effect.
+  const baseContent = currentChapter?.content ?? "";
+  const baseTitle = currentChapter?.title || `Chapter ${selectedChapterNumber}`;
+  const content =
+    draft && draft.chapter === selectedChapterNumber ? draft.content : baseContent;
+  const chapterTitle =
+    draft && draft.chapter === selectedChapterNumber ? draft.title : baseTitle;
+  const isDirty = Boolean(
+    draft &&
+      draft.chapter === selectedChapterNumber &&
+      (draft.content !== baseContent || draft.title !== baseTitle)
+  );
+
+  const setContent = (value: string) =>
+    setDraft((prev) => ({
+      chapter: selectedChapterNumber,
+      content: value,
+      title: prev && prev.chapter === selectedChapterNumber ? prev.title : baseTitle,
+    }));
+
+  const setChapterTitle = (value: string) =>
+    setDraft((prev) => ({
+      chapter: selectedChapterNumber,
+      content: prev && prev.chapter === selectedChapterNumber ? prev.content : baseContent,
+      title: value,
+    }));
+
+  const engineRunning =
+    manuscriptStatus?.status === "processing" || manuscriptStatus?.status === "pending";
+  const isReanalyzing = isTriggeringReanalysis || engineRunning;
+
+  // Refresh derived views when a background re-analysis finishes.
+  const previousStatus = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (currentChapter) {
-      setContent(currentChapter.content || "");
-      setChapterTitle(currentChapter.title || `Chapter ${selectedChapterNumber}`);
-      setIsDirty(false);
+    const nextStatus = manuscriptStatus?.status;
+    if (previousStatus.current === "processing" && nextStatus === "ready") {
+      refetchIssues();
+      refetchChapters();
+      refetchCurrentChapter();
     }
-  }, [currentChapter, selectedChapterNumber]);
+    previousStatus.current = nextStatus;
+  }, [manuscriptStatus?.status, refetchIssues, refetchChapters, refetchCurrentChapter]);
 
   // Compute metrics
   const wordCount = useMemo(() => {
@@ -102,12 +137,12 @@ export default function EditorPage({ params }: EditorPageProps) {
         content,
         title: chapterTitle,
       });
-      setIsDirty(false);
+      setDraft(null);
       toast.success(`Chapter ${selectedChapterNumber} saved to archive.`);
       refetchChapters();
       refetchCurrentChapter();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save chapter draft");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to save chapter draft"));
     } finally {
       setIsSaving(false);
     }
@@ -119,22 +154,20 @@ export default function EditorPage({ params }: EditorPageProps) {
     setIsReanalyzing(true);
     try {
       await api.projects.reanalyzeChapter(projectId, manuscriptId, selectedChapterNumber);
-      toast.info(`Sent Chapter ${selectedChapterNumber} to AI consistency engine for re-analysis.`);
-      setTimeout(() => {
-        refetchIssues();
-        setIsReanalyzing(false);
-        toast.success("Re-analysis complete. Continuity checks refreshed.");
-      }, 2500);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to trigger re-analysis");
+      toast.info(
+        `Chapter ${selectedChapterNumber} queued for re-analysis. Progress is tracked live below.`
+      );
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to trigger re-analysis"));
+    } finally {
       setIsReanalyzing(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-surface-obsidian text-ink-parchment pb-24 selection:bg-wine-crimson/40">
+    <div className="min-h-screen bg-surface-void text-ink-parchment pb-24 selection:bg-wine-crimson/40">
       {/* Top Floating Editor Command Bar */}
-      <header className="sticky top-0 z-30 w-full bg-surface-obsidian/90 backdrop-blur-md border-b border-white/[0.04]">
+      <header className="sticky top-0 z-30 w-full bg-surface-void/90 backdrop-blur-md border-b border-white/[0.04]">
         <div className="max-w-[1720px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
           {/* Breadcrumbs & Chapter Switcher */}
           <div className="flex items-center gap-3 min-w-0">
@@ -146,7 +179,7 @@ export default function EditorPage({ params }: EditorPageProps) {
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="h-4 w-px bg-white/[0.06] shrink-0" />
-            <div className="flex items-center gap-2 text-ui-body-sm truncate">
+            <div className="flex items-center gap-2 text-xs truncate">
               <span className="text-ink-ash">{project?.title || "Manuscript"}</span>
               <span className="text-ink-faint">/</span>
               <select
@@ -158,7 +191,7 @@ export default function EditorPage({ params }: EditorPageProps) {
                   setSelectedChapterNumber(Number(e.target.value));
                 }}
                 aria-label="Select chapter to edit"
-                className="bg-surface-container-lowest border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-ui-body-sm focus:outline-none focus:border-primary/40 cursor-pointer"
+                className="bg-surface-field border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-wine-crimson/40 cursor-pointer"
               >
                 {chapters.length > 0 ? (
                   chapters.map((ch) => (
@@ -172,11 +205,11 @@ export default function EditorPage({ params }: EditorPageProps) {
               </select>
             </div>
             {isDirty ? (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-warning/20 text-warning border border-warning/30">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-severity-warning/20 text-severity-warning border border-severity-warning/30">
                 Unsaved changes
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-secondary/10 text-secondary">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-pine-accent/10 text-pine-moss">
                 <CheckCircle2 className="w-3 h-3" /> Saved
               </span>
             )}
@@ -185,7 +218,7 @@ export default function EditorPage({ params }: EditorPageProps) {
           {/* Action Tools */}
           <div className="flex items-center gap-3 shrink-0">
             {/* Telemetry info */}
-            <div className="hidden md:flex items-center gap-2 text-ink-ash text-xs bg-surface-container-lowest px-3 py-1.5 rounded-xl border border-white/[0.04]">
+            <div className="hidden md:flex items-center gap-2 text-ink-ash text-xs bg-surface-field px-3 py-1.5 rounded-xl border border-white/[0.04]">
               <span className="font-mono text-ink-bone font-medium">{formatWords(wordCount)} words</span>
               <span className="text-ink-faint">•</span>
               <span className="text-ink-ash">~{readingTimeMin} min read</span>
@@ -199,7 +232,7 @@ export default function EditorPage({ params }: EditorPageProps) {
               onClick={handleReanalyze}
               className="hidden sm:inline-flex"
             >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isReanalyzing ? "animate-spin text-primary" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isReanalyzing ? "animate-spin text-wine-crimson" : ""}`} />
               Re-scan Chapter
             </Button>
 
@@ -221,10 +254,10 @@ export default function EditorPage({ params }: EditorPageProps) {
             {/* Switch to Reader */}
             <Link
               href={`/projects/${projectId}/reader?chapter=${selectedChapterNumber}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-xs transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle hover:bg-surface-card border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-xs transition-all"
               title="Open in Deep Reader"
             >
-              <BookOpen className="w-3.5 h-3.5 text-primary" />
+              <BookOpen className="w-3.5 h-3.5 text-wine-crimson" />
               <span className="hidden sm:inline">Reader</span>
             </Link>
 
@@ -233,8 +266,8 @@ export default function EditorPage({ params }: EditorPageProps) {
               onClick={() => setShowIssuesPanel(!showIssuesPanel)}
               className={`p-2 rounded-xl transition-all border ${
                 showIssuesPanel
-                  ? "bg-wine-dark text-primary border-primary/30"
-                  : "bg-surface-container-lowest text-ink-ash hover:text-ink-parchment border-white/[0.04]"
+                  ? "bg-wine-dark text-wine-crimson border-wine-crimson/30"
+                  : "bg-surface-field text-ink-ash hover:text-ink-parchment border-white/[0.04]"
               }`}
               title="Toggle Continuity Issues Panel"
             >
@@ -257,12 +290,9 @@ export default function EditorPage({ params }: EditorPageProps) {
               <input
                 type="text"
                 value={chapterTitle}
-                onChange={(e) => {
-                  setChapterTitle(e.target.value);
-                  setIsDirty(true);
-                }}
+                onChange={(e) => setChapterTitle(e.target.value)}
                 placeholder="Chapter Title..."
-                className="bg-transparent border-0 font-headline text-2xl sm:text-3xl text-ink-parchment focus:outline-none placeholder-ink-faint"
+                className="bg-transparent border-0 font-serif text-2xl sm:text-3xl text-ink-parchment focus:outline-none placeholder-ink-faint"
               />
             </div>
 
@@ -270,16 +300,13 @@ export default function EditorPage({ params }: EditorPageProps) {
             <div className="bg-[#160D13]/60 rounded-2xl p-6 sm:p-10 border border-white/[0.04] shadow-2xl relative min-h-[640px] flex flex-col">
               {chapterLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-ink-ash">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <p className="font-headline italic text-sm">Loading chapter manuscript draft...</p>
+                  <Loader2 className="w-8 h-8 animate-spin text-wine-crimson" />
+                  <p className="font-serif italic text-sm">Loading chapter manuscript draft...</p>
                 </div>
               ) : (
                 <textarea
                   value={content}
-                  onChange={(e) => {
-                    setContent(e.target.value);
-                    setIsDirty(true);
-                  }}
+                  onChange={(e) => setContent(e.target.value)}
                   placeholder="Begin drafting or paste chapter prose here..."
                   className="w-full flex-1 min-h-[580px] bg-transparent border-0 resize-y font-serif text-[17px] leading-[2.1] text-ink-parchment placeholder-ink-faint/40 focus:outline-none"
                   spellCheck={false}
@@ -313,7 +340,7 @@ export default function EditorPage({ params }: EditorPageProps) {
                       if (isDirty && !window.confirm("Unsaved changes. Switch anyway?")) return;
                       setSelectedChapterNumber((p) => p + 1);
                     }}
-                    className="hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="hover:text-wine-crimson disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     Next →
                   </button>
@@ -328,8 +355,8 @@ export default function EditorPage({ params }: EditorPageProps) {
               <Surface depth={2} className="p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-primary" />
-                    <span className="font-headline text-sm font-medium text-ink-parchment">
+                    <AlertTriangle className="w-4 h-4 text-wine-crimson" />
+                    <span className="font-serif text-sm font-medium text-ink-parchment">
                       Chapter Continuity
                     </span>
                   </div>
@@ -344,7 +371,7 @@ export default function EditorPage({ params }: EditorPageProps) {
 
                 {chapterIssues.length === 0 ? (
                   <div className="py-10 text-center text-ink-ash text-xs">
-                    <CheckCircle2 className="w-8 h-8 text-secondary mx-auto mb-2 opacity-80" />
+                    <CheckCircle2 className="w-8 h-8 text-pine-moss mx-auto mb-2 opacity-80" />
                     No open continuity contradictions found in this chapter.
                   </div>
                 ) : (
@@ -352,7 +379,7 @@ export default function EditorPage({ params }: EditorPageProps) {
                     {chapterIssues.map((iss) => (
                       <div
                         key={iss.id}
-                        className="p-3 rounded-xl bg-surface-container-lowest border border-white/[0.04] flex flex-col gap-2"
+                        className="p-3 rounded-xl bg-surface-field border border-white/[0.04] flex flex-col gap-2"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <Badge
@@ -367,7 +394,7 @@ export default function EditorPage({ params }: EditorPageProps) {
                           {iss.description}
                         </p>
                         {iss.evidence && iss.evidence.length > 0 && iss.evidence[0].quote && (
-                          <div className="p-2 rounded bg-surface-obsidian text-[11px] italic text-ink-ash border-l-2 border-wine-accent">
+                          <div className="p-2 rounded bg-surface-void text-[11px] italic text-ink-ash border-l-2 border-wine-accent">
                             &ldquo;{iss.evidence[0].quote}&rdquo;
                           </div>
                         )}
@@ -379,9 +406,9 @@ export default function EditorPage({ params }: EditorPageProps) {
                 <div className="pt-2 border-t border-white/[0.04]">
                   <Link
                     href={`/projects/${projectId}/reader?chapter=${selectedChapterNumber}`}
-                    className="w-full py-2 px-3 rounded-xl bg-surface-container hover:bg-surface-bright text-ink-parchment text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
+                    className="w-full py-2 px-3 rounded-xl bg-surface-card hover:bg-surface-elevated text-ink-parchment text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
                   >
-                    <BookOpen className="w-3.5 h-3.5 text-primary" />
+                    <BookOpen className="w-3.5 h-3.5 text-wine-crimson" />
                     Open in Deep Reader
                   </Link>
                 </div>

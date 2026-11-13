@@ -32,7 +32,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 
 export default function DashboardPage() {
-  const { user, isAuthenticated, checkAuth, isLoading: authLoading } = useAuthStore();
+  const { user, isAuthenticated, checkAuth, isCheckingAuth: authLoading } = useAuthStore();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [sessionsDrawerOpen, setSessionsDrawerOpen] = useState(false);
   const [uploadProject, setUploadProject] = useState<Project | null>(null);

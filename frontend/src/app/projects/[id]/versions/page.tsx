@@ -46,8 +46,8 @@ export default function VersionsPage({ params }: VersionsPageProps) {
               Manuscript Snapshot Tree
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               Content-Addressed Version Ledger
             </span>
           </div>
@@ -107,7 +107,7 @@ export default function VersionsPage({ params }: VersionsPageProps) {
                   className={cn(
                     "absolute -left-[31px] sm:-left-[39px] top-4 w-3.5 h-3.5 rounded-full border-2 transition-transform duration-200 group-hover:scale-125",
                     isLatest
-                      ? "bg-pine-forest border-surface-void"
+                      ? "bg-severity-thread border-surface-void"
                       : "bg-surface-elevated border-border-subtle"
                   )}
                 />
@@ -123,8 +123,8 @@ export default function VersionsPage({ params }: VersionsPageProps) {
                         Draft v{ver.version_number}
                       </span>
                       {isLatest && (
-                        <span className="font-mono text-[11px] text-pine-forest flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+                        <span className="font-mono text-[11px] text-severity-thread flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
                           Current Working Draft
                         </span>
                       )}
@@ -148,12 +148,13 @@ export default function VersionsPage({ params }: VersionsPageProps) {
                   </div>
 
                   <div className="pt-2 border-t border-border-quiet flex items-center justify-between text-xs font-mono">
-                    <span className="text-ink-faint">Immutable Snapshot</span>
+                    <span className="text-ink-faint">Hash-only snapshot</span>
                     <Link
                       href={`/projects/${projectId}/reader`}
+                      title="Versions store content hashes and diff summaries; the reader shows the current draft."
                       className="text-wine-accent hover:text-ink-parchment flex items-center gap-1 transition-colors"
                     >
-                      Inspect in Reader <ArrowRight className="w-3 h-3" />
+                      Open current draft <ArrowRight className="w-3 h-3" />
                     </Link>
                   </div>
                 </Surface>

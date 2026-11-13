@@ -44,6 +44,33 @@ def run_import_pipeline_guarded(
         db.close()
 
 
+def reanalyze_manuscript_guarded(
+    manuscript_id,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> None:
+    """Background entry point for a full manuscript re-analysis.
+
+    Drops cached chapter extractions first, otherwise the pipeline would replay
+    the old analysis instead of calling the model again.
+    """
+    from app.models import ChapterAnalysis
+
+    db: Session = SessionLocal()
+    try:
+        db.query(ChapterAnalysis).filter(
+            ChapterAnalysis.manuscript_id == manuscript_id
+        ).delete(synchronize_session=False)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not clear cached analyses for manuscript %s", manuscript_id)
+        db.rollback()
+    finally:
+        db.close()
+
+    run_import_pipeline_guarded(manuscript_id, api_key=api_key, base_url=base_url)
+
+
 def _set_status(db: Session, manuscript: Manuscript, status: str, error_note: str | None = None) -> None:
     manuscript.status = status
     manuscript.error_note = error_note

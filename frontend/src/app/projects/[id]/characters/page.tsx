@@ -68,8 +68,8 @@ export default function CharactersPage({ params }: CharactersPageProps) {
               Cast &amp; Personae Canon
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               {characters.length} Active Personae Tracked
             </span>
           </div>

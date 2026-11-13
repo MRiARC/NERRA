@@ -259,12 +259,17 @@ def get_object_custody(
 def get_knowledge_matrix(
     project_id: uuid.UUID,
     chapter: int | None = None,
+    max_chapter: int | None = None,
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> KnowledgeMatrixOut:
-    """Epistemic Knowledge Matrix (Characters x Key Facts, with multi-hop propagation)."""
-    data = knowledge.build_knowledge_matrix(db, project.id, up_to_chapter=chapter)
+    """Epistemic Knowledge Matrix (Characters x Key Facts, with multi-hop propagation).
+
+    Accepts `?chapter=` and, for older clients, the `?max_chapter=` alias.
+    """
+    up_to = chapter if chapter is not None else max_chapter
+    data = knowledge.build_knowledge_matrix(db, project.id, up_to_chapter=up_to)
     return KnowledgeMatrixOut(**data)
 
 
@@ -287,17 +292,45 @@ def list_knowledge(
 @router.get("/projects/{project_id}/claims", response_model=list[ClaimOut])
 def list_claims(
     project_id: uuid.UUID,
+    chapter: int | None = None,
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list:
     """All extracted claims with verbatim quote provenance, ordered by chapter."""
-    return (
-        db.query(Claim)
-        .filter(Claim.project_id == project.id)
-        .order_by(Claim.chapter.asc())
-        .all()
-    )
+    query = db.query(Claim).filter(Claim.project_id == project.id)
+    if chapter is not None:
+        query = query.filter(Claim.chapter == chapter)
+    return query.order_by(Claim.chapter.asc()).all()
+
+
+@router.post("/projects/{project_id}/audit")
+def run_project_audit(
+    project_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Run the continuity audit on demand and report what it found.
+
+    The hub button used to fake this with a timeout; this is the real pass the
+    import pipeline runs.
+    """
+    try:
+        consistency.run_consistency_pass(db, project.id)
+    except Exception as exc:  # noqa: BLE001 — surface a usable error to the UI
+        raise HTTPException(
+            status_code=422, detail=f"Consistency audit failed: {exc}"
+        ) from exc
+
+    issues = db.query(Issue).filter(Issue.project_id == project.id).all()
+    open_statuses = {"open", "unresolved"}
+    graph_data = graph.get_project_graph(db, project.id)
+    return {
+        "issues_open": sum(1 for issue in issues if issue.status in open_statuses),
+        "issues_total": len(issues),
+        "graph_synced": bool(graph_data.get("neo4j_connected")),
+    }
 
 
 @router.get("/projects/{project_id}/issues", response_model=list[IssueOut])
