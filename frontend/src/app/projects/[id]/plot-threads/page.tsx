@@ -1,127 +1,121 @@
 "use client";
 
-import React, { useState, use, useMemo } from "react";
+import React, { use, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePlotThreads, useProject } from "@/hooks/useStoryData";
+import { usePlotThreads } from "@/hooks/useStoryData";
 import { api } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import {
-  GitPullRequest,
-  Plus,
-  RefreshCw,
-  Search,
-  BookOpen,
-  ArrowRight,
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
-  Sparkles,
-  HelpCircle,
-  Tag,
-  Filter,
-} from "lucide-react";
+import { PageHeader, SectionHeading } from "@/components/ui/PageHeader";
 import { cn, getErrorMessage } from "@/lib/utils";
-import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
-import type { PlotThread } from "@/lib/types";
+import { ArrowRight } from "lucide-react";
 
 interface PlotThreadsPageProps {
   params: Promise<{ id: string }>;
 }
 
-const COLUMNS = [
-  { id: "open", label: "Open & Developing", dot: "bg-wine-accent", border: "border-wine-accent/30" },
-  { id: "resolved", label: "Paid Off / Resolved", dot: "bg-severity-thread", border: "border-severity-thread/30" },
-  { id: "abandoned", label: "Dropped / Forgotten", dot: "bg-wine-crimson", border: "border-wine-crimson/30" },
-  { id: "red_herring", label: "Red Herring", dot: "bg-amber-400", border: "border-amber-400/30" },
+const GROUPS = [
+  { id: "open", label: "Still running", note: "planted, not yet paid" },
+  { id: "resolved", label: "Paid off", note: "the promise was kept" },
+  { id: "abandoned", label: "Dropped", note: "planted and forgotten" },
+  { id: "red_herring", label: "Red herrings", note: "planted on purpose" },
 ];
 
+/**
+ * Plot threads are Chekhov's guns: something planted, something paid. Each row
+ * is drawn as a span across the book, and the ones still open simply run off
+ * the edge of the page.
+ */
 export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
   const queryClient = useQueryClient();
 
-  const { data: project } = useProject(projectId);
   const { data: threads = [], isLoading } = usePlotThreads(projectId);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isAddingModal, setIsAddingModal] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // New thread form state
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newSetupChapter, setNewSetupChapter] = useState(1);
   const [newPayoffChapter, setNewPayoffChapter] = useState<number | "">("");
   const [newStatus, setNewStatus] = useState("open");
   const [newRelatedEntities, setNewRelatedEntities] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Filtered threads
   const filteredThreads = useMemo(() => {
     if (!searchQuery) return threads;
-    const q = searchQuery.toLowerCase();
+    const query = searchQuery.toLowerCase();
     return threads.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q) ||
-        t.related_entities?.some((e) => e.toLowerCase().includes(q))
+      (thread) =>
+        thread.title.toLowerCase().includes(query) ||
+        thread.description.toLowerCase().includes(query) ||
+        thread.related_entities?.some((entity) => entity.toLowerCase().includes(query))
     );
   }, [threads, searchQuery]);
 
-  // Group threads by status
   const groupedThreads = useMemo(() => {
-    const map: Record<string, PlotThread[]> = {
-      open: [],
-      resolved: [],
-      abandoned: [],
-      red_herring: [],
-    };
-    for (const t of filteredThreads) {
-      const st = t.status || "open";
-      if (!map[st]) map[st] = [];
-      map[st].push(t);
+    const map: Record<string, typeof threads> = {};
+    for (const group of GROUPS) map[group.id] = [];
+    for (const thread of filteredThreads) {
+      const status = thread.status || "open";
+      if (!map[status]) map[status] = [];
+      map[status].push(thread);
+    }
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => (a.setup_chapter ?? 0) - (b.setup_chapter ?? 0));
     }
     return map;
   }, [filteredThreads]);
 
-  // Handle cross-chapter synthesis
+  const lastChapter = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...threads.flatMap((thread) => [
+          thread.setup_chapter ?? 0,
+          thread.payoff_chapter ?? 0,
+        ])
+      ),
+    [threads]
+  );
+
+  const openCount = threads.filter((thread) => (thread.status || "open") === "open").length;
+  const droppedCount = threads.filter((thread) => thread.status === "abandoned").length;
+
   const handleSyncThreads = async () => {
     setIsSyncing(true);
     try {
       await api.story.syncPlotThreads(projectId);
       await queryClient.invalidateQueries({ queryKey: ["plot-threads", projectId] });
-      toast.success("Cross-chapter plot threads synthesized from manuscript.");
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to sync plot threads."));
+      toast.success("Threads re-read from the manuscript.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not re-read the threads."));
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Handle status update
   const handleUpdateStatus = async (threadId: string, nextStatus: string) => {
     try {
       await api.story.patchPlotThread(projectId, threadId, { status: nextStatus });
       await queryClient.invalidateQueries({ queryKey: ["plot-threads", projectId] });
-      toast.success(`Plot thread marked as ${nextStatus}.`);
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to update plot thread."));
+      toast.success(`Marked as ${nextStatus.replace(/_/g, " ")}.`);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not update that thread."));
     }
   };
 
-  // Handle add thread
-  const handleCreateThread = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateThread = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!newTitle.trim() || !newDescription.trim()) return;
 
     setIsSubmitting(true);
     try {
       const entities = newRelatedEntities
-        ? newRelatedEntities.split(",").map((s) => s.trim()).filter(Boolean)
+        ? newRelatedEntities.split(",").map((entry) => entry.trim()).filter(Boolean)
         : [];
 
       await api.story.createPlotThread(projectId, {
@@ -134,331 +128,298 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
       });
 
       await queryClient.invalidateQueries({ queryKey: ["plot-threads", projectId] });
-      setIsAddingModal(false);
+      setIsAdding(false);
       setNewTitle("");
       setNewDescription("");
+      setNewPayoffChapter("");
       setNewRelatedEntities("");
-      toast.success("Plot thread registered into narrative canon.");
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to create plot thread."));
+      toast.success("Planted.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not plant that thread."));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in pb-24">
-      {/* Header & Mission Banner */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border-subtle pb-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-widest text-ink-ash font-medium">
-              Narrative Arcs &amp; Payoff Engine
-            </span>
-            <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
-              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
-              {threads.length} Plot Threads Tracked
-            </span>
-          </div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-ink-parchment flex items-center gap-3">
-            <GitPullRequest className="w-7 h-7 text-wine-accent" />
-            Plot Threads &amp; Chekhov Guns
-          </h1>
-          <p className="text-sm text-ink-ash max-w-2xl leading-relaxed">
-            Track setup-and-payoff arcs across chapters. Ensure planted clues pay off, mysteries resolve with satisfying catharsis, and unfulfilled promises are eliminated before printing.
-          </p>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSyncThreads}
-            disabled={isSyncing}
-            className="gap-2 font-mono text-xs"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", isSyncing && "animate-spin")} />
-            {isSyncing ? "Synthesizing..." : "Cross-Chapter AI Synthesis"}
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => setIsAddingModal(true)}
-            className="gap-2 font-mono text-xs bg-wine-accent text-ink-parchment hover:bg-wine-crimson"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add Plot Thread
-          </Button>
-        </div>
-      </div>
-
-      {/* Control Deck */}
-      <Surface depth={1} border="quiet" className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-4">
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search plot threads, setups, entities..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-surface-card border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-ink-parchment placeholder:text-ink-faint outline-none focus:border-wine-accent w-72"
-          />
-        </div>
-
-        <div className="flex items-center gap-4 text-xs font-mono text-ink-ash">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-wine-accent" /> Open: {groupedThreads.open.length}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-severity-thread" /> Resolved: {groupedThreads.resolved.length}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-wine-crimson" /> Dropped: {groupedThreads.abandoned.length}
-          </span>
-        </div>
-      </Surface>
-
-      {/* Add Thread Modal */}
-      {isAddingModal && (
-        <Surface depth={2} border="focus" className="p-6 rounded-xl space-y-4 animate-fade-in border-wine-accent/40">
-          <div className="flex items-center justify-between border-b border-border-quiet pb-3">
-            <h3 className="font-serif text-base font-medium text-ink-parchment">
-              Register New Narrative Thread
-            </h3>
+    <div className="w-full max-w-5xl mx-auto px-6 sm:px-8 py-10 sm:py-14">
+      <PageHeader
+        eyebrow="Threads"
+        title="What has been planted"
+        line={
+          threads.length === 0
+            ? "No threads have been pulled out of the manuscript yet."
+            : `${threads.length} threads. ${openCount} still running, ${droppedCount} left dangling. Every one of them is a promise to the reader.`
+        }
+        actions={
+          <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em]">
             <button
-              onClick={() => setIsAddingModal(false)}
-              className="text-xs font-mono text-ink-ash hover:text-ink-parchment"
+              type="button"
+              onClick={handleSyncThreads}
+              disabled={isSyncing}
+              className="text-ink-ash transition-colors hover:text-ink-parchment disabled:opacity-50"
             >
-              Cancel
+              {isSyncing ? "reading…" : "re-read the book"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsAdding((open) => !open)}
+              className={cn(
+                "border-b pb-1 transition-colors",
+                isAdding
+                  ? "border-wine-crimson text-ink-parchment"
+                  : "border-transparent text-ink-faint hover:text-ink-ash"
+              )}
+            >
+              plant one
             </button>
           </div>
+        }
+      />
 
-          <form onSubmit={handleCreateThread} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                  Thread Title / Mystery
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g., The Secret Will in the Study Desk"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-surface-subtle border border-border-subtle rounded-lg px-3 py-2 text-xs text-ink-parchment outline-none focus:border-wine-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                  Status
-                </label>
-                <select
-                  value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value)}
-                  className="w-full bg-surface-subtle border border-border-subtle rounded-lg px-3 py-2 text-xs text-ink-parchment outline-none focus:border-wine-accent"
-                >
-                  <option value="open">Open &amp; Developing</option>
-                  <option value="resolved">Resolved / Paid Off</option>
-                  <option value="abandoned">Dropped / Forgotten</option>
-                  <option value="red_herring">Red Herring</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                Narrative Premise &amp; Dramatic Stakes
-              </label>
-              <textarea
-                rows={3}
-                placeholder="Explain the initial setup, what promise was made to the reader, and expected payoff..."
-                value={newDescription}
-                onChange={(e) => setNewDescription(e.target.value)}
-                className="w-full bg-surface-subtle border border-border-subtle rounded-lg p-3 text-xs text-ink-parchment outline-none focus:border-wine-accent"
+      {isAdding && (
+        <form onSubmit={handleCreateThread} className="mt-6 border-y border-border-quiet py-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                What was planted
+              </span>
+              <input
+                value={newTitle}
+                onChange={(event) => setNewTitle(event.target.value)}
+                required
+                placeholder="The locked east wing"
+                className="mt-1 w-full border-0 border-b border-border-quiet bg-transparent pb-1.5 font-serif text-[15px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
               />
-            </div>
+            </label>
+            <label className="block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                Who or what it touches
+              </span>
+              <input
+                value={newRelatedEntities}
+                onChange={(event) => setNewRelatedEntities(event.target.value)}
+                placeholder="Mira, the house, the ledger"
+                className="mt-1 w-full border-0 border-b border-border-quiet bg-transparent pb-1.5 font-serif text-[15px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+              />
+            </label>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                  Setup Chapter
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={newSetupChapter}
-                  onChange={(e) => setNewSetupChapter(Number(e.target.value))}
-                  className="w-full bg-surface-subtle border border-border-subtle rounded-lg px-3 py-2 text-xs text-ink-parchment outline-none focus:border-wine-accent"
-                />
-              </div>
+          <label className="mt-4 block">
+            <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+              What it promises
+            </span>
+            <textarea
+              value={newDescription}
+              onChange={(event) => setNewDescription(event.target.value)}
+              required
+              rows={2}
+              placeholder="A door that has been shut since the fire, and a key nobody admits to keeping."
+              className="mt-1 w-full resize-none border-0 border-b border-border-quiet bg-transparent pb-1.5 font-serif text-[15px] leading-relaxed text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+            />
+          </label>
 
-              <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                  Payoff Chapter (Optional)
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  placeholder="e.g., 6"
-                  value={newPayoffChapter}
-                  onChange={(e) =>
-                    setNewPayoffChapter(e.target.value ? Number(e.target.value) : "")
-                  }
-                  className="w-full bg-surface-subtle border border-border-subtle rounded-lg px-3 py-2 text-xs text-ink-parchment outline-none focus:border-wine-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
-                  Related Entities (comma-separated)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Julian, Clara, Cedar Box"
-                  value={newRelatedEntities}
-                  onChange={(e) => setNewRelatedEntities(e.target.value)}
-                  className="w-full bg-surface-subtle border border-border-subtle rounded-lg px-3 py-2 text-xs text-ink-parchment outline-none focus:border-wine-accent"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsAddingModal(false)}
+          <div className="mt-4 flex flex-wrap items-end gap-6">
+            <label className="block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                Planted in
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={newSetupChapter}
+                onChange={(event) => setNewSetupChapter(Number(event.target.value))}
+                className="mt-1 w-16 border-0 border-b border-border-quiet bg-transparent pb-1 font-mono text-[13px] text-ink-parchment focus:border-border-prominent focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                Paid off in
+              </span>
+              <input
+                type="number"
+                min={1}
+                value={newPayoffChapter}
+                onChange={(event) =>
+                  setNewPayoffChapter(event.target.value === "" ? "" : Number(event.target.value))
+                }
+                placeholder="—"
+                className="mt-1 w-16 border-0 border-b border-border-quiet bg-transparent pb-1 font-mono text-[13px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                Fate
+              </span>
+              <select
+                value={newStatus}
+                onChange={(event) => setNewStatus(event.target.value)}
+                className="mt-1 block cursor-pointer bg-transparent font-mono text-[11px] uppercase tracking-[0.12em] text-ink-ash focus:outline-none"
               >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                size="sm"
-                disabled={isSubmitting || !newTitle.trim()}
-                className="bg-wine-accent text-ink-parchment hover:bg-wine-crimson"
-              >
-                {isSubmitting ? "Registering..." : "Record Thread"}
-              </Button>
-            </div>
-          </form>
-        </Surface>
+                {GROUPS.map((group) => (
+                  <option key={group.id} value={group.id} className="bg-surface-elevated">
+                    {group.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="ml-auto border-b border-wine-crimson pb-1 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-parchment transition-colors hover:text-wine-crimson disabled:opacity-50"
+            >
+              {isSubmitting ? "planting…" : "plant it"}
+            </button>
+          </div>
+        </form>
       )}
 
-      {/* Main Kanban Board (4 Columns) */}
+      <div className="mt-6 flex items-center justify-between gap-4">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="Search a thread, a name, a promise"
+          className="w-64 border-0 border-b border-border-quiet bg-transparent pb-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+        />
+        <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+          the book runs to ch. {String(lastChapter).padStart(2, "0")}
+        </p>
+      </div>
+
       {isLoading ? (
-        <div className="py-24 text-center space-y-3">
-          <div className="w-6 h-6 border-2 border-wine-accent border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-mono text-ink-ash">Synthesizing narrative promise arcs...</p>
+        <p className="py-24 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+          Following the threads…
+        </p>
+      ) : threads.length === 0 ? (
+        <div className="mt-10 border-t border-dashed border-border-subtle py-20 text-center">
+          <p className="font-serif text-xl text-ink-parchment">Nothing planted yet.</p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-faint">
+            Threads appear as chapters are read — or plant one yourself
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
-          {COLUMNS.map((col) => {
-            const columnThreads = groupedThreads[col.id] || [];
+        <div className="mt-8 space-y-10">
+          {GROUPS.map((group) => {
+            const groupThreads = groupedThreads[group.id] || [];
+            if (groupThreads.length === 0) return null;
 
             return (
-              <div key={col.id} className="space-y-4">
-                {/* Column Header */}
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surface-card border border-border-quiet">
-                  <div className="flex items-center gap-2">
-                    <span className={cn("w-2 h-2 rounded-full", col.dot)} />
-                    <h3 className="font-mono text-xs font-semibold text-ink-parchment uppercase tracking-wider">
-                      {col.label}
-                    </h3>
-                  </div>
-                  <span className="font-mono text-xs text-ink-ash px-2 py-0.5 rounded bg-surface-subtle border border-border-quiet">
-                    {columnThreads.length}
-                  </span>
-                </div>
+              <section key={group.id}>
+                <SectionHeading
+                  label={group.label}
+                  meta={
+                    <span>
+                      {groupThreads.length} · {group.note}
+                    </span>
+                  }
+                />
+                <ul>
+                  {groupThreads.map((thread) => {
+                    const setup = thread.setup_chapter ?? 1;
+                    const payoff = thread.payoff_chapter ?? null;
+                    const startPercent = Math.min(100, ((setup - 1) / lastChapter) * 100);
+                    const endPercent = payoff
+                      ? Math.min(100, ((payoff - 1) / lastChapter) * 100)
+                      : 100;
 
-                {/* Column Thread Cards */}
-                <div className="space-y-3 min-h-[300px]">
-                  {columnThreads.length === 0 ? (
-                    <div className="p-6 rounded-xl border border-dashed border-border-quiet text-center">
-                      <p className="text-xs font-mono text-ink-faint">No threads in this stage</p>
-                    </div>
-                  ) : (
-                    columnThreads.map((thread) => (
-                      <Surface
-                        key={thread.id}
-                        depth={2}
-                        border="subtle"
-                        className="p-4 rounded-xl space-y-3 hover:border-border-prominent transition-all duration-150 flex flex-col justify-between"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-subtle border border-border-quiet text-ink-parchment font-semibold">
-                              Ch. {thread.setup_chapter}
-                              {thread.payoff_chapter
-                                ? ` → Ch. ${thread.payoff_chapter}`
-                                : " → Unresolved"}
-                            </span>
-
-                            <select
-                              value={thread.status || "open"}
-                              onChange={(e) => handleUpdateStatus(thread.id, e.target.value)}
-                              className="bg-surface-subtle border border-border-quiet rounded text-[10px] font-mono text-ink-ash outline-none px-1.5 py-0.5 cursor-pointer"
-                            >
-                              <option value="open">Open</option>
-                              <option value="resolved">Resolved</option>
-                              <option value="abandoned">Abandoned</option>
-                              <option value="red_herring">Red Herring</option>
-                            </select>
-                          </div>
-
-                          <h4 className="text-sm font-serif font-medium text-ink-parchment leading-snug">
+                    return (
+                      <li key={thread.id} className="border-b border-border-quiet py-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+                          <h3 className="font-serif text-[16px] text-ink-parchment">
                             {thread.title}
-                          </h4>
-
-                          <p className="text-xs font-sans text-ink-ash leading-relaxed line-clamp-3">
-                            {thread.description}
-                          </p>
-
-                          {/* Related Entities */}
-                          {thread.related_entities && thread.related_entities.length > 0 && (
-                            <div className="flex flex-wrap gap-1 pt-1">
-                              {thread.related_entities.map((e, idx) => (
-                                <span
-                                  key={idx}
-                                  className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-subtle border border-border-quiet text-ink-bone"
-                                >
-                                  {e}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Evidence Quote */}
-                          {thread.evidence_quote && (
-                            <p className="text-[11px] font-serif italic text-ink-faint bg-surface-subtle p-2 rounded border-l border-wine-accent">
-                              &ldquo;{thread.evidence_quote}&rdquo;
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="pt-2 border-t border-border-quiet flex items-center justify-between text-xs font-mono">
-                          <Link
-                            href={`/projects/${projectId}/reader?chapter=${thread.setup_chapter}`}
-                            className="text-[10px] text-wine-accent hover:text-ink-parchment flex items-center gap-1 transition-colors"
+                          </h3>
+                          <select
+                            value={thread.status || "open"}
+                            onChange={(event) => handleUpdateStatus(thread.id, event.target.value)}
+                            aria-label={`Change the fate of ${thread.title}`}
+                            className="cursor-pointer bg-transparent font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint focus:outline-none"
                           >
-                            Read Setup <ArrowRight className="w-2.5 h-2.5" />
-                          </Link>
+                            {GROUPS.map((option) => (
+                              <option key={option.id} value={option.id} className="bg-surface-elevated">
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                          {thread.payoff_chapter && (
-                            <Link
-                              href={`/projects/${projectId}/reader?chapter=${thread.payoff_chapter}`}
-                              className="text-[10px] text-severity-thread hover:text-ink-parchment flex items-center gap-1 transition-colors"
-                            >
-                              Read Payoff <ArrowRight className="w-2.5 h-2.5" />
-                            </Link>
+                        <p className="mt-1 max-w-[75ch] font-serif text-[14px] leading-relaxed text-ink-bone">
+                          {thread.description}
+                        </p>
+
+                        {thread.related_entities?.length > 0 && (
+                          <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                            {thread.related_entities.join(" · ")}
+                          </p>
+                        )}
+
+                        {/* The span */}
+                        <div className="mt-3 flex items-center gap-3">
+                          <span className="w-10 shrink-0 font-mono text-[9px] uppercase tracking-[0.12em] text-ink-faint">
+                            ch.{setup}
+                          </span>
+                          <div className="relative h-px flex-1 bg-border-quiet">
+                            <span
+                              className={cn(
+                                "absolute top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full",
+                                group.id === "resolved"
+                                  ? "bg-pine-moss"
+                                  : group.id === "abandoned"
+                                  ? "bg-wine-crimson"
+                                  : "bg-wine-accent"
+                              )}
+                              style={{ left: `${startPercent}%` }}
+                            />
+                            {payoff ? (
+                              <>
+                                <span
+                                  className="absolute top-1/2 h-px -translate-y-1/2 bg-border-prominent"
+                                  style={{
+                                    left: `${startPercent}%`,
+                                    right: `${100 - endPercent}%`,
+                                  }}
+                                />
+                                <span
+                                  className="absolute top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-ink-bone"
+                                  style={{ left: `${endPercent}%` }}
+                                />
+                              </>
+                            ) : (
+                              <span
+                                className="absolute top-1/2 h-px -translate-y-1/2 border-t border-dashed border-border-prominent"
+                                style={{ left: `${startPercent}%`, right: 0 }}
+                              />
+                            )}
+                          </div>
+                          {payoff ? (
+                            <span className="w-10 shrink-0 text-right font-mono text-[9px] uppercase tracking-[0.12em] text-ink-faint">
+                              ch.{payoff}
+                            </span>
+                          ) : (
+                            <span className="w-10 shrink-0 text-right font-mono text-[9px] uppercase tracking-[0.12em] text-ink-faint">
+                              open
+                            </span>
                           )}
                         </div>
-                      </Surface>
-                    ))
-                  )}
-                </div>
-              </div>
+
+                        {thread.evidence_quote && (
+                          <p className="mt-3 max-w-[75ch] border-l border-border-quiet pl-3 font-serif text-[13px] italic leading-relaxed text-ink-ash">
+                            &ldquo;{thread.evidence_quote}&rdquo;
+                          </p>
+                        )}
+
+                        <Link
+                          href={`/projects/${projectId}/reader?chapter=${setup}`}
+                          className="mt-2.5 inline-flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint transition-colors hover:text-ink-parchment"
+                        >
+                          where it is planted
+                          <ArrowRight className="h-3 w-3" />
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
             );
           })}
         </div>

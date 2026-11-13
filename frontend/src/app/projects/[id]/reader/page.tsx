@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, use, useMemo } from "react";
+import React, { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useProject,
   useManuscripts,
@@ -12,43 +13,22 @@ import {
   useCharacters,
   usePlotThreads,
 } from "@/hooks/useStoryData";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { Divider } from "@/components/ui/Divider";
-import { formatWords, getErrorMessage } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import {
-  BookOpen,
-  PenTool,
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  Maximize2,
-  Minimize2,
-  Sliders,
-  Sparkles,
-  MessageSquare,
-  CheckCircle2,
-  Send,
-  Loader2,
-  ShieldAlert,
-  ArrowRight,
-  HelpCircle,
-  Clock,
-  Layers,
-  Search,
-  Check,
-  Brain,
-  Quote,
-} from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowRight, ChevronLeft, Minus, Plus } from "lucide-react";
 
 interface ReaderPageProps {
   params: Promise<{ id: string }>;
 }
 
+type InspectorTab = "context" | "slips" | "ask";
+
+/**
+ * The reader is the only page that should feel like a book: one measure of
+ * text, quiet furniture, and the story's notes kept in the margin beside it.
+ */
 export default function ReaderPage({ params }: ReaderPageProps) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
@@ -56,30 +36,32 @@ export default function ReaderPage({ params }: ReaderPageProps) {
 
   const chapterFromQuery = Number(searchParams.get("chapter")) || 1;
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number>(chapterFromQuery);
-  const [fontSize, setFontSize] = useState<number>(17); // 15, 17, 19, 21
+  const [fontSize, setFontSize] = useState<number>(17);
   const [isFocusMode, setIsFocusMode] = useState<boolean>(false);
-  const [inspectorTab, setInspectorTab] = useState<"context" | "continuity" | "chat">("context");
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("context");
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 
-  // Chat state
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<Array<{
-    role: "user" | "assistant";
-    content: string;
-    citations?: Array<{ chapter: number; excerpt: string }>;
-  }>>([
+  const [chatMessages, setChatMessages] = useState<
+    Array<{
+      role: "user" | "assistant";
+      content: string;
+      citations?: Array<{ chapter: number; excerpt: string }>;
+    }>
+  >([
     {
       role: "assistant",
-      content: "I am your story intelligence copilot. Ask me anything about character consistency, timeline chronology, or foreshadowing in this chapter.",
+      content: "Ask about this chapter — who is in it, what it sets up, what it contradicts.",
     },
   ]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isReasoning, setIsReasoning] = useState(false);
 
-  // Queries
+  const queryClient = useQueryClient();
+
   const { data: project } = useProject(projectId);
   const { data: manuscripts = [] } = useManuscripts(projectId);
-  const activeManuscript = manuscripts[0];
-  const manuscriptId = activeManuscript?.id;
+  const manuscriptId = manuscripts[0]?.id;
 
   const { data: chapters = [], isLoading: chaptersLoading } = useChapters(projectId, manuscriptId);
   const { data: currentChapter, isLoading: chapterLoading } = useChapter(
@@ -87,113 +69,103 @@ export default function ReaderPage({ params }: ReaderPageProps) {
     manuscriptId,
     selectedChapterNumber
   );
-  const { data: allIssues = [], refetch: refetchIssues } = useIssues(projectId);
+  const { data: allIssues = [] } = useIssues(projectId);
   const { data: characters = [] } = useCharacters(projectId);
   const { data: plotThreads = [] } = usePlotThreads(projectId);
 
-  // Filter issues for current chapter
-  const chapterIssues = useMemo(() => {
-    return allIssues.filter((iss) =>
-      iss.evidence?.some((e) => e.chapter === selectedChapterNumber)
-    );
-  }, [allIssues, selectedChapterNumber]);
+  const chapterIssues = useMemo(
+    () => allIssues.filter((issue) => issue.evidence?.some((item) => item.chapter === selectedChapterNumber)),
+    [allIssues, selectedChapterNumber]
+  );
 
-  // The active issue falls back to the first issue in this chapter; no effect needed.
-  const activeIssue = useMemo(() => {
-    return allIssues.find((i) => i.id === selectedIssueId) || chapterIssues[0] || null;
-  }, [allIssues, selectedIssueId, chapterIssues]);
+  const activeIssue = useMemo(
+    () => allIssues.find((issue) => issue.id === selectedIssueId) || chapterIssues[0] || null,
+    [allIssues, selectedIssueId, chapterIssues]
+  );
 
-  // Characters appearing in this chapter
-  const activeCharacters = useMemo(() => {
-    return characters.filter((c) => {
-      const first = c.first_chapter ?? 1;
-      const last = c.last_chapter ?? 999;
-      return selectedChapterNumber >= first && selectedChapterNumber <= last;
-    });
-  }, [characters, selectedChapterNumber]);
+  const activeCharacters = useMemo(
+    () =>
+      characters.filter((character) => {
+        const first = character.first_chapter ?? 1;
+        const last = character.last_chapter ?? 999;
+        return selectedChapterNumber >= first && selectedChapterNumber <= last;
+      }),
+    [characters, selectedChapterNumber]
+  );
 
-  // Plot threads active in this chapter
-  const activeThreads = useMemo(() => {
-    return plotThreads.filter((t) => {
-      const setup = t.setup_chapter ?? 1;
-      const payoff = t.payoff_chapter ?? 999;
-      return selectedChapterNumber >= setup && selectedChapterNumber <= payoff;
-    });
-  }, [plotThreads, selectedChapterNumber]);
+  const activeThreads = useMemo(
+    () =>
+      plotThreads.filter((thread) => {
+        const setup = thread.setup_chapter ?? 1;
+        const payoff = thread.payoff_chapter ?? 999;
+        return selectedChapterNumber >= setup && selectedChapterNumber <= payoff;
+      }),
+    [plotThreads, selectedChapterNumber]
+  );
 
-  // Split chapter text into paragraphs
-  const chapterContent = currentChapter?.content ?? "";
   const paragraphs = useMemo(() => {
-    if (!chapterContent) return [];
-    return chapterContent
+    const content = currentChapter?.content ?? "";
+    if (!content) return [];
+    return content
       .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 0);
-  }, [chapterContent]);
+      .map((paragraph) => paragraph.trim())
+      .filter((paragraph) => paragraph.length > 0);
+  }, [currentChapter?.content]);
 
-  // Handle font size stepping
-  const stepFontSize = (delta: number) => {
-    setFontSize((prev) => Math.max(14, Math.min(24, prev + delta)));
-  };
+  const sortedChapters = useMemo(
+    () => [...chapters].sort((a, b) => a.number - b.number),
+    [chapters]
+  );
+  const currentIndex = sortedChapters.findIndex((chapter) => chapter.number === selectedChapterNumber);
+  const previousChapter = currentIndex > 0 ? sortedChapters[currentIndex - 1] : null;
+  const nextChapter =
+    currentIndex >= 0 && currentIndex < sortedChapters.length - 1
+      ? sortedChapters[currentIndex + 1]
+      : null;
 
-  // Handle issue resolution
   const handleResolveIssue = async (issueId: string, resolution: "resolved" | "ignored") => {
     try {
       await api.story.patchIssue(projectId, issueId, resolution);
-      toast.success(
-        resolution === "resolved"
-          ? "Issue marked as acknowledged/resolved in canon."
-          : "Issue dismissed for this draft."
-      );
-      refetchIssues();
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to update issue status"));
+      toast.success(resolution === "resolved" ? "Marked as resolved." : "Dismissed for this draft.");
+      await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not update that issue."));
     }
   };
 
-  // Handle AI reasoning about issue
-  const [isReasoning, setIsReasoning] = useState(false);
   const handleReasonIssue = async (issueId: string) => {
     setIsReasoning(true);
     try {
-      const updated = await api.story.reasonIssue(projectId, issueId);
-      toast.success("AI reasoning generated new canon context.");
-      refetchIssues();
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "AI reasoning failed"));
+      await api.story.reasonIssue(projectId, issueId);
+      await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
+      toast.success("The checker has explained it.");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not analyze that issue."));
     } finally {
       setIsReasoning(false);
     }
   };
 
-  // Handle chat submission
-  const handleSendChat = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendChat = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!chatInput.trim() || isChatLoading) return;
 
-    const userQ = chatInput.trim();
+    const question = chatInput.trim();
     setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userQ }]);
+    setChatMessages((previous) => [...previous, { role: "user", content: question }]);
     setIsChatLoading(true);
 
     try {
-      const res = await api.story.chat(projectId, userQ);
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: res.answer,
-          citations: res.citations,
-        },
+      const response = await api.story.chat(projectId, question);
+      setChatMessages((previous) => [
+        ...previous,
+        { role: "assistant", content: response.answer, citations: response.citations },
       ]);
-    } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Chat failed"));
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Apologies, I encountered an error consulting the story archive. Please ensure the backend is running.",
-        },
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Could not reach the story archive."));
+      setChatMessages((previous) => [
+        ...previous,
+        { role: "assistant", content: "I couldn't reach the archive just now." },
       ]);
     } finally {
       setIsChatLoading(false);
@@ -201,599 +173,363 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-surface-void text-ink-parchment pb-24 selection:bg-wine-crimson/40">
-      {/* Top Floating Reading Telemetry & Controls Bar */}
-      <header className="sticky top-0 z-30 w-full bg-surface-void/90 backdrop-blur-md border-b border-white/[0.04] transition-all">
-        <div className="max-w-[1720px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          {/* Breadcrumbs & Chapter Title */}
-          <div className="flex items-center gap-3 min-w-0">
+    <div className="min-h-full bg-surface-void text-ink-parchment selection:bg-wine-crimson/30">
+      {/* Reading furniture */}
+      <header className="sticky top-0 z-30 border-b border-border-quiet bg-surface-void/95 backdrop-blur">
+        <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-5 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href={`/projects/${projectId}`}
-              className="text-ink-ash hover:text-ink-parchment transition-colors p-1.5 rounded-lg hover:bg-white/[0.03]"
-              title="Return to Hub"
+              className="text-ink-ash transition-colors hover:text-ink-parchment"
+              aria-label="Back to the project"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="h-4 w-4" />
             </Link>
-            <div className="h-4 w-px bg-white/[0.06] shrink-0" />
-            <div className="flex items-center gap-2 text-xs font-sans truncate">
-              <span className="text-ink-ash">{project?.title || "Manuscript"}</span>
-              <span className="text-ink-faint">/</span>
-              <select
-                value={selectedChapterNumber}
-                onChange={(e) => setSelectedChapterNumber(Number(e.target.value))}
-                aria-label="Select chapter to read"
-                className="bg-surface-field border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-wine-crimson/40 cursor-pointer"
-              >
-                {chapters.length > 0 ? (
-                  chapters.map((ch) => (
-                    <option key={ch.number} value={ch.number}>
-                      {ch.title} ({formatWords(ch.word_count)} words)
-                    </option>
-                  ))
-                ) : (
-                  <option value={1}>Chapter 1</option>
-                )}
-              </select>
-            </div>
-            {chapterIssues.length > 0 && (
-              <Badge variant="contradiction" size="sm" pulse>
-                {chapterIssues.length} Continuity {chapterIssues.length === 1 ? "Alert" : "Alerts"}
-              </Badge>
-            )}
+            <span className="truncate font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+              {project?.title || "Manuscript"}
+            </span>
+            <span className="hidden text-ink-faint sm:inline">·</span>
+            <select
+              value={selectedChapterNumber}
+              onChange={(event) => {
+                setSelectedChapterNumber(Number(event.target.value));
+                setSelectedIssueId(null);
+              }}
+              aria-label="Chapter"
+              className="max-w-[220px] cursor-pointer truncate bg-transparent font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash focus:outline-none"
+            >
+              {chaptersLoading && <option className="bg-surface-elevated">loading…</option>}
+              {sortedChapters.map((chapter) => (
+                <option key={chapter.number} value={chapter.number} className="bg-surface-elevated">
+                  ch. {String(chapter.number).padStart(2, "0")} — {chapter.title || "untitled"}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* Reading Atelier Controls */}
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Font Size Adjusters */}
-            <div className="flex items-center bg-surface-field rounded-xl p-1 border border-white/[0.04]">
+          <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.14em]">
+            <div className="hidden items-center gap-2 sm:flex">
               <button
-                onClick={() => stepFontSize(-1)}
-                className="p-1.5 text-ink-ash hover:text-ink-parchment transition-colors rounded-lg hover:bg-white/[0.04]"
-                title="Decrease font size"
+                type="button"
+                onClick={() => setFontSize((size) => Math.max(14, size - 1))}
+                className="text-ink-faint transition-colors hover:text-ink-parchment"
+                aria-label="Smaller text"
               >
-                <span className="text-xs font-mono font-medium">A-</span>
+                <Minus className="h-3 w-3" />
               </button>
-              <span className="font-mono text-[11px] text-ink-bone px-2 select-none">
-                {fontSize}px
-              </span>
+              <span className="tabular-nums text-ink-faint">{fontSize}</span>
               <button
-                onClick={() => stepFontSize(1)}
-                className="p-1.5 text-ink-ash hover:text-ink-parchment transition-colors rounded-lg hover:bg-white/[0.04]"
-                title="Increase font size"
+                type="button"
+                onClick={() => setFontSize((size) => Math.min(24, size + 1))}
+                className="text-ink-faint transition-colors hover:text-ink-parchment"
+                aria-label="Larger text"
               >
-                <span className="text-xs font-mono font-medium">A+</span>
+                <Plus className="h-3 w-3" />
               </button>
             </div>
-
-            {/* Word Telemetry */}
-            <div className="hidden md:flex items-center gap-2 text-ink-ash text-xs bg-surface-field/70 px-3 py-1.5 rounded-xl border border-white/[0.04]">
-              <span className="font-mono text-ink-bone text-xs">
-                {formatWords(currentChapter?.word_count || 0)} words
-              </span>
-              <span className="text-ink-faint">•</span>
-              <span className="text-xs text-ink-ash">{paragraphs.length} paragraphs</span>
-            </div>
-
-            {/* Switch to Editor */}
-            <Link
-              href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-subtle hover:bg-surface-card border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-xs transition-all"
-              title="Open in Manuscript Editor"
-            >
-              <PenTool className="w-3.5 h-3.5 text-wine-crimson" />
-              <span className="hidden sm:inline">Editor Studio</span>
-            </Link>
-
-            {/* Focus Zen Sanctuary Toggle */}
             <button
-              onClick={() => setIsFocusMode(!isFocusMode)}
-              className={`p-2 rounded-xl transition-all border ${
+              type="button"
+              onClick={() => setIsFocusMode((focus) => !focus)}
+              aria-pressed={isFocusMode}
+              className={cn(
+                "border-b pb-0.5 transition-colors",
                 isFocusMode
-                  ? "bg-wine-dark text-wine-crimson border-wine-crimson/30"
-                  : "bg-surface-field text-ink-ash hover:text-ink-parchment border-white/[0.04]"
-              }`}
-              title={isFocusMode ? "Exit Focus Mode" : "Focus Zen Mode"}
+                  ? "border-wine-crimson text-ink-parchment"
+                  : "border-transparent text-ink-faint hover:text-ink-ash"
+              )}
             >
-              {isFocusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              Just the page
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Dual-Column Canvas: Reading Folio + Inspector Panel */}
-      <main className="max-w-[1720px] mx-auto px-6 pt-8">
-        <div className={`grid grid-cols-1 ${isFocusMode ? "max-w-[820px] mx-auto" : "xl:grid-cols-12"} gap-8 items-start`}>
-          {/* LEFT / CENTER COLUMN: Flagship Editorial Manuscript Canvas (Max-width 760px) */}
-          <div className={`${isFocusMode ? "w-full" : "xl:col-span-7 2xl:col-span-8"} flex flex-col items-center transition-all duration-300`}>
-            <article className="w-full max-w-[760px] bg-[#160D13]/70 rounded-2xl p-8 sm:p-14 lg:p-16 shadow-2xl relative border border-white/[0.04]">
-              {/* Folio Running Header & Motif Watermark */}
-              <div className="flex items-center justify-between pb-8 mb-8 border-b border-white/[0.04]">
-                <div className="flex flex-col">
-                  <span className="font-serif italic text-ink-ash text-sm tracking-wider">
-                    {project?.title || "Chapter"} {currentChapter?.word_count ? `• ${formatWords(currentChapter.word_count)} words` : ""}
-                  </span>
-                  <h1 className="font-serif text-2xl sm:text-3xl font-medium text-ink-parchment mt-1">
-                    {currentChapter?.title || `Chapter ${selectedChapterNumber}`}
-                  </h1>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={chapterIssues.length > 0 ? "contradiction" : "pine"} size="sm">
-                    {chapterIssues.length > 0 ? `${chapterIssues.length} Flags` : "Canon Verified"}
-                  </Badge>
-                </div>
-              </div>
+      <div
+        className={cn(
+          "mx-auto grid gap-12 px-5 py-12 sm:px-8 lg:py-16",
+          isFocusMode ? "max-w-[46rem]" : "max-w-[1400px] lg:grid-cols-[minmax(0,1fr)_320px]"
+        )}
+      >
+        {/* The page itself */}
+        <article className="mx-auto w-full max-w-[42rem]">
+          <p className="font-mono text-[9px] uppercase tracking-[0.24em] text-ink-faint">
+            Chapter {String(selectedChapterNumber).padStart(2, "0")}
+          </p>
+          <h1 className="mt-3 font-serif text-3xl font-normal leading-tight text-ink-parchment sm:text-4xl">
+            {currentChapter?.title || "Untitled chapter"}
+          </h1>
+          <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+            {(currentChapter?.word_count ?? 0).toLocaleString()} words
+            {activeIssue ? " · one note in the margin" : ""}
+          </p>
 
-              {/* Chapter Prose Stream */}
-              {chapterLoading ? (
-                <div className="py-24 flex flex-col items-center justify-center gap-4 text-ink-ash">
-                  <Loader2 className="w-8 h-8 animate-spin text-wine-crimson" />
-                  <p className="font-serif italic text-sm">Translating folio parchment from the archive...</p>
-                </div>
-              ) : paragraphs.length === 0 ? (
-                <div className="py-24 text-center text-ink-ash">
-                  <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                  <p className="font-serif text-lg text-ink-bone">No manuscript text found for this chapter.</p>
-                  <Link
-                    href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-                    className="inline-flex items-center gap-2 mt-4 text-wine-crimson hover:underline text-sm"
+          <div className="mt-8 border-t border-border-quiet pt-8">
+            {chapterLoading || chaptersLoading ? (
+              <p className="py-20 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+                Opening the chapter…
+              </p>
+            ) : paragraphs.length === 0 ? (
+              <p className="py-12 font-serif text-[17px] italic text-ink-ash">
+                This chapter is still blank. Write it in the editor, or import a manuscript.
+              </p>
+            ) : (
+              <div style={{ fontSize }} className="space-y-[1.4em] leading-[1.85] text-ink-bone">
+                {paragraphs.map((paragraph, index) => (
+                  <p
+                    key={index}
+                    className={cn(
+                      "font-serif",
+                      index === 0 &&
+                        "first-letter:float-left first-letter:mr-3 first-letter:mt-1 first-letter:font-serif first-letter:text-[3.2em] first-letter:leading-[0.8] first-letter:text-wine-crimson"
+                    )}
                   >
-                    <PenTool className="w-4 h-4" /> Open Editor to write or paste text
-                  </Link>
-                </div>
-              ) : (
-                <div
-                  className="space-y-7 text-ink-parchment font-serif leading-[2.1] tracking-normal selection:bg-wine-crimson/40"
-                  style={{ fontSize: `${fontSize}px` }}
-                >
-                  {paragraphs.map((p, idx) => {
-                    const paraNum = idx + 1;
-                    // Check if any issue's evidence quote matches this paragraph
-                    const matchedIssue = chapterIssues.find((iss) =>
-                      iss.evidence?.some((ev) =>
-                        ev.quote && p.toLowerCase().includes(ev.quote.toLowerCase().slice(0, 30))
-                      )
-                    );
-                    const isParaSelected = activeIssue && matchedIssue?.id === activeIssue.id;
-
-                    return (
-                      <div
-                        key={idx}
-                        id={`para-${paraNum}`}
-                        className={`group relative flex items-start gap-4 transition-all duration-200 rounded-xl p-2 -mx-2 ${
-                          matchedIssue
-                            ? isParaSelected
-                              ? "bg-wine-dark/30 border-l-2 border-wine-crimson shadow-[inset_0_0_16px_rgba(148,27,46,0.2)]"
-                              : "bg-surface-field/50 border-l-2 border-wine-crimson/50"
-                            : "hover:bg-white/[0.01]"
-                        }`}
-                      >
-                        {/* Paragraph Number & Anchor */}
-                        <div className="flex flex-col items-center pt-1.5 w-6 shrink-0 select-none">
-                          <span
-                            className={`font-mono text-[11px] ${
-                              matchedIssue ? "text-wine-crimson font-bold" : "text-ink-faint/60 group-hover:text-ink-ash"
-                            } transition-colors`}
-                          >
-                            {paraNum}
-                          </span>
-                          {matchedIssue && (
-                            <button
-                              onClick={() => {
-                                setSelectedIssueId(matchedIssue.id);
-                                setInspectorTab("context");
-                              }}
-                              className="mt-1 text-wine-crimson hover:scale-110 transition-transform"
-                              title={`Continuity Alert: ${matchedIssue.type}`}
-                            >
-                              <AlertTriangle className="w-3.5 h-3.5 text-severity-contradiction" />
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Paragraph Body with Dropcap on first paragraph */}
-                        <div className="flex-1">
-                          {idx === 0 ? (
-                            <p>
-                              <span className="float-left font-serif text-[56px] leading-[0.8] pr-3 pt-1 text-wine-crimson font-normal drop-shadow-[0_2px_12px_rgba(255,177,191,0.25)]">
-                                {p.charAt(0)}
-                              </span>
-                              {p.slice(1)}
-                            </p>
-                          ) : matchedIssue ? (
-                            <div>
-                              <p>
-                                <span
-                                  onClick={() => {
-                                    setSelectedIssueId(matchedIssue.id);
-                                    setInspectorTab("context");
-                                  }}
-                                  className="cursor-pointer bg-wine-dark/40 text-wine-crimson border-b border-wine-crimson shadow-[inset_0_0_12px_rgba(148,27,46,0.25)] rounded px-1 py-0.5 hover:bg-wine-dark/60 transition-all inline"
-                                >
-                                  {p}
-                                </span>
-                              </p>
-                              {/* Inset Micro-Action Bar under highlighted contradiction */}
-                              <div className="mt-3 pt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.04] text-xs">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="contradiction" size="sm">
-                                    {matchedIssue.type.toUpperCase()}
-                                  </Badge>
-                                  <span className="text-ink-bone text-[12px] line-clamp-1">
-                                    {matchedIssue.description}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleResolveIssue(matchedIssue.id, "resolved")}
-                                    className="px-2.5 py-1 rounded-lg bg-surface-card hover:bg-surface-elevated text-ink-bone hover:text-ink-parchment text-[11px] font-medium transition-all"
-                                  >
-                                    Acknowledge
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedIssueId(matchedIssue.id);
-                                      setInspectorTab("context");
-                                      handleReasonIssue(matchedIssue.id);
-                                    }}
-                                    className="px-2.5 py-1 rounded-lg bg-wine-dark hover:bg-wine-accent text-ink-parchment text-[11px] font-medium transition-all shadow-sm flex items-center gap-1"
-                                  >
-                                    <Brain className="w-3 h-3 text-wine-crimson" />
-                                    Reason
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <p>{p}</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Bottom Folio Vignette / Pagination Stamp */}
-              <div className="mt-14 pt-8 border-t border-white/[0.04] flex items-center justify-between text-ink-faint text-xs">
-                <span>
-                  Chapter {selectedChapterNumber} of {chapters.length || 1}
-                </span>
-                <div className="flex items-center gap-4">
-                  <button
-                    disabled={selectedChapterNumber <= 1}
-                    onClick={() => setSelectedChapterNumber((prev) => Math.max(1, prev - 1))}
-                    className="hover:text-ink-bone disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
-                  >
-                    <ChevronLeft className="w-4 h-4" /> Previous Chapter
-                  </button>
-                  <span className="font-mono text-ink-ash text-xs">
-                    CH {selectedChapterNumber} / {chapters.length || 1}
-                  </span>
-                  <button
-                    disabled={selectedChapterNumber >= (chapters.length || 1)}
-                    onClick={() => setSelectedChapterNumber((prev) => prev + 1)}
-                    className="hover:text-wine-crimson disabled:opacity-30 disabled:cursor-not-allowed text-ink-bone transition-colors flex items-center gap-1"
-                  >
-                    Next Chapter <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+                    {paragraph}
+                  </p>
+                ))}
               </div>
-            </article>
-
-            {/* Fast Prose Scratchpad Below Reading Slate */}
-            <div className="w-full max-w-[760px] mt-6 p-4 rounded-xl bg-surface-field/70 border border-white/[0.03] flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <PenTool className="w-4 h-4 text-ink-faint shrink-0" />
-                <span className="text-xs text-ink-ash truncate">
-                  Need to revise this chapter? Open the manuscript studio editor with real-time squiggles.
-                </span>
-              </div>
-              <Link
-                href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-                className="text-xs font-mono text-wine-crimson hover:text-ink-parchment uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1"
-              >
-                Open Studio <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
+            )}
           </div>
 
-          {/* RIGHT COLUMN: Collapsible Intelligence & Chronology Inspector (~420px) */}
-          {!isFocusMode && (
-            <aside className="xl:col-span-5 2xl:col-span-4 flex flex-col gap-6 sticky top-24">
-              <Surface depth={2} className="p-5 flex flex-col gap-5">
-                {/* Segmented Intelligence Tabs */}
-                <div className="flex items-center p-1 bg-surface-field rounded-xl">
-                  <button
-                    onClick={() => setInspectorTab("context")}
-                    className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all ${
-                      inspectorTab === "context"
-                        ? "bg-surface-card text-ink-parchment shadow-sm"
-                        : "text-ink-ash hover:text-ink-parchment"
-                    }`}
-                  >
-                    Scene Context
-                  </button>
-                  <button
-                    onClick={() => setInspectorTab("continuity")}
-                    className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                      inspectorTab === "continuity"
-                        ? "bg-surface-card text-ink-parchment shadow-sm"
-                        : "text-ink-ash hover:text-ink-parchment"
-                    }`}
-                  >
-                    <span>Continuity</span>
-                    {chapterIssues.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-wine-dark text-wine-crimson">
-                        {chapterIssues.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setInspectorTab("chat")}
-                    className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all ${
-                      inspectorTab === "chat"
-                        ? "bg-surface-card text-ink-parchment shadow-sm"
-                        : "text-ink-ash hover:text-ink-parchment"
-                    }`}
-                  >
-                    Story Chat
-                  </button>
+          {(previousChapter || nextChapter) && (
+            <nav className="mt-14 flex items-start justify-between gap-6 border-t border-border-quiet pt-6">
+              {previousChapter ? (
+                <Link
+                  href={`/projects/${projectId}/reader?chapter=${previousChapter.number}`}
+                  onClick={() => {
+                    setSelectedChapterNumber(previousChapter.number);
+                    setSelectedIssueId(null);
+                  }}
+                  className="group max-w-[45%]"
+                >
+                  <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                    ← earlier
+                  </span>
+                  <span className="mt-1 block font-serif text-[15px] text-ink-ash transition-colors group-hover:text-ink-parchment">
+                    {previousChapter.title || `Chapter ${previousChapter.number}`}
+                  </span>
+                </Link>
+              ) : (
+                <span />
+              )}
+              {nextChapter && (
+                <Link
+                  href={`/projects/${projectId}/reader?chapter=${nextChapter.number}`}
+                  onClick={() => {
+                    setSelectedChapterNumber(nextChapter.number);
+                    setSelectedIssueId(null);
+                  }}
+                  className="group max-w-[45%] text-right"
+                >
+                  <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                    later →
+                  </span>
+                  <span className="mt-1 block font-serif text-[15px] text-ink-ash transition-colors group-hover:text-ink-parchment">
+                    {nextChapter.title || `Chapter ${nextChapter.number}`}
+                  </span>
+                </Link>
+              )}
+            </nav>
+          )}
+        </article>
+
+        {/* Marginalia */}
+        {!isFocusMode && (
+          <aside className="lg:sticky lg:top-20 lg:self-start">
+            <div className="flex items-center gap-4 border-b border-border-quiet pb-3 font-mono text-[9px] uppercase tracking-[0.16em]">
+              {(
+                [
+                  { id: "context" as const, label: "Here" },
+                  { id: "slips" as const, label: `Slips ${chapterIssues.length}` },
+                  { id: "ask" as const, label: "Ask" },
+                ]
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setInspectorTab(tab.id)}
+                  aria-pressed={inspectorTab === tab.id}
+                  className={cn(
+                    "border-b pb-2 transition-colors",
+                    inspectorTab === tab.id
+                      ? "border-wine-crimson text-ink-parchment"
+                      : "border-transparent text-ink-faint hover:text-ink-ash"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {inspectorTab === "context" && (
+              <div className="mt-5 space-y-7">
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+                    On the page
+                  </p>
+                  {activeCharacters.length === 0 ? (
+                    <p className="mt-2 font-serif text-[13px] italic text-ink-ash">
+                      No cast recorded for this chapter.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-1.5">
+                      {activeCharacters.map((character) => (
+                        <li key={character.id} className="font-serif text-[14px] text-ink-bone">
+                          {character.name}
+                          <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.12em] text-ink-faint">
+                            {character.status || "active"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
-                {/* TAB 1: SCENE CONTEXT */}
-                {inspectorTab === "context" && (
-                  <div className="flex flex-col gap-5">
-                    {/* Focused Issue Card */}
-                    {activeIssue ? (
-                      <div className="p-4 rounded-xl bg-gradient-to-br from-wine-dark/30 to-surface-field border border-wine-accent/30 shadow-md">
-                        <div className="flex items-start justify-between gap-3 mb-2.5">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-wine-crimson" />
-                            <span className="font-serif text-sm text-ink-parchment font-medium">
-                              {activeIssue.type.replace(/_/g, " ").toUpperCase()}
-                            </span>
-                          </div>
-                          <Badge variant={activeIssue.severity === "red" ? "contradiction" : "warning"} size="sm">
-                            {activeIssue.severity.toUpperCase()}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-[12px] text-ink-bone leading-relaxed">
-                          {activeIssue.description}
-                        </p>
-
-                        {/* Evidence quote */}
-                        {activeIssue.evidence && activeIssue.evidence.length > 0 && (
-                          <div className="mt-3 p-2.5 rounded-lg bg-surface-void/70 border border-white/[0.04] flex flex-col gap-1.5">
-                            <div className="flex items-center justify-between text-[10px] font-mono text-ink-faint uppercase">
-                              <span>Canon Anchor</span>
-                              {activeIssue.evidence[0].chapter && (
-                                <button
-                                  onClick={() => setSelectedChapterNumber(activeIssue.evidence![0].chapter!)}
-                                  className="text-wine-crimson hover:underline"
-                                >
-                                  Jump to Chapter {activeIssue.evidence[0].chapter}
-                                </button>
-                              )}
-                            </div>
-                            <blockquote className="text-[12px] italic text-ink-ash border-l-2 border-wine-accent pl-2 leading-relaxed">
-                              &ldquo;{activeIssue.evidence[0].quote || activeIssue.description}&rdquo;
-                            </blockquote>
-                          </div>
-                        )}
-
-                        {/* Resolution Dispatch Buttons */}
-                        <div className="mt-4 flex items-center gap-2">
-                          <button
-                            disabled={isReasoning}
-                            onClick={() => handleReasonIssue(activeIssue.id)}
-                            className="flex-1 py-1.5 px-3 rounded-lg bg-wine-dark hover:bg-wine-accent text-ink-parchment text-xs font-medium transition-colors text-center shadow-sm flex items-center justify-center gap-1.5"
-                          >
-                            {isReasoning ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Brain className="w-3.5 h-3.5 text-wine-crimson" />
-                            )}
-                            Reason with Claude
-                          </button>
-                          <button
-                            onClick={() => handleResolveIssue(activeIssue.id, "resolved")}
-                            className="p-1.5 rounded-lg bg-surface-card hover:bg-surface-elevated text-ink-ash hover:text-ink-parchment transition-colors"
-                            title="Mark as Acknowledged / Intentional Arc"
-                          >
-                            <Check className="w-4 h-4 text-pine-moss" />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-4 rounded-xl bg-surface-field border border-white/[0.03] text-center text-ink-ash text-xs">
-                        No active contradiction selected for this chapter. Click any highlighted quote in the text.
-                      </div>
-                    )}
-
-                    {/* Entities Present in Chapter */}
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono uppercase tracking-wider text-ink-ash text-[10px]">
-                          Characters Present ({activeCharacters.length})
-                        </span>
-                        <span className="font-mono text-ink-faint text-[10px]">
-                          Chapter {selectedChapterNumber}
-                        </span>
-                      </div>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                        {activeCharacters.map((c) => (
-                          <div
-                            key={c.id}
-                            className="p-2.5 rounded-xl bg-surface-field/80 border border-white/[0.02] flex items-center justify-between hover:bg-surface-field transition-colors"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-7 h-7 rounded-full bg-wine-dark/40 flex items-center justify-center text-wine-crimson font-serif text-xs shrink-0">
-                                {c.name.charAt(0)}
-                              </div>
-                              <div className="flex flex-col truncate">
-                                <span className="text-ink-parchment font-medium text-xs truncate">
-                                  {c.name}
-                                </span>
-                                <span className="text-[10px] text-ink-ash truncate">
-                                  {c.status || "Active in scene"}
-                                </span>
-                              </div>
-                            </div>
-                            <span className="text-[10px] font-mono text-ink-faint shrink-0">
-                              Ch {c.first_chapter ?? 1}
-                              {c.last_chapter ? `–${c.last_chapter}` : ""}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Active Plot Threads */}
-                    {activeThreads.length > 0 && (
-                      <div className="flex flex-col gap-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono uppercase tracking-wider text-ink-ash text-[10px]">
-                            Active Plot Threads ({activeThreads.length})
-                          </span>
-                        </div>
-                        <div className="space-y-2 max-h-40 overflow-y-auto">
-                          {activeThreads.slice(0, 3).map((t) => (
-                            <div
-                              key={t.id}
-                              className="p-2.5 rounded-xl bg-pine-deep/20 border border-pine-accent/30 flex flex-col gap-1"
-                            >
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-pine-moss font-medium truncate">{t.title}</span>
-                                <span className="font-mono text-[9px] text-ink-faint uppercase">{t.status}</span>
-                              </div>
-                              <p className="text-[11px] text-ink-bone line-clamp-2 leading-relaxed">
-                                {t.description}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* TAB 2: CONTINUITY ISSUES LIST */}
-                {inspectorTab === "continuity" && (
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-ink-ash font-medium">
-                        {chapterIssues.length} issues detected in Chapter {selectedChapterNumber}
-                      </span>
-                      <button
-                        onClick={() => refetchIssues()}
-                        className="text-[10px] font-mono text-wine-crimson hover:underline"
-                      >
-                        Re-scan
-                      </button>
-                    </div>
-
-                    {chapterIssues.length === 0 ? (
-                      <div className="py-8 text-center text-ink-ash text-xs">
-                        <CheckCircle2 className="w-8 h-8 text-pine-moss mx-auto mb-2 opacity-80" />
-                        No open continuity issues recorded for this chapter.
-                      </div>
-                    ) : (
-                      <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                        {chapterIssues.map((iss) => (
-                          <div
-                            key={iss.id}
-                            onClick={() => setSelectedIssueId(iss.id)}
-                            className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                              selectedIssueId === iss.id
-                                ? "bg-wine-dark/30 border-wine-crimson shadow-sm"
-                                : "bg-surface-field border-white/[0.03] hover:border-white/[0.08]"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <Badge
-                                variant={iss.severity === "red" ? "contradiction" : "warning"}
-                                size="sm"
-                              >
-                                {iss.type.toUpperCase()}
-                              </Badge>
-                              <span className="font-mono text-[10px] text-ink-faint">
-                                {iss.status}
-                              </span>
-                            </div>
-                            <p className="text-xs text-ink-bone line-clamp-3 leading-relaxed">
-                              {iss.description}
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+                    Threads alive here
+                  </p>
+                  {activeThreads.length === 0 ? (
+                    <p className="mt-2 font-serif text-[13px] italic text-ink-ash">
+                      Nothing is left hanging in this chapter.
+                    </p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {activeThreads.map((thread) => (
+                        <li key={thread.id}>
+                          <p className="font-serif text-[14px] leading-snug text-ink-bone">
+                            {thread.title || "Untitled thread"}
+                          </p>
+                          {thread.status && (
+                            <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-ink-faint">
+                              {thread.status}
                             </p>
-                          </div>
-                        ))}
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {inspectorTab === "slips" && (
+              <div className="mt-5">
+                {chapterIssues.length === 0 ? (
+                  <p className="font-serif text-[13px] italic leading-relaxed text-ink-ash">
+                    Nothing in this chapter contradicts the book. Read on.
+                  </p>
+                ) : (
+                  <>
+                    <ul className="divide-y divide-border-quiet">
+                      {chapterIssues.map((issue) => (
+                        <li key={issue.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedIssueId(issue.id)}
+                            className={cn(
+                              "w-full py-3 text-left font-serif text-[13px] leading-snug transition-colors",
+                              activeIssue?.id === issue.id
+                                ? "text-ink-parchment"
+                                : "text-ink-bone hover:text-ink-parchment"
+                            )}
+                          >
+                            {issue.description}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+
+                    {activeIssue && (
+                      <div className="mt-5 border-t border-border-quiet pt-4">
+                        <p className="font-serif text-[13px] italic leading-relaxed text-ink-ash">
+                          {activeIssue.ai_reasoning ||
+                            "The checker has not read this passage yet."}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 font-mono text-[9px] uppercase tracking-[0.14em]">
+                          <button
+                            type="button"
+                            onClick={() => handleReasonIssue(activeIssue.id)}
+                            disabled={isReasoning}
+                            className="text-ink-faint transition-colors hover:text-ink-parchment disabled:opacity-50"
+                          >
+                            {isReasoning ? "reading…" : "explain it"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleResolveIssue(activeIssue.id, "resolved")}
+                            className="text-ink-faint transition-colors hover:text-ink-parchment"
+                          >
+                            resolved
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleResolveIssue(activeIssue.id, "ignored")}
+                            className="text-ink-faint transition-colors hover:text-ink-parchment"
+                          >
+                            dismiss
+                          </button>
+                        </div>
                       </div>
                     )}
-                  </div>
+                  </>
                 )}
+              </div>
+            )}
 
-                {/* TAB 3: STORY CHAT RAG */}
-                {inspectorTab === "chat" && (
-                  <div className="flex flex-col h-[520px]">
-                    {/* Chat Messages */}
-                    <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
-                      {chatMessages.map((msg, i) => (
-                        <div
-                          key={i}
-                          className={`p-3 rounded-xl leading-relaxed ${
-                            msg.role === "user"
-                              ? "bg-wine-dark/40 text-ink-parchment border border-wine-accent/30 ml-4"
-                              : "bg-surface-field text-ink-bone border border-white/[0.03] mr-4"
-                          }`}
-                        >
-                          <div className="font-mono text-[9px] uppercase tracking-wider mb-1 text-ink-faint">
-                            {msg.role === "user" ? "You" : "Story Copilot"}
-                          </div>
-                          <p>{msg.content}</p>
-                          {msg.citations && msg.citations.length > 0 && (
-                            <div className="mt-2 pt-2 border-t border-white/[0.04] space-y-1">
-                              <span className="font-mono text-[9px] text-wine-crimson uppercase">Citations:</span>
-                              {msg.citations.map((c, ci) => (
-                                <div key={ci} className="text-[10px] text-ink-ash italic pl-2 border-l border-wine-crimson/30">
-                                  Ch. {c.chapter}: &ldquo;{c.excerpt}&rdquo;
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {isChatLoading && (
-                        <div className="p-3 rounded-xl bg-surface-field text-ink-ash flex items-center gap-2">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-wine-crimson" />
-                          <span>Searching story graph & canon vectors...</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Chat Input */}
-                    <form onSubmit={handleSendChat} className="mt-3 flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        placeholder="Ask about this chapter's canon..."
-                        className="flex-1 bg-surface-field border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-ink-parchment placeholder-ink-faint focus:outline-none focus:border-wine-crimson/40"
-                      />
-                      <Button
-                        type="submit"
-                        variant="wine"
-                        size="sm"
-                        disabled={!chatInput.trim() || isChatLoading}
-                        className="px-3 py-2 shrink-0"
+            {inspectorTab === "ask" && (
+              <div className="mt-5 flex flex-col">
+                <div className="max-h-[26rem] space-y-4 overflow-y-auto pr-1">
+                  {chatMessages.map((message, index) => (
+                    <div key={index}>
+                      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                        {message.role === "user" ? "you" : "archive"}
+                      </p>
+                      <p
+                        className={cn(
+                          "mt-1 whitespace-pre-wrap font-serif text-[13px] leading-relaxed",
+                          message.role === "user" ? "text-ink-bone" : "text-ink-ash"
+                        )}
                       >
-                        <Send className="w-3.5 h-3.5" />
-                      </Button>
-                    </form>
-                  </div>
-                )}
-              </Surface>
-            </aside>
-          )}
-        </div>
-      </main>
+                        {message.content}
+                      </p>
+                      {message.citations?.map((citation, citationIndex) => (
+                        <p
+                          key={citationIndex}
+                          className="mt-1.5 border-l border-border-quiet pl-2 font-serif text-[11px] italic text-ink-faint"
+                        >
+                          ch. {citation.chapter} — {citation.excerpt}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+                  {isChatLoading && (
+                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                      searching…
+                    </p>
+                  )}
+                </div>
+
+                <form onSubmit={handleSendChat} className="mt-4 border-t border-border-quiet pt-3">
+                  <input
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value)}
+                    placeholder="Ask about this chapter"
+                    className="w-full border-0 border-b border-border-quiet bg-transparent pb-1.5 font-serif text-[13px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isChatLoading || !chatInput.trim()}
+                    className="mt-2 inline-flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint transition-colors hover:text-ink-parchment disabled:opacity-40"
+                  >
+                    ask
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                </form>
+              </div>
+            )}
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
