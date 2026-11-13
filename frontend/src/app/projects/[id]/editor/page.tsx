@@ -20,10 +20,8 @@ import {
   ChevronRight,
   Save,
   RefreshCw,
-  AlertTriangle,
   Loader2,
   Quote,
-  Search,
   X,
   PanelLeft,
   PanelRight,
@@ -34,9 +32,9 @@ interface EditorPageProps {
 }
 
 /**
- * The editor is a workspace, not a form: the manuscript on the left, the page
- * in the middle, the checker's notes on the right. Each pane owns its scroll,
- * so nothing drifts away from you while you work.
+ * A galley proof on a desk: the contents on the left, one leaf of prose under
+ * the light, and the checker's marks in the margin beside the paragraph they
+ * belong to. Nothing is boxed; the page is the only thing that is lit.
  */
 export default function EditorPage({ params }: EditorPageProps) {
   const resolvedParams = use(params);
@@ -57,8 +55,10 @@ export default function EditorPage({ params }: EditorPageProps) {
   const [findQuery, setFindQuery] = useState("");
   const [replaceQuery, setReplaceQuery] = useState("");
   const [storedDraft, setStoredDraft] = useState<{ content: string; title: string } | null>(null);
+  const [selectionMenu, setSelectionMenu] = useState<{ x: number; y: number } | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pointerRef = useRef({ x: 0, y: 0 });
 
   const { data: project } = useProject(projectId);
   const { data: manuscripts = [] } = useManuscripts(projectId);
@@ -133,14 +133,17 @@ export default function EditorPage({ params }: EditorPageProps) {
   }, [allIssues]);
 
   const chapterIssues = useMemo(
-    () => allIssues.filter((issue) => issue.evidence?.some((item) => item.chapter === selectedChapterNumber)),
+    () =>
+      allIssues.filter((issue) =>
+        issue.evidence?.some((item) => item.chapter === selectedChapterNumber)
+      ),
     [allIssues, selectedChapterNumber]
   );
 
   const draftKey = `nerra:draft:${projectId}:${selectedChapterNumber}`;
 
-  // localStorage only exists after mount, so the stored draft is read once the
-  // chapter is on screen, after paint rather than during render.
+  // localStorage only exists after mount, so the stored draft is read after
+  // paint rather than during render.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const timer = window.setTimeout(() => {
@@ -188,6 +191,7 @@ export default function EditorPage({ params }: EditorPageProps) {
     const selected = content.slice(start, end) || placeholder;
     const next = content.slice(0, start) + before + selected + after + content.slice(end);
     setContent(next);
+    setSelectionMenu(null);
     requestAnimationFrame(() => {
       element.focus();
       element.setSelectionRange(start + before.length, start + before.length + selected.length);
@@ -210,6 +214,7 @@ export default function EditorPage({ params }: EditorPageProps) {
         .join("\n") +
       content.slice(end);
     setContent(next);
+    setSelectionMenu(null);
     requestAnimationFrame(() => {
       element.focus();
       element.setSelectionRange(lineStart, lineStart + block.length + prefix.length);
@@ -223,10 +228,25 @@ export default function EditorPage({ params }: EditorPageProps) {
     const start = element.selectionStart;
     const next = `${content.slice(0, start)}${text}${content.slice(element.selectionEnd)}`;
     setContent(next);
+    setSelectionMenu(null);
     requestAnimationFrame(() => {
       element.focus();
       element.setSelectionRange(start + text.length, start + text.length);
       updateCursor();
+    });
+  };
+
+  const showSelectionMenu = (
+    element: HTMLTextAreaElement,
+    point: { x: number; y: number }
+  ) => {
+    if (element.selectionStart === element.selectionEnd) {
+      setSelectionMenu(null);
+      return;
+    }
+    setSelectionMenu({
+      x: Math.min(Math.max(point.x, 120), window.innerWidth - 160),
+      y: Math.max(point.y - 8, 72),
     });
   };
 
@@ -278,6 +298,32 @@ export default function EditorPage({ params }: EditorPageProps) {
     const pattern = new RegExp(findQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     setContent(content.replace(pattern, replaceQuery));
     toast.success("Replaced every match in this chapter.");
+  };
+
+  /** Finds the paragraph a quote came from, so a margin note can point at it. */
+  const paragraphOfQuote = useCallback(
+    (quote?: string | null) => {
+      if (!quote || !content) return null;
+      const needle = quote.slice(0, 48).toLowerCase();
+      const index = content.toLowerCase().indexOf(needle);
+      if (index < 0) return null;
+      return content.slice(0, index).split(/\n\s*\n/).length;
+    },
+    [content]
+  );
+
+  const focusQuote = (quote?: string | null) => {
+    const element = textareaRef.current;
+    if (!element || !quote) return;
+    const needle = quote.slice(0, 48).toLowerCase();
+    const index = content.toLowerCase().indexOf(needle);
+    if (index < 0) return;
+    const start = content.lastIndexOf("\n\n", index) + 2;
+    const closing = content.indexOf("\n\n", index);
+    const end = closing < 0 ? content.length : closing;
+    element.focus();
+    element.setSelectionRange(start, end);
+    updateCursor();
   };
 
   const handleSave = async () => {
@@ -346,166 +392,100 @@ export default function EditorPage({ params }: EditorPageProps) {
       setFindOpen(true);
       return;
     }
-    if (event.key === "Escape" && findOpen) setFindOpen(false);
+    if (event.key === "Escape") {
+      setFindOpen(false);
+      setSelectionMenu(null);
+    }
   };
 
-  const restoreStoredDraft = () => {
-    if (!storedDraft) return;
-    setDraft({
-      chapter: selectedChapterNumber,
-      content: storedDraft.content,
-      title: storedDraft.title,
-    });
-    setStoredDraft(null);
-    toast.success("Restored the unsaved draft.");
-  };
-
-  const notesBody = (
-    <>
-      <div className="flex items-baseline justify-between border-b border-border-quiet px-5 py-3">
-        <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-ash">
-          Chapter notes
-        </h2>
-        <span className="font-mono text-[9px] tabular-nums text-ink-faint">
-          {chapterIssues.length}
-        </span>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {chapterIssues.length === 0 ? (
-          <p className="font-serif text-[13px] italic leading-relaxed text-ink-ash">
-            {isReanalyzingNow
-              ? "The re-reading is in progress. Notes will appear here."
-              : "Nothing in this chapter contradicts the rest of the book."}
-          </p>
-        ) : (
-          <ol className="divide-y divide-border-quiet">
-            {chapterIssues.map((issue) => (
-              <li key={issue.id} className="py-3.5">
-                <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
-                  {issue.type.replace(/_/g, " ")}
-                </p>
-                {issue.evidence?.[0]?.quote && (
-                  <blockquote className="mt-2 border-l border-wine-crimson/50 pl-2.5 font-serif text-[12.5px] italic leading-relaxed text-ink-bone">
-                    &ldquo;{issue.evidence[0].quote}&rdquo;
-                  </blockquote>
-                )}
-                <p className="mt-1.5 text-[12px] leading-relaxed text-ink-ash">
-                  {issue.description}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-
-        <Link
-          href={`/projects/${projectId}/issues`}
-          className="mt-4 inline-flex font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint transition-colors hover:text-ink-parchment"
-        >
-          All findings →
-        </Link>
-      </div>
-    </>
+  const totalWords = useMemo(
+    () => sortedChapters.reduce((total, chapter) => total + (chapter.word_count || 0), 0),
+    [sortedChapters]
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface-void text-ink-parchment">
-      {/* Command bar */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border-quiet px-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface-void">
+      {/* Desk bar — almost nothing */}
+      <div className="flex h-12 shrink-0 items-center justify-between gap-4 px-5 sm:px-8">
+        <div className="flex min-w-0 items-center gap-2.5">
           <Link
             href={`/projects/${projectId}`}
-            className="text-ink-ash transition-colors hover:text-ink-parchment"
+            className="text-ink-faint transition-colors hover:text-ink-parchment"
             title="Back to the dossier"
           >
             <ChevronLeft className="h-4 w-4" />
           </Link>
-          <span className="hidden truncate font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint sm:inline">
+          <span className="hidden truncate font-serif text-[12px] italic text-ink-faint sm:inline">
             {project?.title || "Manuscript"}
           </span>
-          <span aria-hidden className="hidden h-3 w-px bg-border-subtle sm:block" />
-          <p className="truncate font-serif text-[14px] text-ink-bone">
-            {chapterTitle}
-          </p>
-          <span
-            className={cn(
-              "shrink-0 font-mono text-[9px] uppercase tracking-[0.14em]",
-              isDirty ? "text-severity-warning" : "text-ink-faint"
-            )}
-          >
-            {isDirty ? "unsaved" : "saved"}
+          <span aria-hidden className="hidden text-ink-faint/40 sm:inline">
+            /
           </span>
+          <span className="truncate font-serif text-[13px] text-ink-ash">{chapterTitle}</span>
+          <span
+            aria-hidden
+            className={cn(
+              "h-1 w-1 shrink-0 rounded-full transition-colors",
+              isDirty ? "bg-severity-warning" : "bg-ink-faint/40"
+            )}
+          />
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 font-mono text-[9px] uppercase tracking-[0.14em]">
+        <div className="flex shrink-0 items-center gap-4 font-mono text-[9px] uppercase tracking-[0.14em]">
           <button
             type="button"
-            onClick={() => setShowRail((open) => !open)}
-            aria-pressed={showRail}
-            aria-label="Toggle the chapter list"
-            className="hidden text-ink-faint transition-colors hover:text-ink-parchment md:inline-flex"
+            onClick={() => setFindOpen((open) => !open)}
+            className="hidden text-ink-faint transition-colors hover:text-ink-parchment sm:inline-flex"
           >
-            <PanelLeft className="h-3.5 w-3.5" />
+            find
           </button>
-          <button
-            type="button"
-            onClick={() => setShowNotes((open) => !open)}
-            aria-pressed={showNotes}
-            aria-label="Toggle the chapter notes"
-            className="hidden text-ink-faint transition-colors hover:text-ink-parchment xl:inline-flex"
-          >
-            <PanelRight className="h-3.5 w-3.5" />
-          </button>
-
           <button
             type="button"
             onClick={handleReanalyze}
             disabled={isReanalyzingNow}
-            className="hidden text-ink-faint transition-colors hover:text-ink-parchment disabled:opacity-40 sm:inline-flex sm:items-center sm:gap-1.5"
+            className="hidden items-center gap-1.5 text-ink-faint transition-colors hover:text-ink-parchment disabled:opacity-40 sm:inline-flex"
           >
             <RefreshCw className={cn("h-3 w-3", isReanalyzingNow && "animate-spin")} />
-            Re-read
+            re-read
           </button>
-
           <Link
             href={`/projects/${projectId}/reader?chapter=${selectedChapterNumber}`}
-            className="inline-flex items-center gap-1.5 text-ink-ash transition-colors hover:text-ink-parchment"
+            className="inline-flex items-center gap-1.5 text-ink-faint transition-colors hover:text-ink-parchment"
           >
             <BookOpen className="h-3 w-3" />
-            <span className="hidden sm:inline">Read</span>
+            <span className="hidden sm:inline">read</span>
           </Link>
-
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving || !isDirty}
-            className="inline-flex items-center gap-1.5 border-b border-wine-crimson pb-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-parchment transition-colors hover:text-wine-crimson disabled:border-transparent disabled:text-ink-faint disabled:opacity-60"
-          >
-            {isSaving ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Save className="h-3 w-3" />
+            className={cn(
+              "inline-flex items-center gap-1.5 border-b pb-0.5 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors",
+              isDirty
+                ? "border-wine-crimson/70 text-ink-parchment hover:text-wine-crimson"
+                : "border-transparent text-ink-faint/60"
             )}
-            Save
+          >
+            {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+            save
           </button>
         </div>
       </div>
 
-      {/* Workspace */}
       <div className="flex min-h-0 flex-1">
-        {/* Manuscript rail */}
+        {/* Contents */}
         {showRail && (
-          <aside className="hidden w-60 shrink-0 flex-col border-r border-border-quiet md:flex">
-            <div className="border-b border-border-quiet px-4 py-3">
-              <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
-                Manuscript
-              </p>
-              <p className="mt-1 truncate font-serif text-[14px] text-ink-bone">
+          <nav className="hidden w-[252px] shrink-0 flex-col md:flex">
+            <div className="px-6 pb-5 pt-6">
+              <p className="font-serif text-[14px] leading-snug text-ink-bone">
                 {manuscripts[0]?.title || "Untitled"}
+              </p>
+              <p className="mt-1 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                {sortedChapters.length} chapters · {formatWords(totalWords)}
               </p>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto py-2">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-12">
               <ol>
                 {sortedChapters.map((chapter) => {
                   const isActive = chapter.number === selectedChapterNumber;
@@ -515,34 +495,37 @@ export default function EditorPage({ params }: EditorPageProps) {
                       <button
                         type="button"
                         onClick={() => goToChapter(chapter.number)}
+                        title={chapter.title || "Untitled"}
                         className={cn(
-                          "group flex w-full items-baseline gap-2.5 border-l py-2 pl-3.5 pr-3 text-left transition-colors",
-                          isActive
-                            ? "border-wine-crimson bg-surface-subtle/60"
-                            : "border-transparent hover:border-border-prominent"
+                          "group flex w-full items-baseline gap-2.5 rounded-sm px-3 py-[5px] text-left transition-colors",
+                          isActive ? "bg-surface-card" : "hover:bg-surface-subtle/70"
                         )}
                       >
-                        <span className="w-5 shrink-0 font-mono text-[9px] tabular-nums text-ink-faint">
+                        <span
+                          className={cn(
+                            "w-5 shrink-0 font-mono text-[9px] tabular-nums",
+                            isActive ? "text-wine-crimson" : "text-ink-faint/70"
+                          )}
+                        >
                           {String(chapter.number).padStart(2, "0")}
                         </span>
-                        <span className="min-w-0 flex-1">
-                          <span
-                            className={cn(
-                              "block truncate font-serif text-[13px]",
-                              isActive ? "text-ink-parchment" : "text-ink-bone"
-                            )}
-                          >
-                            {chapter.title || "Untitled"}
-                          </span>
-                          <span className="mt-0.5 block font-mono text-[8.5px] uppercase tracking-[0.12em] text-ink-faint">
-                            {formatWords(chapter.word_count)}
-                            {notes > 0 ? ` · ${notes} notes` : ""}
-                          </span>
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 truncate font-serif text-[12.5px]",
+                            isActive
+                              ? "text-ink-parchment italic"
+                              : "text-ink-ash group-hover:text-ink-bone"
+                          )}
+                        >
+                          {chapter.title || "Untitled"}
                         </span>
                         {notes > 0 && (
                           <span
                             aria-hidden
-                            className="mt-1 h-1 w-1 shrink-0 rounded-full bg-wine-crimson/70"
+                            className={cn(
+                              "mb-[3px] h-[3px] w-[3px] shrink-0 self-center rounded-full",
+                              isActive ? "bg-wine-crimson" : "bg-wine-crimson/50"
+                            )}
                           />
                         )}
                       </button>
@@ -552,167 +535,34 @@ export default function EditorPage({ params }: EditorPageProps) {
               </ol>
 
               {sortedChapters.length === 0 && (
-                <p className="px-4 py-4 font-serif text-[12px] italic leading-relaxed text-ink-ash">
+                <p className="px-3 py-4 font-serif text-[12px] italic leading-relaxed text-ink-ash">
                   No chapters yet. Import a manuscript to begin.
                 </p>
               )}
             </div>
-
-            <div className="border-t border-border-quiet px-4 py-3">
-              <p className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
-                {sortedChapters.length} chapters ·{" "}
-                {formatWords(
-                  sortedChapters.reduce((total, chapter) => total + (chapter.word_count || 0), 0)
-                )}
-              </p>
-            </div>
-          </aside>
+          </nav>
         )}
 
-        {/* The page */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Writing tools */}
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border-quiet px-4 py-1.5 sm:px-6">
-            <button
-              type="button"
-              onClick={() => prefixLines("## ")}
-              title="Heading"
-              aria-label="Heading"
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 font-serif text-[13px] text-ink-ash transition-colors hover:text-ink-parchment"
-            >
-              H
-            </button>
-            <button
-              type="button"
-              onClick={() => wrapSelection("**", "**", "bold words")}
-              title="Bold"
-              aria-label="Bold"
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 font-serif text-[13px] font-bold text-ink-ash transition-colors hover:text-ink-parchment"
-            >
-              B
-            </button>
-            <button
-              type="button"
-              onClick={() => wrapSelection("*", "*", "italic words")}
-              title="Italic"
-              aria-label="Italic"
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 font-serif text-[13px] italic text-ink-ash transition-colors hover:text-ink-parchment"
-            >
-              I
-            </button>
-            <button
-              type="button"
-              onClick={() => prefixLines("> ")}
-              title="Block quote"
-              aria-label="Block quote"
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 text-ink-ash transition-colors hover:text-ink-parchment"
-            >
-              <Quote className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => insertBlock("\n\n***\n\n")}
-              title="Scene break"
-              aria-label="Scene break"
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center px-1.5 font-serif text-[13px] text-ink-ash transition-colors hover:text-ink-parchment"
-            >
-              ⁂
-            </button>
-
-            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border-quiet" />
-
-            <button
-              type="button"
-              onClick={() => setFindOpen((open) => !open)}
-              aria-pressed={findOpen}
-              className={cn(
-                "flex h-7 shrink-0 items-center gap-1.5 px-1.5 font-mono text-[9px] uppercase tracking-[0.14em] transition-colors",
-                findOpen ? "text-ink-parchment" : "text-ink-ash hover:text-ink-parchment"
-              )}
-            >
-              <Search className="h-3.5 w-3.5" />
-              Find
-            </button>
-
-          </div>
-
-          {findOpen && (
-            <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border-quiet bg-surface-subtle/40 px-4 py-2 sm:px-6">
-              <input
-                autoFocus
-                value={findQuery}
-                onChange={(event) => setFindQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    jumpToMatch(event.shiftKey ? -1 : 1);
-                  }
-                }}
-                placeholder="Find in this chapter"
-                className="w-44 border-0 border-b border-border-quiet bg-transparent pb-1 font-serif text-[13px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
-              />
-              <span className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
-                {matches.length} {matches.length === 1 ? "match" : "matches"}
-              </span>
-              <input
-                value={replaceQuery}
-                onChange={(event) => setReplaceQuery(event.target.value)}
-                placeholder="Replace with"
-                className="w-44 border-0 border-b border-border-quiet bg-transparent pb-1 font-serif text-[13px] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={replaceCurrent}
-                className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-ash transition-colors hover:text-ink-parchment"
-              >
-                replace
-              </button>
-              <button
-                type="button"
-                onClick={replaceAll}
-                className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint transition-colors hover:text-ink-parchment"
-              >
-                all
-              </button>
-              <div className="ml-auto flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => jumpToMatch(-1)}
-                  className="text-ink-faint transition-colors hover:text-ink-parchment"
-                  aria-label="Previous match"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => jumpToMatch(1)}
-                  className="text-ink-faint transition-colors hover:text-ink-parchment"
-                  aria-label="Next match"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFindOpen(false)}
-                  className="text-ink-faint transition-colors hover:text-ink-parchment"
-                  aria-label="Close find"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* The leaf */}
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[780px] px-3 py-6 sm:px-8 sm:py-10">
             {storedDraft && (
-              <div className="mx-auto mt-4 flex max-w-[720px] items-center justify-between gap-4 border-y border-border-quiet px-2 py-2">
-                <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-ash">
+              <div className="mb-4 flex items-center justify-between gap-4 px-2">
+                <p className="font-serif text-[12px] italic text-ink-ash">
                   An unsaved draft of this chapter was kept on this device.
                 </p>
                 <div className="flex shrink-0 items-center gap-3 font-mono text-[9px] uppercase tracking-[0.14em]">
                   <button
                     type="button"
-                    onClick={restoreStoredDraft}
+                    onClick={() => {
+                      setDraft({
+                        chapter: selectedChapterNumber,
+                        content: storedDraft.content,
+                        title: storedDraft.title,
+                      });
+                      setStoredDraft(null);
+                      toast.success("Restored the unsaved draft.");
+                    }}
                     className="text-ink-parchment underline decoration-border-prominent underline-offset-4"
                   >
                     restore
@@ -720,7 +570,8 @@ export default function EditorPage({ params }: EditorPageProps) {
                   <button
                     type="button"
                     onClick={() => {
-                      if (typeof window !== "undefined") window.localStorage.removeItem(draftKey);
+                      if (typeof window !== "undefined")
+                        window.localStorage.removeItem(draftKey);
                       setStoredDraft(null);
                     }}
                     className="text-ink-faint transition-colors hover:text-ink-ash"
@@ -731,15 +582,15 @@ export default function EditorPage({ params }: EditorPageProps) {
               </div>
             )}
 
-            <article className="mx-auto w-full max-w-[720px] px-5 pb-24 pt-10 sm:px-8">
-              <div className="flex items-center justify-between">
-                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-                  Chapter {String(selectedChapterNumber).padStart(2, "0")}
-                  {sortedChapters.length > 0 ? ` of ${String(sortedChapters.length).padStart(2, "0")}` : ""}
+            <article className="mx-auto w-full max-w-[680px] bg-surface-card px-7 pb-10 pt-10 shadow-lg sm:px-14 sm:pb-12 sm:pt-14">
+              <div className="flex items-baseline justify-between">
+                <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-wine-crimson/70">
+                  {String(selectedChapterNumber).padStart(2, "0")}
+                  {sortedChapters.length > 0
+                    ? ` / ${String(sortedChapters.length).padStart(2, "0")}`
+                    : ""}
                 </p>
-                <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
-                  markdown
-                </p>
+                <p className="font-serif text-[11px] italic text-ink-faint/70">a working draft</p>
               </div>
 
               <textarea
@@ -748,13 +599,13 @@ export default function EditorPage({ params }: EditorPageProps) {
                 rows={1}
                 placeholder="Chapter title"
                 aria-label="Chapter title"
-                className="mt-2 w-full resize-none overflow-hidden border-0 bg-transparent font-serif text-2xl font-medium leading-tight tracking-tight text-ink-parchment placeholder:text-ink-faint focus:outline-none [field-sizing:content] sm:text-3xl"
+                className="mt-3 w-full resize-none overflow-hidden border-0 bg-transparent font-serif text-[26px] font-normal leading-tight tracking-tight text-ink-parchment placeholder:text-ink-faint focus:outline-none [field-sizing:content] sm:text-[30px]"
               />
 
-              <div aria-hidden className="mt-5 h-px w-14 bg-wine-crimson/60" />
+              <div aria-hidden className="mt-6 h-px w-10 bg-wine-crimson/50" />
 
               {chapterLoading ? (
-                <div className="mt-10 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+                <div className="mt-8 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
                   <Loader2 className="h-3 w-3 animate-spin" />
                   Opening the chapter…
                 </div>
@@ -765,79 +616,316 @@ export default function EditorPage({ params }: EditorPageProps) {
                   onChange={(event) => {
                     setContent(event.target.value);
                     updateCursor();
+                    setSelectionMenu(null);
                   }}
-                  onSelect={updateCursor}
-                  onClick={updateCursor}
-                  onKeyUp={updateCursor}
+                  onSelect={(event) => {
+                    const point = pointerRef.current;
+                    showSelectionMenu(event.currentTarget, point);
+                    updateCursor();
+                  }}
+                  onMouseUp={(event) => {
+                    pointerRef.current = { x: event.clientX, y: event.clientY };
+                    const target = event.currentTarget;
+                    requestAnimationFrame(() => showSelectionMenu(target, pointerRef.current));
+                  }}
+                  onBlur={() => setSelectionMenu(null)}
                   onKeyDown={handleKeyDown}
                   placeholder="Begin here. The page is yours."
                   aria-label="Chapter text"
                   spellCheck
-                  className="mt-7 min-h-[60vh] w-full resize-none border-0 bg-transparent font-prose text-[18px] leading-[1.9] text-ink-bone placeholder:text-ink-faint/60 focus:outline-none"
+                  className="mt-8 min-h-[58vh] w-full resize-none border-0 bg-transparent font-prose text-[18.5px] leading-[1.95] text-ink-bone selection:bg-wine-crimson/30 placeholder:text-ink-faint/50 focus:outline-none sm:text-[19px]"
                 />
               )}
 
-              <div className="mt-8 flex items-center justify-between border-t border-border-quiet pt-4 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
-                <span>{formatWords(wordCount)}</span>
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => goToChapter(selectedChapterNumber - 1)}
-                    disabled={selectedChapterNumber <= 1}
-                    className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ChevronLeft className="h-3 w-3" /> Prev
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => goToChapter(selectedChapterNumber + 1)}
-                    disabled={
-                      selectedChapterNumber >=
-                      (sortedChapters.length || selectedChapterNumber)
-                    }
-                    className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    Next <ChevronRight className="h-3 w-3" />
-                  </button>
-                </div>
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border-quiet pt-3 font-serif text-[11px] italic text-ink-faint/80">
+                <span>
+                  {formatWords(wordCount)} · {content.length.toLocaleString()} characters ·{" "}
+                  {readingTimeMin} min
+                </span>
+                <span className="font-mono text-[8.5px] uppercase not-italic tracking-[0.14em] text-ink-faint/70">
+                  {isDirty ? "unsaved" : "saved"} · ln {cursor.line}, col {cursor.column}
+                </span>
               </div>
 
-              {/* Notes below the page on narrow screens */}
-              <section className="mt-10 border-t border-border-quiet pt-2 xl:hidden">
-                {notesBody}
-              </section>
+              {/* Notes below the leaf on narrow screens */}
+              {chapterIssues.length > 0 && (
+                <section className="mt-8 border-t border-border-quiet pt-5 xl:hidden">
+                  <p className="font-serif text-[12px] italic text-ink-faint">Marginalia</p>
+                  <ol className="mt-3 space-y-4">
+                    {chapterIssues.map((issue, index) => (
+                      <li key={issue.id} className="flex gap-3">
+                        <span className="font-serif text-[10px] text-wine-crimson/70">
+                          {index + 1}
+                        </span>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => focusQuote(issue.evidence?.[0]?.quote)}
+                            className="text-left font-serif text-[13px] italic leading-relaxed text-ink-bone"
+                          >
+                            {issue.description}
+                          </button>
+                          {paragraphOfQuote(issue.evidence?.[0]?.quote) && (
+                            <p className="mt-1 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                              ¶ {paragraphOfQuote(issue.evidence?.[0]?.quote)}
+                            </p>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
             </article>
+
+            <div className="mx-auto flex max-w-[680px] items-center justify-between px-3 py-5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint/70">
+              <button
+                type="button"
+                onClick={() => goToChapter(selectedChapterNumber - 1)}
+                disabled={selectedChapterNumber <= 1}
+                className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:opacity-30"
+              >
+                <ChevronLeft className="h-3 w-3" /> previous
+              </button>
+              <button
+                type="button"
+                onClick={() => goToChapter(selectedChapterNumber + 1)}
+                disabled={
+                  selectedChapterNumber >= (sortedChapters.length || selectedChapterNumber)
+                }
+                className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:opacity-30"
+              >
+                next <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
           </div>
         </main>
 
-        {/* Margin notes */}
+        {/* Marginalia */}
         {showNotes && (
-          <aside className="hidden w-80 shrink-0 flex-col border-l border-border-quiet xl:flex">
-            {notesBody}
+          <aside className="hidden w-[300px] shrink-0 flex-col xl:flex">
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-7 pb-12 pt-6">
+              <div className="flex items-baseline justify-between">
+                <p className="font-serif text-[12px] italic text-ink-faint">Marginalia</p>
+                <span className="font-serif text-[10px] text-ink-faint/60">
+                  {chapterIssues.length || ""}
+                </span>
+              </div>
+
+              {chapterIssues.length === 0 ? (
+                <p className="mt-5 font-serif text-[13px] italic leading-relaxed text-ink-ash/80">
+                  {isReanalyzingNow
+                    ? "The re-reading is in progress. Marks will appear here."
+                    : "Nothing in this chapter contradicts the rest of the book."}
+                </p>
+              ) : (
+                <ol className="mt-6 space-y-7">
+                  {chapterIssues.map((issue, index) => {
+                    const paragraph = paragraphOfQuote(issue.evidence?.[0]?.quote);
+                    return (
+                      <li key={issue.id} className="relative">
+                        <span className="absolute -left-5 top-[2px] font-serif text-[10px] text-wine-crimson/70">
+                          {index + 1}
+                        </span>
+                        {issue.evidence?.[0]?.quote && (
+                          <blockquote className="border-l border-wine-crimson/30 pl-3 font-serif text-[13px] italic leading-relaxed text-ink-bone/90">
+                            &ldquo;{issue.evidence[0].quote}&rdquo;
+                          </blockquote>
+                        )}
+                        <p className="mt-2 font-serif text-[12.5px] leading-relaxed text-ink-ash">
+                          {issue.description}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-3 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint/70">
+                          {paragraph && (
+                            <button
+                              type="button"
+                              onClick={() => focusQuote(issue.evidence?.[0]?.quote)}
+                              className="transition-colors hover:text-ink-parchment"
+                            >
+                              ¶ {paragraph}
+                            </button>
+                          )}
+                          <span className="truncate">{issue.type.replace(/_/g, " ")}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+
+              <Link
+                href={`/projects/${projectId}/issues`}
+                className="mt-8 font-serif text-[12px] italic text-ink-faint transition-colors hover:text-ink-parchment"
+              >
+                All findings →
+              </Link>
+            </div>
           </aside>
         )}
       </div>
 
-      {/* Status bar */}
-      <div className="flex h-7 shrink-0 items-center justify-between gap-4 border-t border-border-quiet px-4 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint sm:px-6">
-        <div className="flex items-center gap-4">
-          <span>{formatWords(wordCount)}</span>
-          <span className="hidden sm:inline">{content.length.toLocaleString()} chars</span>
-          <span className="hidden sm:inline">Ln {cursor.line}, Col {cursor.column}</span>
+      {/* Floating formatting, only over a selection */}
+      {selectionMenu && (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 border border-border-quiet bg-surface-elevated px-1.5 py-1 shadow-xl backdrop-blur"
+          style={{
+            left: selectionMenu.x,
+            top: selectionMenu.y,
+            transform: "translate(-50%, -120%)",
+          }}
+        >
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => wrapSelection("**", "**", "bold words")}
+            aria-label="Bold"
+            className="flex h-7 w-7 items-center justify-center font-serif text-[13px] font-bold text-ink-ash transition-colors hover:text-ink-parchment"
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => wrapSelection("*", "*", "italic words")}
+            aria-label="Italic"
+            className="flex h-7 w-7 items-center justify-center font-serif text-[13px] italic text-ink-ash transition-colors hover:text-ink-parchment"
+          >
+            I
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => prefixLines("## ")}
+            aria-label="Heading"
+            className="flex h-7 w-7 items-center justify-center font-serif text-[11px] uppercase tracking-wide text-ink-ash transition-colors hover:text-ink-parchment"
+          >
+            H
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => prefixLines("> ")}
+            aria-label="Quote"
+            className="flex h-7 w-7 items-center justify-center text-ink-ash transition-colors hover:text-ink-parchment"
+          >
+            <Quote className="h-3 w-3" />
+          </button>
+          <span aria-hidden className="mx-0.5 h-4 w-px bg-border-quiet" />
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => insertBlock("\n\n***\n\n")}
+            aria-label="Scene break"
+            className="flex h-7 w-7 items-center justify-center font-serif text-[12px] text-ink-ash transition-colors hover:text-ink-parchment"
+          >
+            ⁂
+          </button>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="hidden sm:inline">{readingTimeMin} min read</span>
-          <span className={cn(isDirty ? "text-severity-warning" : "text-ink-faint")}>
-            {isDirty ? "unsaved" : "saved"}
-          </span>
-          {chapterIssues.length > 0 && (
-            <span className="inline-flex items-center gap-1 text-wine-crimson/80">
-              <AlertTriangle className="h-3 w-3" />
-              {chapterIssues.length}
+      )}
+
+      {/* Find, when called for */}
+      {findOpen && (
+        <div className="absolute right-6 top-14 z-40 w-[320px] border border-border-quiet bg-surface-elevated px-4 py-3 shadow-xl">
+          <div className="flex items-center justify-between">
+            <p className="font-serif text-[11px] italic text-ink-faint">Find in this chapter</p>
+            <button
+              type="button"
+              onClick={() => setFindOpen(false)}
+              aria-label="Close find"
+              className="text-ink-faint transition-colors hover:text-ink-parchment"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+          <input
+            autoFocus
+            value={findQuery}
+            onChange={(event) => setFindQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                jumpToMatch(event.shiftKey ? -1 : 1);
+              }
+            }}
+            placeholder="a word, a name"
+            className="mt-2 w-full border-0 border-b border-border-quiet bg-transparent pb-1 font-serif text-[13px] text-ink-parchment placeholder:text-ink-faint/60 focus:border-border-focus focus:outline-none"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+              {matches.length} {matches.length === 1 ? "match" : "matches"}
             </span>
-          )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => jumpToMatch(-1)}
+                aria-label="Previous match"
+                className="text-ink-faint transition-colors hover:text-ink-parchment"
+              >
+                <ChevronLeft className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => jumpToMatch(1)}
+                aria-label="Next match"
+                className="text-ink-faint transition-colors hover:text-ink-parchment"
+              >
+                <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              value={replaceQuery}
+              onChange={(event) => setReplaceQuery(event.target.value)}
+              placeholder="replace with"
+              className="w-full border-0 border-b border-border-quiet bg-transparent pb-1 font-serif text-[12px] text-ink-ash placeholder:text-ink-faint/50 focus:border-border-focus focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={replaceCurrent}
+              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint transition-colors hover:text-ink-parchment"
+            >
+              one
+            </button>
+            <button
+              type="button"
+              onClick={replaceAll}
+              className="shrink-0 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint transition-colors hover:text-ink-parchment"
+            >
+              all
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Panel toggles, kept out of the way */}
+      <div className="absolute bottom-4 right-5 z-30 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setShowRail((open) => !open)}
+          aria-pressed={showRail}
+          aria-label="Toggle contents"
+          className={cn(
+            "hidden transition-colors md:inline-flex",
+            showRail ? "text-ink-faint/50" : "text-ink-faint/25 hover:text-ink-faint"
+          )}
+        >
+          <PanelLeft className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowNotes((open) => !open)}
+          aria-pressed={showNotes}
+          aria-label="Toggle marginalia"
+          className={cn(
+            "hidden transition-colors xl:inline-flex",
+            showNotes ? "text-ink-faint/50" : "text-ink-faint/25 hover:text-ink-faint"
+          )}
+        >
+          <PanelRight className="h-3.5 w-3.5" />
+        </button>
       </div>
+
     </div>
   );
 }
