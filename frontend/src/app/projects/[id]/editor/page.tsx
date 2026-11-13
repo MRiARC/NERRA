@@ -11,34 +11,28 @@ import {
   useIssues,
   useManuscriptStatus,
 } from "@/hooks/useStoryData";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Divider } from "@/components/ui/Divider";
 import { formatWords, getErrorMessage } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  PenTool,
   BookOpen,
   ChevronLeft,
   ChevronRight,
   Save,
   RefreshCw,
   AlertTriangle,
-  CheckCircle2,
-  Sliders,
-  Sparkles,
   Loader2,
-  Clock,
-  ArrowRight,
-  FileText,
 } from "lucide-react";
 
 interface EditorPageProps {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * The editor is the desk. One page of prose, one measure of text, and the
+ * continuity notes sitting in the margin where an editor would write them.
+ */
 export default function EditorPage({ params }: EditorPageProps) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
@@ -47,33 +41,31 @@ export default function EditorPage({ params }: EditorPageProps) {
   const chapterFromQuery = Number(searchParams.get("chapter")) || 1;
   const [selectedChapterNumber, setSelectedChapterNumber] = useState<number>(chapterFromQuery);
   // The draft is keyed by chapter so switching chapters never leaks stale prose.
-  const [draft, setDraft] = useState<{ chapter: number; content: string; title: string } | null>(null);
+  const [draft, setDraft] = useState<{ chapter: number; content: string; title: string } | null>(
+    null
+  );
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isTriggeringReanalysis, setIsReanalyzing] = useState<boolean>(false);
-  const [showIssuesPanel, setShowIssuesPanel] = useState<boolean>(true);
+  const [showMargin, setShowMargin] = useState<boolean>(true);
 
-  // Queries
   const { data: project } = useProject(projectId);
   const { data: manuscripts = [] } = useManuscripts(projectId);
   const activeManuscript = manuscripts[0];
   const manuscriptId = activeManuscript?.id;
 
   const { data: chapters = [], refetch: refetchChapters } = useChapters(projectId, manuscriptId);
-  const { data: currentChapter, isLoading: chapterLoading, refetch: refetchCurrentChapter } = useChapter(
-    projectId,
-    manuscriptId,
-    selectedChapterNumber
-  );
+  const {
+    data: currentChapter,
+    isLoading: chapterLoading,
+    refetch: refetchCurrentChapter,
+  } = useChapter(projectId, manuscriptId, selectedChapterNumber);
   const { data: allIssues = [], refetch: refetchIssues } = useIssues(projectId);
   const { data: manuscriptStatus } = useManuscriptStatus(projectId, manuscriptId);
 
-  // Derive the editable draft from server state instead of syncing it in an effect.
   const baseContent = currentChapter?.content ?? "";
   const baseTitle = currentChapter?.title || `Chapter ${selectedChapterNumber}`;
-  const content =
-    draft && draft.chapter === selectedChapterNumber ? draft.content : baseContent;
-  const chapterTitle =
-    draft && draft.chapter === selectedChapterNumber ? draft.title : baseTitle;
+  const content = draft && draft.chapter === selectedChapterNumber ? draft.content : baseContent;
+  const chapterTitle = draft && draft.chapter === selectedChapterNumber ? draft.title : baseTitle;
   const isDirty = Boolean(
     draft &&
       draft.chapter === selectedChapterNumber &&
@@ -98,7 +90,6 @@ export default function EditorPage({ params }: EditorPageProps) {
     manuscriptStatus?.status === "processing" || manuscriptStatus?.status === "pending";
   const isReanalyzing = isTriggeringReanalysis || engineRunning;
 
-  // Refresh derived views when a background re-analysis finishes.
   const previousStatus = useRef<string | undefined>(undefined);
   useEffect(() => {
     const nextStatus = manuscriptStatus?.status;
@@ -110,22 +101,16 @@ export default function EditorPage({ params }: EditorPageProps) {
     previousStatus.current = nextStatus;
   }, [manuscriptStatus?.status, refetchIssues, refetchChapters, refetchCurrentChapter]);
 
-  // Compute metrics
   const wordCount = useMemo(() => {
     const trimmed = content.trim();
     return trimmed ? trimmed.split(/\s+/).length : 0;
   }, [content]);
+  const readingTimeMin = Math.max(1, Math.ceil(wordCount / 225));
 
-  const readingTimeMin = Math.ceil(wordCount / 225);
-
-  // Filter issues for current chapter
   const chapterIssues = useMemo(() => {
-    return allIssues.filter((iss) =>
-      iss.evidence?.some((e) => e.chapter === selectedChapterNumber)
-    );
+    return allIssues.filter((issue) => issue.evidence?.some((e) => e.chapter === selectedChapterNumber));
   }, [allIssues, selectedChapterNumber]);
 
-  // Handle Save
   const handleSave = async () => {
     if (!manuscriptId) {
       toast.error("No active manuscript found");
@@ -138,285 +123,240 @@ export default function EditorPage({ params }: EditorPageProps) {
         title: chapterTitle,
       });
       setDraft(null);
-      toast.success(`Chapter ${selectedChapterNumber} saved to archive.`);
+      toast.success(`Chapter ${selectedChapterNumber} saved.`);
       refetchChapters();
       refetchCurrentChapter();
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to save chapter draft"));
+      toast.error(getErrorMessage(err, "Could not save this chapter"));
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle Re-analyze
   const handleReanalyze = async () => {
     if (!manuscriptId) return;
     setIsReanalyzing(true);
     try {
       await api.projects.reanalyzeChapter(projectId, manuscriptId, selectedChapterNumber);
-      toast.info(
-        `Chapter ${selectedChapterNumber} queued for re-analysis. Progress is tracked live below.`
-      );
+      toast.info(`Chapter ${selectedChapterNumber} queued for re-reading.`);
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err, "Failed to trigger re-analysis"));
+      toast.error(getErrorMessage(err, "Could not queue the re-analysis"));
     } finally {
       setIsReanalyzing(false);
     }
   };
 
+  const goToChapter = (next: number) => {
+    if (isDirty && !window.confirm("You have unsaved changes. Switch chapter anyway?")) return;
+    setSelectedChapterNumber(Math.max(1, next));
+  };
+
   return (
-    <div className="min-h-screen bg-surface-void text-ink-parchment pb-24 selection:bg-wine-crimson/40">
-      {/* Top Floating Editor Command Bar */}
-      <header className="sticky top-0 z-30 w-full bg-surface-void/90 backdrop-blur-md border-b border-white/[0.04]">
-        <div className="max-w-[1720px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          {/* Breadcrumbs & Chapter Switcher */}
-          <div className="flex items-center gap-3 min-w-0">
+    <div className="min-h-full bg-surface-void text-ink-parchment">
+      {/* Desk bar */}
+      <div className="sticky top-0 z-30 border-b border-border-quiet bg-surface-void/90 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-[1500px] items-center justify-between gap-4 px-5 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href={`/projects/${projectId}`}
-              className="text-ink-ash hover:text-ink-parchment transition-colors p-1.5 rounded-lg hover:bg-white/[0.03]"
-              title="Return to Hub"
+              className="text-ink-ash transition-colors hover:text-ink-parchment"
+              title="Back to the dossier"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="h-4 w-4" />
             </Link>
-            <div className="h-4 w-px bg-white/[0.06] shrink-0" />
-            <div className="flex items-center gap-2 text-xs truncate">
-              <span className="text-ink-ash">{project?.title || "Manuscript"}</span>
-              <span className="text-ink-faint">/</span>
-              <select
-                value={selectedChapterNumber}
-                onChange={(e) => {
-                  if (isDirty && !window.confirm("You have unsaved changes. Switch chapter anyway?")) {
-                    return;
-                  }
-                  setSelectedChapterNumber(Number(e.target.value));
-                }}
-                aria-label="Select chapter to edit"
-                className="bg-surface-field border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-wine-crimson/40 cursor-pointer"
-              >
-                {chapters.length > 0 ? (
-                  chapters.map((ch) => (
-                    <option key={ch.number} value={ch.number}>
-                      {ch.title} ({formatWords(ch.word_count)} w)
-                    </option>
-                  ))
-                ) : (
-                  <option value={1}>Chapter 1</option>
-                )}
-              </select>
-            </div>
-            {isDirty ? (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-severity-warning/20 text-severity-warning border border-severity-warning/30">
-                Unsaved changes
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-pine-accent/10 text-pine-moss">
-                <CheckCircle2 className="w-3 h-3" /> Saved
-              </span>
-            )}
+            <span className="hidden truncate font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint sm:inline">
+              {project?.title || "Manuscript"}
+            </span>
+            <span aria-hidden className="hidden h-3 w-px bg-border-subtle sm:block" />
+            <select
+              value={selectedChapterNumber}
+              onChange={(e) => goToChapter(Number(e.target.value))}
+              aria-label="Chapter"
+              className="max-w-[240px] cursor-pointer truncate bg-transparent font-mono text-[10px] uppercase tracking-[0.16em] text-ink-bone focus:outline-none"
+            >
+              {chapters.length > 0 ? (
+                chapters.map((chapter) => (
+                  <option key={chapter.number} value={chapter.number} className="bg-surface-elevated">
+                    Ch. {String(chapter.number).padStart(2, "0")} · {chapter.title}
+                  </option>
+                ))
+              ) : (
+                <option value={1}>Chapter 1</option>
+              )}
+            </select>
+            <span
+              className={`font-mono text-[10px] uppercase tracking-[0.16em] ${
+                isDirty ? "text-severity-warning" : "text-ink-faint"
+              }`}
+            >
+              {isDirty ? "unsaved" : "saved"}
+            </span>
           </div>
 
-          {/* Action Tools */}
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Telemetry info */}
-            <div className="hidden md:flex items-center gap-2 text-ink-ash text-xs bg-surface-field px-3 py-1.5 rounded-xl border border-white/[0.04]">
-              <span className="font-mono text-ink-bone font-medium">{formatWords(wordCount)} words</span>
-              <span className="text-ink-faint">•</span>
-              <span className="text-ink-ash">~{readingTimeMin} min read</span>
-            </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint md:inline">
+              {formatWords(wordCount)} · {readingTimeMin} min
+            </span>
 
-            {/* Re-analyze Chapter */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isReanalyzing}
+            <button
+              type="button"
+              onClick={() => setShowMargin((open) => !open)}
+              aria-pressed={showMargin}
+              className={`hidden items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors sm:inline-flex ${
+                chapterIssues.length > 0
+                  ? "text-severity-contradiction"
+                  : "text-ink-faint hover:text-ink-ash"
+              }`}
+              title="Toggle continuity notes"
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {chapterIssues.length} notes
+            </button>
+
+            <button
+              type="button"
               onClick={handleReanalyze}
-              className="hidden sm:inline-flex"
+              disabled={isReanalyzing}
+              className="hidden font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint transition-colors hover:text-ink-parchment disabled:opacity-40 sm:inline-flex sm:items-center sm:gap-1.5"
             >
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isReanalyzing ? "animate-spin text-wine-crimson" : ""}`} />
-              Re-scan Chapter
-            </Button>
+              <RefreshCw className={`h-3 w-3 ${isReanalyzing ? "animate-spin" : ""}`} />
+              Re-read
+            </button>
 
-            {/* Save Button */}
-            <Button
-              variant="wine"
-              size="sm"
-              disabled={isSaving || !isDirty}
-              onClick={handleSave}
-            >
-              {isSaving ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              Save Chapter
-            </Button>
-
-            {/* Switch to Reader */}
             <Link
               href={`/projects/${projectId}/reader?chapter=${selectedChapterNumber}`}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-subtle hover:bg-surface-card border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-xs transition-all"
-              title="Open in Deep Reader"
+              className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash transition-colors hover:text-ink-parchment"
             >
-              <BookOpen className="w-3.5 h-3.5 text-wine-crimson" />
+              <BookOpen className="h-3 w-3" />
               <span className="hidden sm:inline">Reader</span>
             </Link>
 
-            {/* Toggle Continuity Flags Panel */}
-            <button
-              onClick={() => setShowIssuesPanel(!showIssuesPanel)}
-              className={`p-2 rounded-xl transition-all border ${
-                showIssuesPanel
-                  ? "bg-wine-dark text-wine-crimson border-wine-crimson/30"
-                  : "bg-surface-field text-ink-ash hover:text-ink-parchment border-white/[0.04]"
-              }`}
-              title="Toggle Continuity Issues Panel"
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSave}
+              disabled={isSaving || !isDirty}
+              className="gap-1.5"
             >
-              <AlertTriangle className="w-4 h-4" />
-            </button>
+              {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+              <span>Save</span>
+            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Main Studio Split Canvas */}
-      <main className="max-w-[1720px] mx-auto px-6 pt-8">
-        <div className={`grid grid-cols-1 ${showIssuesPanel ? "xl:grid-cols-12" : "max-w-[900px] mx-auto"} gap-8 items-start`}>
-          {/* Main Prose Text Studio */}
-          <div className={`${showIssuesPanel ? "xl:col-span-8 2xl:col-span-9" : "w-full"} flex flex-col gap-4`}>
-            {/* Chapter Title Input Header */}
-            <div className="bg-[#160D13]/60 rounded-2xl p-6 border border-white/[0.04] flex flex-col gap-3 shadow-lg">
-              <span className="font-mono uppercase tracking-widest text-[10px] text-ink-faint">
-                Chapter {selectedChapterNumber} {chapters.length > 0 ? `of ${chapters.length}` : ""}
-              </span>
-              <input
-                type="text"
-                value={chapterTitle}
-                onChange={(e) => setChapterTitle(e.target.value)}
-                placeholder="Chapter Title..."
-                className="bg-transparent border-0 font-serif text-2xl sm:text-3xl text-ink-parchment focus:outline-none placeholder-ink-faint"
-              />
+      {/* The page */}
+      <div
+        className={`mx-auto grid w-full gap-14 px-5 pb-24 pt-12 sm:px-8 ${
+          showMargin ? "max-w-[1240px] xl:grid-cols-[minmax(0,1fr)_280px]" : "max-w-[760px]"
+        }`}
+      >
+        <article className="mx-auto w-full max-w-[720px]">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+            Chapter {String(selectedChapterNumber).padStart(2, "0")}
+            {chapters.length > 0 ? ` of ${String(chapters.length).padStart(2, "0")}` : ""}
+          </p>
+
+          <input
+            type="text"
+            value={chapterTitle}
+            onChange={(e) => setChapterTitle(e.target.value)}
+            placeholder="Chapter title"
+            aria-label="Chapter title"
+            className="mt-3 w-full border-0 bg-transparent font-serif text-3xl font-medium tracking-tight text-ink-parchment placeholder:text-ink-faint focus:outline-none sm:text-4xl"
+          />
+
+          <div aria-hidden className="mt-6 h-px w-16 bg-wine-crimson/60" />
+
+          {chapterLoading ? (
+            <div className="mt-10 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Opening the chapter…
             </div>
-
-            {/* Drafting Canvas */}
-            <div className="bg-[#160D13]/60 rounded-2xl p-6 sm:p-10 border border-white/[0.04] shadow-2xl relative min-h-[640px] flex flex-col">
-              {chapterLoading ? (
-                <div className="flex-1 flex flex-col items-center justify-center gap-3 text-ink-ash">
-                  <Loader2 className="w-8 h-8 animate-spin text-wine-crimson" />
-                  <p className="font-serif italic text-sm">Loading chapter manuscript draft...</p>
-                </div>
-              ) : (
-                <textarea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Begin drafting or paste chapter prose here..."
-                  className="w-full flex-1 min-h-[580px] bg-transparent border-0 resize-y font-serif text-[17px] leading-[2.1] text-ink-parchment placeholder-ink-faint/40 focus:outline-none"
-                  spellCheck={false}
-                />
-              )}
-
-              {/* Bottom Folio Status & Fast Switch */}
-              <div className="mt-6 pt-4 border-t border-white/[0.04] flex items-center justify-between text-xs text-ink-faint">
-                <div className="flex items-center gap-3">
-                  <span>Lines: {content.split("\n").length}</span>
-                  <span>•</span>
-                  <span>Characters: {content.length}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    disabled={selectedChapterNumber <= 1}
-                    onClick={() => {
-                      if (isDirty && !window.confirm("Unsaved changes. Switch anyway?")) return;
-                      setSelectedChapterNumber((p) => Math.max(1, p - 1));
-                    }}
-                    className="hover:text-ink-bone disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    ← Previous
-                  </button>
-                  <span className="font-mono text-ink-ash">
-                    Chapter {selectedChapterNumber} of {chapters.length || 1}
-                  </span>
-                  <button
-                    disabled={selectedChapterNumber >= (chapters.length || 1)}
-                    onClick={() => {
-                      if (isDirty && !window.confirm("Unsaved changes. Switch anyway?")) return;
-                      setSelectedChapterNumber((p) => p + 1);
-                    }}
-                    className="hover:text-wine-crimson disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    Next →
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Continuity Flags Drawer */}
-          {showIssuesPanel && (
-            <aside className="xl:col-span-4 2xl:col-span-3 flex flex-col gap-5 sticky top-24">
-              <Surface depth={2} className="p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-wine-crimson" />
-                    <span className="font-serif text-sm font-medium text-ink-parchment">
-                      Chapter Continuity
-                    </span>
-                  </div>
-                  <Badge variant="contradiction" size="sm">
-                    {chapterIssues.length} Flags
-                  </Badge>
-                </div>
-
-                <p className="text-xs text-ink-ash leading-relaxed">
-                  Real-time canon checks for Chapter {selectedChapterNumber}. Keep your revisions aligned with established world rules.
-                </p>
-
-                {chapterIssues.length === 0 ? (
-                  <div className="py-10 text-center text-ink-ash text-xs">
-                    <CheckCircle2 className="w-8 h-8 text-pine-moss mx-auto mb-2 opacity-80" />
-                    No open continuity contradictions found in this chapter.
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    {chapterIssues.map((iss) => (
-                      <div
-                        key={iss.id}
-                        className="p-3 rounded-xl bg-surface-field border border-white/[0.04] flex flex-col gap-2"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <Badge
-                            variant={iss.severity === "red" ? "contradiction" : "warning"}
-                            size="sm"
-                          >
-                            {iss.type.toUpperCase()}
-                          </Badge>
-                          <span className="font-mono text-[10px] text-ink-faint">{iss.status}</span>
-                        </div>
-                        <p className="text-xs text-ink-bone leading-relaxed">
-                          {iss.description}
-                        </p>
-                        {iss.evidence && iss.evidence.length > 0 && iss.evidence[0].quote && (
-                          <div className="p-2 rounded bg-surface-void text-[11px] italic text-ink-ash border-l-2 border-wine-accent">
-                            &ldquo;{iss.evidence[0].quote}&rdquo;
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="pt-2 border-t border-white/[0.04]">
-                  <Link
-                    href={`/projects/${projectId}/reader?chapter=${selectedChapterNumber}`}
-                    className="w-full py-2 px-3 rounded-xl bg-surface-card hover:bg-surface-elevated text-ink-parchment text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-wine-crimson" />
-                    Open in Deep Reader
-                  </Link>
-                </div>
-              </Surface>
-            </aside>
+          ) : (
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Begin here. The page is yours."
+              aria-label="Chapter text"
+              spellCheck={false}
+              className="mt-8 min-h-[62vh] w-full resize-none border-0 bg-transparent font-prose text-[18px] leading-[1.9] text-ink-bone placeholder:text-ink-faint/60 focus:outline-none"
+            />
           )}
-        </div>
-      </main>
+
+          <div className="mt-8 flex items-center justify-between border-t border-border-quiet pt-4 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+            <span>
+              {wordCount.toLocaleString()} words · {content.length.toLocaleString()} characters
+            </span>
+
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => goToChapter(selectedChapterNumber - 1)}
+                disabled={selectedChapterNumber <= 1}
+                className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ChevronLeft className="h-3 w-3" /> Prev
+              </button>
+              <button
+                type="button"
+                onClick={() => goToChapter(selectedChapterNumber + 1)}
+                disabled={selectedChapterNumber >= (chapters.length || 1)}
+                className="inline-flex items-center gap-1 transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                Next <ChevronRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </article>
+
+        {/* Margin notes */}
+        {showMargin && (
+          <aside className="xl:pt-9">
+            <div className="flex items-baseline justify-between border-b border-border-quiet pb-2">
+              <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+                Chapter notes
+              </h2>
+              <span className="font-mono text-[10px] tabular-nums text-ink-faint">
+                {chapterIssues.length}
+              </span>
+            </div>
+
+            {chapterIssues.length === 0 ? (
+              <p className="mt-5 font-serif text-[14px] italic leading-relaxed text-ink-ash">
+                {isReanalyzing
+                  ? "The re-reading is in progress. Notes will appear here."
+                  : "Nothing in this chapter contradicts the rest of the book."}
+              </p>
+            ) : (
+              <ol className="mt-1 divide-y divide-border-quiet">
+                {chapterIssues.map((issue) => (
+                  <li key={issue.id} className="py-4">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                      {issue.type.replace(/_/g, " ")}
+                    </p>
+                    {issue.evidence?.[0]?.quote && (
+                      <blockquote className="mt-2 border-l-2 border-wine-crimson/50 pl-2.5 font-serif text-[13px] italic leading-relaxed text-ink-bone">
+                        &ldquo;{issue.evidence[0].quote}&rdquo;
+                      </blockquote>
+                    )}
+                    <p className="mt-1.5 text-[12px] leading-relaxed text-ink-ash">
+                      {issue.description}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+
+            <Link
+              href={`/projects/${projectId}/issues`}
+              className="mt-5 inline-flex font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint transition-colors hover:text-ink-parchment"
+            >
+              All findings →
+            </Link>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }

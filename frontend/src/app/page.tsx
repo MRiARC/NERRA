@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/useAuthStore";
@@ -43,7 +43,20 @@ export default function DashboardPage() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [sessionsDrawerOpen, setSessionsDrawerOpen] = useState(false);
   const [uploadProject, setUploadProject] = useState<Project | null>(null);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const importMenuRef = useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (importMenuRef.current && !importMenuRef.current.contains(event.target as Node)) {
+        setImportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [importMenuOpen]);
 
   useEffect(() => {
     checkAuth();
@@ -131,18 +144,61 @@ export default function DashboardPage() {
                   <span>New story</span>
                 </Button>
 
-                <button
-                  type="button"
-                  onClick={() => projects.length > 0 && setUploadProject(projects[0])}
-                  disabled={projects.length === 0}
-                  className="group inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-ash"
-                >
-                  <span>Import manuscript</span>
-                  <span
-                    aria-hidden
-                    className="h-px w-6 bg-current transition-all duration-300 group-enabled:group-hover:w-9"
-                  />
-                </button>
+                <div ref={importMenuRef} className="relative">
+                  <button
+                    type="button"
+                    aria-haspopup={projects.length > 1 ? "menu" : undefined}
+                    aria-expanded={projects.length > 1 ? importMenuOpen : undefined}
+                    onClick={() => {
+                      if (projects.length === 0) return;
+                      if (projects.length === 1) {
+                        setUploadProject(projects[0]);
+                        return;
+                      }
+                      setImportMenuOpen((open) => !open);
+                    }}
+                    disabled={projects.length === 0}
+                    className="group inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-ash"
+                  >
+                    <span>
+                      {projects.length > 1 ? "Import manuscript into…" : "Import manuscript"}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="h-px w-6 bg-current transition-all duration-300 group-enabled:group-hover:w-9"
+                    />
+                  </button>
+
+                  {importMenuOpen && projects.length > 1 && (
+                    <div
+                      role="menu"
+                      className="absolute left-0 z-30 mt-2 w-72 rounded-xl border border-border-subtle bg-surface-elevated p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.6)]"
+                    >
+                      <p className="px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                        Choose the manuscript to extend
+                      </p>
+                      {projects.map((project) => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setImportMenuOpen(false);
+                            setUploadProject(project);
+                          }}
+                          className="flex w-full items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card"
+                        >
+                          <span className="truncate font-serif text-sm text-ink-bone">
+                            {project.title}
+                          </span>
+                          <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                            {project.chapter_count ?? 0} ch
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.section>
 

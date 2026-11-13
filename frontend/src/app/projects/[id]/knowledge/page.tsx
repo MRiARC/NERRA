@@ -1,36 +1,21 @@
 "use client";
 
-import React, { useState, use, useMemo } from "react";
+import React, { use, useMemo, useState } from "react";
 import Link from "next/link";
 import { useKnowledgeMatrix, useClaims } from "@/hooks/useStoryData";
 import type { KnowledgeMatrixCell } from "@/lib/types";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import {
-  Compass,
-  Eye,
-  EyeOff,
-  SlidersHorizontal,
-  CheckCircle2,
-  AlertCircle,
-  HelpCircle,
-  Search,
-  BookOpen,
-  ArrowRight,
-  ShieldAlert,
-  Sparkles,
-  Layers,
-  ChevronRight,
-  Filter,
-} from "lucide-react";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { ArrowRight } from "lucide-react";
 
 interface KnowledgePageProps {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * This page is about secrets: who holds one, when they learned it, and who is
+ * still in the dark. The matrix is a ledger, and the chapter dial rewinds it.
+ */
 export default function KnowledgePage({ params }: KnowledgePageProps) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
@@ -38,7 +23,6 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
   const [activeTab, setActiveTab] = useState<"matrix" | "claims">("matrix");
   const [chapterScrubber, setChapterScrubber] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<KnowledgeMatrixCell | null>(null);
-
   const [claimSearch, setClaimSearch] = useState("");
   const [claimSubjectFilter, setClaimSubjectFilter] = useState("all");
 
@@ -55,7 +39,6 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
   const facts = matrixData?.facts || [];
   const maxChapter = Math.max(matrixData?.max_chapter || 1, 1);
 
-  // Fast cell lookup
   const cellLookup = useMemo(() => {
     const map = new Map<string, KnowledgeMatrixCell>();
     for (const cell of matrixData?.cells || []) {
@@ -64,211 +47,180 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
     return map;
   }, [matrixData]);
 
-  // Unique subjects for claims filter
   const claimSubjects = useMemo(() => {
     const set = new Set<string>();
-    claims.forEach((c) => {
-      if (c.subject) set.add(c.subject);
+    claims.forEach((claim) => {
+      if (claim.subject) set.add(claim.subject);
     });
     return Array.from(set).sort();
   }, [claims]);
 
-  // Filtered claims
   const filteredClaims = useMemo(() => {
-    return claims.filter((c) => {
-      if (claimSubjectFilter !== "all" && c.subject !== claimSubjectFilter) {
-        return false;
-      }
-      if (claimSearch) {
-        const q = claimSearch.toLowerCase();
-        return (
-          c.subject?.toLowerCase().includes(q) ||
-          c.attribute?.toLowerCase().includes(q) ||
-          c.value?.toLowerCase().includes(q) ||
-          c.evidence_quote?.toLowerCase().includes(q)
-        );
-      }
-      return true;
+    return claims.filter((claim) => {
+      if (claimSubjectFilter !== "all" && claim.subject !== claimSubjectFilter) return false;
+      if (!claimSearch) return true;
+      const query = claimSearch.toLowerCase();
+      return (
+        claim.subject?.toLowerCase().includes(query) ||
+        claim.attribute?.toLowerCase().includes(query) ||
+        claim.value?.toLowerCase().includes(query) ||
+        claim.evidence_quote?.toLowerCase().includes(query)
+      );
     });
   }, [claims, claimSubjectFilter, claimSearch]);
 
-  return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in pb-24">
-      {/* Header & Mission Banner */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border-subtle pb-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-widest text-ink-ash font-medium">
-              Epistemic Verification Engine
-            </span>
-            <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
-              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
-              Dramatic Irony Sentinel Active
-            </span>
-          </div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-ink-parchment flex items-center gap-3">
-            <Compass className="w-7 h-7 text-wine-accent" />
-            Who Knows What
-          </h1>
-          <p className="text-sm text-ink-ash max-w-2xl leading-relaxed">
-            Audit epistemic horizons across your cast. Pinpoint which character learned which secret,
-            detect dramatic irony opportunities, and prevent characters from acting on knowledge they could not possess.
-          </p>
-        </div>
+  const asOfChapter = chapterScrubber ?? maxChapter;
 
-        {/* Tab & Scrubber Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="flex items-center p-1 bg-surface-card border border-border-quiet rounded-xl shadow-inner shrink-0">
-            <button
-              onClick={() => setActiveTab("matrix")}
-              className={cn(
-                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150",
-                activeTab === "matrix"
-                  ? "bg-surface-elevated text-ink-parchment shadow-sm border border-border-subtle"
-                  : "text-ink-ash hover:text-ink-parchment"
-              )}
-            >
-              <Eye className="w-3.5 h-3.5 text-wine-accent" />
-              Epistemic Matrix
-            </button>
-            <button
-              onClick={() => setActiveTab("claims")}
-              className={cn(
-                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150",
-                activeTab === "claims"
-                  ? "bg-surface-elevated text-ink-parchment shadow-sm border border-border-subtle"
-                  : "text-ink-ash hover:text-ink-parchment"
-              )}
-            >
-              <Layers className="w-3.5 h-3.5 text-wine-accent" />
-              Factual Claims ({claims.length})
-            </button>
+  return (
+    <div className="w-full max-w-6xl mx-auto px-6 sm:px-8 py-10 sm:py-14">
+      <PageHeader
+        eyebrow="Epistemic"
+        title="Who knows what"
+        line={
+          characters.length === 0
+            ? "No secrets have been mapped yet. They appear as the cast learns things."
+            : `${characters.length} ${
+                characters.length === 1 ? "person" : "people"
+              }, ${facts.length} ${facts.length === 1 ? "truth" : "truths"} between them. Showing the book as of chapter ${asOfChapter}.`
+        }
+        actions={
+          <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em]">
+            {(
+              [
+                { id: "matrix" as const, label: "Matrix" },
+                { id: "claims" as const, label: "Claims" },
+              ]
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-pressed={activeTab === tab.id}
+                className={cn(
+                  "border-b pb-1 transition-colors",
+                  activeTab === tab.id
+                    ? "border-wine-crimson text-ink-parchment"
+                    : "border-transparent text-ink-faint hover:text-ink-ash"
+                )}
+              >
+                {tab.label}
+                {tab.id === "claims" ? ` ${claims.length}` : ""}
+              </button>
+            ))}
           </div>
-        </div>
+        }
+      />
+
+      {/* The dial */}
+      <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+          {chapterScrubber === null ? "Whole book" : `As of chapter ${chapterScrubber}`}
+        </span>
+        <input
+          type="range"
+          min={1}
+          max={maxChapter}
+          value={chapterScrubber ?? maxChapter}
+          onChange={(event) => setChapterScrubber(Number(event.target.value))}
+          aria-label="Rewind the book to a chapter"
+          className="h-1 max-w-xs flex-1 cursor-pointer appearance-none rounded-full bg-border-quiet accent-wine-crimson"
+        />
+        <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+          ch. {String(maxChapter).padStart(2, "0")}
+        </span>
+        {chapterScrubber !== null && (
+          <button
+            type="button"
+            onClick={() => setChapterScrubber(null)}
+            className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-ash underline decoration-border-subtle underline-offset-4 transition-colors hover:text-ink-parchment"
+          >
+            Whole book
+          </button>
+        )}
       </div>
 
-      {/* Chapter Scrubber Bar */}
-      <Surface depth={2} border="subtle" className="p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <SlidersHorizontal className="w-4 h-4 text-wine-accent shrink-0" />
-          <div className="space-y-0.5">
-            <p className="text-xs font-mono font-medium text-ink-parchment">
-              Temporal Epistemic Horizon
-            </p>
-            <p className="text-[11px] font-mono text-ink-ash">
-              {chapterScrubber === null
-                ? `Showing accumulated knowledge through Chapter ${maxChapter}`
-                : `Simulating cast awareness strictly as of Chapter ${chapterScrubber}`}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 w-full md:w-auto justify-end">
-          <input
-            type="range"
-            min={1}
-            max={maxChapter}
-            value={chapterScrubber ?? maxChapter}
-            onChange={(e) => setChapterScrubber(Number(e.target.value))}
-            className="w-full md:w-64 accent-wine-accent cursor-pointer"
-          />
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-surface-subtle border border-border-quiet text-ink-parchment shrink-0">
-              {chapterScrubber === null ? "Full Book" : `Ch. ${chapterScrubber}`}
-            </span>
-            {chapterScrubber !== null && (
-              <button
-                onClick={() => setChapterScrubber(null)}
-                className="text-[11px] font-mono text-ink-ash hover:text-ink-parchment underline transition-colors shrink-0"
-              >
-                Reset
-              </button>
-            )}
-          </div>
-        </div>
-      </Surface>
-
-      {/* TAB 1: 2D Epistemic Matrix */}
-      {activeTab === "matrix" && (
-        <div className="space-y-6">
+      {activeTab === "matrix" ? (
+        <section className="mt-8">
           {matrixLoading ? (
-            <div className="py-24 text-center space-y-3">
-              <div className="w-6 h-6 border-2 border-wine-accent border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs font-mono text-ink-ash">Mapping epistemic belief vectors...</p>
-            </div>
+            <p className="py-24 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+              Reading the secret ledger…
+            </p>
           ) : characters.length === 0 || facts.length === 0 ? (
-            <Surface depth={2} border="subtle" className="p-12 text-center rounded-2xl max-w-xl mx-auto space-y-4">
-              <Compass className="w-10 h-10 text-ink-ash mx-auto opacity-50" />
-              <h3 className="font-serif text-lg text-ink-parchment">No Epistemic Matrix Data</h3>
-              <p className="text-xs text-ink-ash leading-relaxed">
-                As chapters are parsed, the engine tracks which facts are spoken or overheard by characters.
+            <div className="border-t border-dashed border-border-subtle py-20 text-center">
+              <p className="font-serif text-xl text-ink-parchment">Nobody knows anything yet.</p>
+              <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-faint">
+                The ledger fills as chapters are read
               </p>
-            </Surface>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Matrix Table */}
-              <div className="lg:col-span-2 overflow-x-auto rounded-xl border border-border-subtle bg-surface-card">
-                <table className="w-full text-left border-collapse">
+            <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left">
                   <thead>
-                    <tr className="border-b border-border-subtle bg-surface-subtle">
-                      <th className="p-3.5 text-xs font-mono text-ink-ash font-medium uppercase tracking-wider sticky left-0 bg-surface-subtle z-10 min-w-[180px]">
-                        Story Secret / Fact
+                    <tr className="border-b border-border-prominent">
+                      <th className="sticky left-0 z-10 min-w-[190px] bg-surface-void pb-3 pr-4 font-mono text-[9px] font-normal uppercase tracking-[0.16em] text-ink-faint">
+                        Truth
                       </th>
-                      {characters.map((char) => (
+                      {characters.map((character) => (
                         <th
-                          key={char}
-                          className="p-3.5 text-xs font-mono text-ink-parchment font-medium text-center min-w-[120px]"
+                          key={character}
+                          className="min-w-[92px] pb-3 px-2 text-center font-serif text-[12px] font-normal text-ink-bone"
                         >
-                          {char}
+                          {character}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border-quiet text-xs font-sans">
-                    {facts.map((fact, idx) => (
-                      <tr key={idx} className="hover:bg-surface-elevated/40 transition-colors">
-                        <td className="p-3.5 font-medium text-ink-parchment sticky left-0 bg-surface-card z-10 border-r border-border-quiet">
+                  <tbody>
+                    {facts.map((fact) => (
+                      <tr key={fact} className="border-b border-border-quiet last:border-b-0">
+                        <td className="sticky left-0 z-10 bg-surface-void py-3 pr-4 font-serif text-[13px] leading-snug text-ink-bone">
                           {fact}
                         </td>
-                        {characters.map((char) => {
-                          const cell = cellLookup.get(`${char}::${fact}`);
+                        {characters.map((character) => {
+                          const cell = cellLookup.get(`${character}::${fact}`);
                           const knows = cell?.knows === true;
                           const isSelected =
-                            selectedCell?.character === char && selectedCell?.fact === fact;
+                            selectedCell?.character === character && selectedCell?.fact === fact;
 
                           return (
-                            <td
-                              key={char}
-                              onClick={() => {
-                                setSelectedCell(
-                                  cell ?? {
-                                    character: char,
-                                    fact: fact,
-                                    knows: false,
-                                    propagated: false,
-                                  }
-                                );
-                              }}
-                              className={cn(
-                                "p-3.5 text-center cursor-pointer transition-all duration-150 border-r border-border-quiet last:border-r-0",
-                                isSelected
-                                  ? "bg-wine-accent/15 ring-1 ring-border-focus"
-                                  : "hover:bg-surface-elevated"
-                              )}
-                            >
-                              {knows ? (
-                                <div className="inline-flex items-center justify-center gap-1 text-severity-thread">
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span className="font-mono text-[10px] text-ink-ash">
-                                    Ch.{cell.since_chapter ?? "?"}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="inline-flex items-center justify-center text-ink-faint">
-                                  <EyeOff className="w-3.5 h-3.5 opacity-40" />
-                                </div>
-                              )}
+                            <td key={character} className="px-2 py-1.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedCell(
+                                    cell ?? {
+                                      character,
+                                      fact,
+                                      knows: false,
+                                      propagated: false,
+                                    }
+                                  )
+                                }
+                                aria-label={`${character} ${
+                                  knows ? "knows" : "does not know"
+                                }: ${fact}`}
+                                className={cn(
+                                  "flex h-8 w-full items-center justify-center gap-1 rounded transition-colors",
+                                  isSelected
+                                    ? "bg-surface-elevated"
+                                    : "hover:bg-surface-subtle/60"
+                                )}
+                              >
+                                {knows ? (
+                                  <>
+                                    <span className="h-1.5 w-1.5 rounded-full bg-severity-thread" />
+                                    <span className="font-mono text-[9px] tabular-nums text-ink-ash">
+                                      {cell.since_chapter ?? "?"}
+                                    </span>
+                                    {cell.propagated && (
+                                      <span className="h-1 w-1 rounded-full border border-ink-faint" />
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="h-px w-2 bg-border-prominent" />
+                                )}
+                              </button>
                             </td>
                           );
                         })}
@@ -276,226 +228,164 @@ export default function KnowledgePage({ params }: KnowledgePageProps) {
                     ))}
                   </tbody>
                 </table>
+
+                <p className="mt-3 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                  ● knows, number = chapter learned · ◌ passed on secondhand · — still in the dark
+                </p>
               </div>
 
-              {/* Cell Inspection Detail Drawer */}
-              <div className="lg:col-span-1">
-                <Surface depth={2} border="subtle" className="p-5 rounded-xl space-y-5 sticky top-6">
-                  <div className="flex items-center justify-between border-b border-border-quiet pb-3">
-                    <div className="flex items-center gap-2">
-                      <Eye className="w-4 h-4 text-wine-accent" />
-                      <h3 className="font-serif text-sm font-medium text-ink-parchment">
-                        Epistemic Audit Dossier
-                      </h3>
-                    </div>
-                    {selectedCell && (
-                      <span className="font-mono text-[11px] text-ink-ash">
-                        {selectedCell.knows ? (
-                          <span className="text-severity-thread font-semibold">● Confirmed Aware</span>
-                        ) : (
-                          <span className="text-ink-ash">○ Unaware in Canon</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
+              {/* The secret's dossier */}
+              <aside className="lg:sticky lg:top-6 lg:self-start">
+                {selectedCell ? (
+                  <div>
+                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+                      {selectedCell.knows ? "Known" : "Unknown"}
+                    </p>
+                    <h2 className="mt-2 font-serif text-xl font-medium leading-snug text-ink-parchment">
+                      {selectedCell.character}
+                    </h2>
+                    <p className="mt-3 border-l-2 border-border-prominent pl-3 font-serif text-[14px] italic leading-relaxed text-ink-bone">
+                      &ldquo;{selectedCell.fact}&rdquo;
+                    </p>
 
-                  {selectedCell ? (
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash">Character</p>
-                        <p className="text-sm font-serif text-ink-parchment mt-0.5 font-medium">
-                          {selectedCell.character}
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash">Fact / Secret</p>
-                        <p className="text-xs font-sans text-ink-bone mt-0.5 leading-relaxed bg-surface-subtle p-3 rounded-lg border border-border-quiet">
-                          &ldquo;{selectedCell.fact}&rdquo;
-                        </p>
-                      </div>
-
-                      {selectedCell.knows ? (
-                        <>
-                          <div className="flex items-center justify-between text-xs font-mono">
-                            <span className="text-ink-ash">Learned in Chapter:</span>
-                            <span className="text-ink-parchment px-2 py-0.5 bg-surface-subtle border border-border-quiet rounded">
-                              Ch. {selectedCell.since_chapter ?? "?"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-xs font-mono">
-                            <span className="text-ink-ash">How Learned:</span>
-                            <span className="text-ink-parchment capitalize">
-                              {(selectedCell.how_learned || "unknown").replace(/_/g, " ")}
-                            </span>
-                          </div>
-
-                          {selectedCell.source_character && (
-                            <div className="flex items-center justify-between text-xs font-mono">
-                              <span className="text-ink-ash">Source:</span>
-                              <span className="text-ink-parchment">{selectedCell.source_character}</span>
-                            </div>
-                          )}
-
-                          {selectedCell.propagated && (
-                            <div className="p-3 rounded-lg bg-surface-subtle border border-border-quiet text-[11px] font-mono text-ink-bone flex items-center gap-2">
-                              <ChevronRight className="w-3 h-3 text-wine-accent" />
-                              Inferred through secret propagation
-                            </div>
-                          )}
-
-                          <div className="pt-2">
-                            <Link
-                              href={`/projects/${projectId}/reader?chapter=${selectedCell.since_chapter ?? 1}`}
-                              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-surface-subtle hover:bg-surface-elevated border border-border-quiet text-xs font-mono text-ink-parchment transition-colors"
-                            >
-                              <BookOpen className="w-3.5 h-3.5 text-wine-accent" />
-                              Open Chapter in Reader
-                            </Link>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="p-4 rounded-lg bg-surface-subtle border border-border-quiet text-center space-y-2">
-                          <EyeOff className="w-6 h-6 text-ink-faint mx-auto opacity-50" />
-                          <p className="text-xs font-sans text-ink-ash">
-                            {selectedCell.character} has not been exposed to this fact as of Chapter{" "}
-                            {chapterScrubber ?? maxChapter}.
-                          </p>
-                          <p className="text-[11px] font-mono text-severity-thread">
-                            ✓ Dramatic irony opportunity available
-                          </p>
+                    {selectedCell.knows ? (
+                      <dl className="mt-5 space-y-2">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                            learned
+                          </dt>
+                          <dd className="font-mono text-[11px] text-ink-bone">
+                            ch. {selectedCell.since_chapter ?? "?"}
+                          </dd>
                         </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="py-12 text-center space-y-2 text-ink-ash">
-                      <Compass className="w-8 h-8 mx-auto opacity-40 text-ink-faint" />
-                      <p className="text-xs">Click any cell in the matrix to inspect textual proof and propagation history.</p>
-                    </div>
-                  )}
-                </Surface>
-              </div>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                            how
+                          </dt>
+                          <dd className="text-right font-serif text-[13px] capitalize text-ink-bone">
+                            {(selectedCell.how_learned || "unknown").replace(/_/g, " ")}
+                          </dd>
+                        </div>
+                        {selectedCell.source_character && (
+                          <div className="flex items-baseline justify-between gap-3">
+                            <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                              from
+                            </dt>
+                            <dd className="text-right font-serif text-[13px] text-ink-bone">
+                              {selectedCell.source_character}
+                            </dd>
+                          </div>
+                        )}
+                        {selectedCell.propagated && (
+                          <p className="pt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                            passed along the chain, not witnessed
+                          </p>
+                        )}
+                      </dl>
+                    ) : (
+                      <p className="mt-5 font-serif text-[14px] italic leading-relaxed text-ink-ash">
+                        {selectedCell.character} has not been exposed to this as of chapter{" "}
+                        {asOfChapter}. A door still closed — dramatic irony, if you want it.
+                      </p>
+                    )}
+
+                    <Link
+                      href={`/projects/${projectId}/reader?chapter=${
+                        selectedCell.since_chapter ?? 1
+                      }`}
+                      className="mt-6 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash transition-colors hover:text-ink-parchment"
+                    >
+                      Read the chapter
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
+                ) : (
+                  <p className="font-serif text-[15px] italic leading-relaxed text-ink-ash">
+                    Pick any square to see when that person learned it, and whether they learned it
+                    firsthand.
+                  </p>
+                )}
+              </aside>
             </div>
           )}
-        </div>
-      )}
-
-      {/* TAB 2: Factual Claims Grid */}
-      {activeTab === "claims" && (
-        <div className="space-y-6">
-          {/* Claims Filter Bar */}
-          <Surface depth={1} border="quiet" className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Search claims, subjects, quotes..."
-                  value={claimSearch}
-                  onChange={(e) => setClaimSearch(e.target.value)}
-                  className="bg-surface-card border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-ink-parchment placeholder:text-ink-faint outline-none focus:border-wine-accent w-64"
-                />
-              </div>
-
-              <span className="text-border-subtle font-mono text-xs hidden sm:inline">|</span>
-
-              <div className="flex items-center gap-2 text-xs font-mono text-ink-ash">
-                <Filter className="w-3.5 h-3.5" />
-                <span>Subject:</span>
-              </div>
+        </section>
+      ) : (
+        <section className="mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <input
+              type="text"
+              value={claimSearch}
+              onChange={(event) => setClaimSearch(event.target.value)}
+              placeholder="Search a claim, a name, a line"
+              className="w-64 border-0 border-b border-border-quiet bg-transparent pb-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+            />
+            <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
               <select
                 value={claimSubjectFilter}
-                onChange={(e) => setClaimSubjectFilter(e.target.value)}
-                className="bg-surface-card border border-border-subtle rounded-lg px-3 py-1.5 text-xs text-ink-parchment outline-none focus:border-wine-accent cursor-pointer"
+                onChange={(event) => setClaimSubjectFilter(event.target.value)}
+                aria-label="Filter claims by subject"
+                className="cursor-pointer bg-transparent text-ink-ash focus:outline-none"
               >
-                <option value="all">All Subjects ({claimSubjects.length})</option>
-                {claimSubjects.map((sub) => (
-                  <option key={sub} value={sub}>
-                    {sub}
+                <option value="all" className="bg-surface-elevated">
+                  all subjects ({claimSubjects.length})
+                </option>
+                {claimSubjects.map((subject) => (
+                  <option key={subject} value={subject} className="bg-surface-elevated">
+                    {subject}
                   </option>
                 ))}
               </select>
+              <span>{filteredClaims.length} shown</span>
             </div>
-
-            <div className="text-xs font-mono text-ink-faint">
-              Showing <span className="text-ink-parchment font-medium">{filteredClaims.length}</span> of {claims.length} claims
-            </div>
-          </Surface>
+          </div>
 
           {claimsLoading ? (
-            <div className="py-24 text-center space-y-3">
-              <div className="w-6 h-6 border-2 border-wine-accent border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs font-mono text-ink-ash">Loading extracted claims corpus...</p>
-            </div>
+            <p className="py-24 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+              Reading the claims…
+            </p>
           ) : filteredClaims.length === 0 ? (
-            <Surface depth={2} border="subtle" className="p-12 text-center rounded-2xl max-w-xl mx-auto space-y-4">
-              <Layers className="w-10 h-10 text-ink-ash mx-auto opacity-50" />
-              <h3 className="font-serif text-lg text-ink-parchment">No Claims Match Filter</h3>
-              <p className="text-xs text-ink-ash leading-relaxed">
-                Try widening your search terms or clearing the subject filter.
-              </p>
-            </Surface>
+            <p className="py-20 text-center font-serif text-[15px] italic text-ink-ash">
+              No claims match that.
+            </p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <ol className="mt-6">
               {filteredClaims.map((claim) => (
-                <Surface
-                  key={claim.id}
-                  depth={2}
-                  border={claim.validation_state === "contradicted" ? "contradiction" : "subtle"}
-                  className="p-5 rounded-xl space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-surface-subtle text-ink-parchment border border-border-quiet">
-                        Ch. {claim.chapter}
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] font-mono text-ink-ash">
-                          {Math.round((claim.confidence || 0) * 100)}% conf
-                        </span>
-                        {claim.validation_state === "contradicted" ? (
-                          <span className="w-2 h-2 rounded-full bg-wine-crimson" title="Contradicted" />
-                        ) : (
-                          <span className="w-2 h-2 rounded-full bg-severity-thread" title="Verified" />
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5 font-mono text-xs text-ink-parchment font-medium">
-                        <span className="text-wine-accent">{claim.subject}</span>
-                        <span className="text-ink-ash">→</span>
-                        <span className="text-ink-bone">{claim.attribute}</span>
-                      </div>
-                      <p className="text-sm font-sans font-medium text-ink-parchment">
-                        {claim.value}
-                      </p>
-                    </div>
-
-                    {claim.evidence_quote && (
-                      <p className="text-xs font-serif italic text-ink-ash bg-surface-subtle p-2.5 rounded-lg border-l border-border-prominent">
-                        &ldquo;{claim.evidence_quote}&rdquo;
-                      </p>
-                    )}
+                <li key={claim.id} className="border-b border-border-quiet py-4">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <p className="min-w-0 text-[14px] text-ink-bone">
+                      <span className="font-serif text-ink-parchment">{claim.subject}</span>
+                      <span className="text-ink-faint"> · {claim.attribute} · </span>
+                      <span className="font-mono text-[13px] text-wine-crimson">{claim.value}</span>
+                    </p>
+                    <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                      ch. {String(claim.chapter).padStart(2, "0")} ·{" "}
+                      {Math.round((claim.confidence || 0) * 100)}%
+                    </span>
                   </div>
 
-                  <div className="pt-2 border-t border-border-quiet flex items-center justify-between text-xs">
-                    <span className="font-mono text-[11px] text-ink-faint">
-                      Status: {claim.status || "active"}
-                    </span>
+                  {claim.evidence_quote && (
+                    <p className="mt-2 max-w-[80ch] border-l border-border-prominent pl-3 font-serif text-[13px] italic leading-relaxed text-ink-ash">
+                      &ldquo;{claim.evidence_quote}&rdquo;
+                    </p>
+                  )}
+
+                  <div className="mt-2 flex items-center gap-4 font-mono text-[9px] uppercase tracking-[0.16em]">
                     <Link
                       href={`/projects/${projectId}/reader?chapter=${claim.chapter}`}
-                      className="text-[11px] font-mono text-wine-accent hover:text-ink-parchment flex items-center gap-1 transition-colors"
+                      className="text-ink-faint transition-colors hover:text-ink-parchment"
                     >
-                      Read Folio <ArrowRight className="w-3 h-3" />
+                      Read chapter
                     </Link>
+                    {claim.validation_state === "contradicted" && (
+                      <span className="text-severity-contradiction">contradicted</span>
+                    )}
+                    <span className="text-ink-faint">{claim.status || "active"}</span>
                   </div>
-                </Surface>
+                </li>
               ))}
-            </div>
+            </ol>
           )}
-        </div>
+        </section>
       )}
     </div>
   );

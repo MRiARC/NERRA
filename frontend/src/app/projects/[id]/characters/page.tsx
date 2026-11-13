@@ -1,333 +1,425 @@
 "use client";
 
-import React, { useState, use, useMemo } from "react";
+import React, { use, useMemo, useState } from "react";
 import Link from "next/link";
-import { useCharacters, useProject } from "@/hooks/useStoryData";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import {
-  Users,
-  Search,
-  BookOpen,
-  ArrowRight,
-  UserCheck,
-  Tag,
-  Eye,
-  Sliders,
-  Filter,
-  Sparkles,
-  ChevronRight,
-  ExternalLink,
-} from "lucide-react";
+import { useCharacters, useStoryGraph } from "@/hooks/useStoryData";
+import { PageHeader, SectionHeading } from "@/components/ui/PageHeader";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "motion/react";
-import type { Character } from "@/lib/types";
+import { BookOpen } from "lucide-react";
 
 interface CharactersPageProps {
   params: Promise<{ id: string }>;
 }
 
+const VIEW_W = 1000;
+const VIEW_H = 660;
+
+type Positioned = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  index: number;
+};
+
+/**
+ * The cast page is a constellation: people placed around the story, joined by
+ * the relationships the manuscript actually asserts. Clicking a person opens
+ * their dossier; their lines stay lit while the rest of the sky dims.
+ */
 export default function CharactersPage({ params }: CharactersPageProps) {
   const resolvedParams = use(params);
   const projectId = resolvedParams.id;
 
   const { data: characters = [], isLoading } = useCharacters(projectId);
+  const { data: graph } = useStoryGraph(projectId);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
 
-  // Filter characters
-  const filteredCharacters = useMemo(() => {
-    return characters.filter((c) => {
-      if (statusFilter !== "all" && (c.status || "active") !== statusFilter) {
-        return false;
-      }
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        return (
-          c.name.toLowerCase().includes(q) ||
-          c.description?.toLowerCase().includes(q) ||
-          c.aliases?.some((a) => a.toLowerCase().includes(q))
-        );
-      }
-      return true;
+  const visibleCharacters = useMemo(() => {
+    return characters.filter((character) => {
+      if (statusFilter !== "all" && (character.status || "active") !== statusFilter) return false;
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        character.name.toLowerCase().includes(query) ||
+        character.description?.toLowerCase().includes(query) ||
+        character.aliases?.some((alias) => alias.toLowerCase().includes(query))
+      );
     });
   }, [characters, statusFilter, searchQuery]);
 
-  // Selected character dossier
-  const selectedCharacter = characters.find((c) => c.id === selectedCharacterId) || characters[0];
+  const positions = useMemo<Positioned[]>(() => {
+    const count = visibleCharacters.length;
+    if (count === 0) return [];
+    const centerX = VIEW_W / 2;
+    const centerY = VIEW_H / 2 - 10;
+    const radiusX = count > 10 ? 350 : 300;
+    const radiusY = count > 10 ? 235 : 205;
+
+    return visibleCharacters.map((character, index) => {
+      const angle = (index / count) * Math.PI * 2 - Math.PI / 2;
+      return {
+        id: character.id,
+        name: character.name,
+        index,
+        x: centerX + Math.cos(angle) * radiusX,
+        y: centerY + Math.sin(angle) * radiusY,
+      };
+    });
+  }, [visibleCharacters]);
+
+  const positionById = useMemo(() => {
+    const map = new Map<string, Positioned>();
+    for (const position of positions) map.set(position.id, position);
+    return map;
+  }, [positions]);
+
+  const edges = useMemo(() => {
+    const raw = graph?.edges || [];
+    return raw
+      .filter((edge) => positionById.has(edge.source) && positionById.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        from: positionById.get(edge.source)!,
+        to: positionById.get(edge.target)!,
+      }));
+  }, [graph?.edges, positionById]);
+
+  const connectionsById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const edge of edges) {
+      map.set(edge.source, (map.get(edge.source) || 0) + 1);
+      map.set(edge.target, (map.get(edge.target) || 0) + 1);
+    }
+    return map;
+  }, [edges]);
+
+  const selectedCharacter =
+    characters.find((c) => c.id === (selectedId ?? hoveredId)) || null;
+
+  const selectedRelations = useMemo(() => {
+    if (!selectedCharacter) return [];
+    return edges
+      .filter((edge) => edge.source === selectedCharacter.id || edge.target === selectedCharacter.id)
+      .map((edge) => {
+        const otherId = edge.source === selectedCharacter.id ? edge.target : edge.source;
+        const other = characters.find((c) => c.id === otherId);
+        return { id: edge.id, other, relation: edge.relation, chapter: edge.since_chapter };
+      })
+      .filter((entry) => entry.other);
+  }, [edges, selectedCharacter, characters]);
+
+  const totalConnections = edges.length;
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in pb-24">
-      {/* Header & Mission Banner */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border-subtle pb-6">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-widest text-ink-ash font-medium">
-              Cast &amp; Personae Canon
-            </span>
-            <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
-              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
-              {characters.length} Active Personae Tracked
-            </span>
-          </div>
-          <h1 className="text-3xl font-serif font-normal tracking-tight text-ink-parchment flex items-center gap-3">
-            <Users className="w-7 h-7 text-wine-accent" />
-            Character Bible
-          </h1>
-          <p className="text-sm text-ink-ash max-w-2xl leading-relaxed">
-            Preserve physical trait invariants, aliases, and character arcs.
-            Guarantee eye colors, birthmarks, and core motivations never contradict across folios.
-          </p>
-        </div>
-
-        {/* Action Controls */}
-        <div className="flex items-center gap-3">
+    <div className="w-full max-w-6xl mx-auto px-6 sm:px-8 py-10 sm:py-14">
+      <PageHeader
+        eyebrow="Cast"
+        title="The people in this story"
+        line={
+          characters.length === 0
+            ? "No one has been read into the cast yet."
+            : `${characters.length} ${
+                characters.length === 1 ? "person" : "people"
+              }, ${totalConnections} recorded ${
+                totalConnections === 1 ? "connection" : "connections"
+              }. Select anyone to bring their lines forward.`
+        }
+        actions={
           <Link
             href={`/projects/${projectId}/knowledge`}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-surface-card hover:bg-surface-elevated border border-border-subtle text-xs font-mono text-ink-parchment transition-colors"
+            className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash transition-colors hover:text-ink-parchment"
           >
-            <Eye className="w-3.5 h-3.5 text-wine-accent" />
-            Epistemic Knowledge Matrix
+            Who knows what →
           </Link>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Control Deck */}
-      <Surface depth={1} border="quiet" className="p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search cast by name, alias, trait..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-surface-card border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs text-ink-parchment placeholder:text-ink-faint outline-none focus:border-wine-accent w-64"
-            />
-          </div>
-
-          <span className="text-border-subtle font-mono text-xs hidden sm:inline">|</span>
-
-          <div className="flex items-center gap-2 text-xs font-mono text-ink-ash">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Status:</span>
-          </div>
+      {/* Quiet controls */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search a name or alias"
+            className="w-56 border-0 border-b border-border-quiet bg-transparent pb-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-parchment placeholder:text-ink-faint focus:border-border-prominent focus:outline-none"
+          />
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-surface-card border border-border-subtle rounded-lg px-3 py-1.5 text-xs text-ink-parchment outline-none focus:border-wine-accent cursor-pointer"
+            onChange={(event) => setStatusFilter(event.target.value)}
+            aria-label="Filter by status"
+            className="cursor-pointer bg-transparent font-mono text-[10px] uppercase tracking-[0.14em] text-ink-ash focus:outline-none"
           >
-            <option value="all">All Cast ({characters.length})</option>
-            <option value="active">Active</option>
-            <option value="deceased">Deceased</option>
-            <option value="missing">Missing</option>
+            <option value="all" className="bg-surface-elevated">
+              All
+            </option>
+            <option value="active" className="bg-surface-elevated">
+              Alive
+            </option>
+            <option value="deceased" className="bg-surface-elevated">
+              Dead
+            </option>
+            <option value="missing" className="bg-surface-elevated">
+              Missing
+            </option>
           </select>
         </div>
 
-        <div className="text-xs font-mono text-ink-faint">
-          Showing <span className="text-ink-parchment font-medium">{filteredCharacters.length}</span> of {characters.length} characters
+        <div className="flex items-center gap-4 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+          <span className="flex items-center gap-1.5">
+            <span className="h-px w-5 bg-pine-moss/60" /> warmth
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-px w-5 bg-wine-crimson/60" /> friction
+          </span>
         </div>
-      </Surface>
+      </div>
 
-      {/* Main Split: Cast List & Dossier Pane */}
       {isLoading ? (
-        <div className="py-24 text-center space-y-3">
-          <div className="w-6 h-6 border-2 border-wine-accent border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-xs font-mono text-ink-ash">Loading character dossiers from knowledge graph...</p>
-        </div>
-      ) : filteredCharacters.length === 0 ? (
-        <Surface depth={2} border="subtle" className="p-12 text-center rounded-2xl max-w-xl mx-auto space-y-4">
-          <Users className="w-10 h-10 text-ink-ash mx-auto opacity-50" />
-          <h3 className="font-serif text-lg text-ink-parchment">No Characters Found</h3>
-          <p className="text-xs text-ink-ash leading-relaxed">
-            No characters match your search filter. Characters are automatically discovered as chapters are ingested.
+        <p className="py-24 text-center font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+          Drawing the constellation…
+        </p>
+      ) : visibleCharacters.length === 0 ? (
+        <div className="mt-10 border-t border-dashed border-border-subtle py-20 text-center">
+          <p className="font-serif text-xl text-ink-parchment">An empty stage.</p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-ink-faint">
+            Cast members appear as chapters are read
           </p>
-        </Surface>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Cast Cards Stream */}
-          <div className="lg:col-span-2 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredCharacters.map((char) => {
-                const isSelected = selectedCharacter?.id === char.id;
-                const traitCount = char.physical_traits
-                  ? Object.keys(char.physical_traits).length
-                  : 0;
+        <div className="mt-6 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_300px]">
+          {/* Constellation */}
+          <div className="relative">
+            <svg
+              viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+              className="h-auto w-full overflow-visible"
+              role="group"
+              aria-label="Character relationship map"
+            >
+              {edges.map((edge) => {
+                const isLit =
+                  !selectedCharacter ||
+                  edge.source === selectedCharacter.id ||
+                  edge.target === selectedCharacter.id;
+                const warmth = (edge.sentiment || "").toLowerCase();
+                const stroke =
+                  warmth.includes("neg") || warmth.includes("hostil") || warmth.includes("conflict")
+                    ? "var(--wine-crimson)"
+                    : warmth.includes("pos") || warmth.includes("affection") || warmth.includes("trust")
+                    ? "var(--pine-moss)"
+                    : "var(--border-prominent)";
 
                 return (
-                  <Surface
-                    key={char.id}
-                    depth={2}
-                    border={isSelected ? "focus" : "subtle"}
-                    className={cn(
-                      "p-5 rounded-xl cursor-pointer transition-all duration-200 flex flex-col justify-between space-y-4",
-                      isSelected ? "ring-1 ring-border-focus" : "hover:border-border-prominent"
-                    )}
-                    onClick={() => setSelectedCharacterId(char.id)}
-                  >
-                    <div className="space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-lg font-serif font-medium text-ink-parchment">
-                            {char.name}
-                          </h3>
-                          {char.aliases && char.aliases.length > 0 && (
-                            <p className="text-xs font-mono text-ink-ash mt-0.5">
-                              aka {char.aliases.join(", ")}
-                            </p>
-                          )}
-                        </div>
-
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider border",
-                            char.status === "deceased"
-                              ? "bg-wine-crimson/15 text-wine-crimson border-wine-crimson/30"
-                              : "bg-surface-subtle text-ink-ash border-border-quiet"
-                          )}
-                        >
-                          {char.status || "active"}
-                        </span>
-                      </div>
-
-                      {char.description && (
-                        <p className="text-xs font-sans text-ink-ash leading-relaxed line-clamp-3">
-                          {char.description}
-                        </p>
-                      )}
-
-                      {/* Physical Traits Preview Tags */}
-                      {char.physical_traits && Object.keys(char.physical_traits).length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {Object.entries(char.physical_traits).slice(0, 3).map(([k, v]) => (
-                            <span
-                              key={k}
-                              className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-subtle border border-border-quiet text-ink-bone"
-                            >
-                              {k}: <span className="text-ink-parchment">{String(v)}</span>
-                            </span>
-                          ))}
-                          {traitCount > 3 && (
-                            <span className="font-mono text-[10px] px-1.5 py-0.5 text-ink-faint">
-                              +{traitCount - 3} more
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-3 border-t border-border-quiet flex items-center justify-between text-xs font-mono text-ink-ash">
-                      <span>
-                        Ch. {char.first_chapter || 1} — {char.last_chapter || 1}
-                      </span>
-                      <span className="text-wine-accent flex items-center gap-1 group-hover:text-ink-parchment">
-                        View Dossier <ChevronRight className="w-3 h-3" />
-                      </span>
-                    </div>
-                  </Surface>
+                  <line
+                    key={edge.id}
+                    x1={edge.from.x}
+                    y1={edge.from.y}
+                    x2={edge.to.x}
+                    y2={edge.to.y}
+                    stroke={stroke}
+                    strokeWidth={isLit ? 1.1 : 0.6}
+                    strokeOpacity={isLit ? 0.5 : 0.12}
+                    className="transition-all duration-300"
+                  />
                 );
               })}
-            </div>
+
+              {positions.map((position) => {
+                const character = visibleCharacters[position.index];
+                const isSelected = selectedCharacter?.id === character.id;
+                const isDimmed = Boolean(selectedCharacter) && !isSelected;
+                const isDeceased = character.status === "deceased";
+                const labelBelow = position.index % 2 === 0;
+
+                return (
+                  <g
+                    key={character.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${character.name}, ${connectionsById.get(character.id) || 0} connections`}
+                    onClick={() => setSelectedId(character.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedId(character.id);
+                      }
+                    }}
+                    onMouseEnter={() => setHoveredId(character.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    onFocus={() => setHoveredId(character.id)}
+                    onBlur={() => setHoveredId(null)}
+                    className={cn(
+                      "cursor-pointer transition-opacity duration-300 focus:outline-none",
+                      isDimmed ? "opacity-35" : "opacity-100"
+                    )}
+                  >
+                    <circle
+                      cx={position.x}
+                      cy={position.y}
+                      r={isSelected ? 9 : 6}
+                      fill={isSelected ? "var(--wine-crimson)" : "var(--surface-card)"}
+                      stroke={isDeceased ? "var(--wine-crimson)" : "var(--border-prominent)"}
+                      strokeWidth={isDeceased ? 1.6 : 1}
+                      className="transition-all duration-300"
+                    />
+                    <text
+                      x={position.x}
+                      y={position.y + (labelBelow ? 24 : -14)}
+                      textAnchor="middle"
+                      className="fill-ink-parchment font-serif"
+                      fontSize={isSelected ? 14 : 12.5}
+                    >
+                      {character.name}
+                    </text>
+                    <text
+                      x={position.x}
+                      y={position.y + (labelBelow ? 36 : -2)}
+                      textAnchor="middle"
+                      className="fill-ink-faint font-mono uppercase"
+                      fontSize={8}
+                      letterSpacing={1.2}
+                    >
+                      {connectionsById.get(character.id) || 0} links
+                      {character.first_chapter ? ` · ch.${character.first_chapter}` : ""}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            <p className="mt-2 text-center font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+              Hover to read · click to hold open
+            </p>
           </div>
 
-          {/* Selected Character Detailed Dossier */}
-          <div className="lg:col-span-1">
+          {/* Dossier */}
+          <aside className="lg:sticky lg:top-6 lg:self-start">
             {selectedCharacter ? (
-              <Surface depth={2} border="subtle" className="p-6 rounded-xl space-y-6 sticky top-6">
-                <div className="flex items-start justify-between border-b border-border-quiet pb-4">
-                  <div className="space-y-1">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-ink-ash">
-                      Canon Cast Dossier
-                    </span>
-                    <h2 className="text-2xl font-serif font-medium text-ink-parchment">
-                      {selectedCharacter.name}
-                    </h2>
-                  </div>
-                  <span className="font-mono text-xs px-2.5 py-1 rounded bg-surface-subtle text-ink-parchment border border-border-quiet">
-                    {selectedCharacter.status || "active"}
-                  </span>
-                </div>
+              <div>
+                <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+                  Dossier
+                </p>
+                <h2 className="mt-2 font-serif text-2xl font-medium text-ink-parchment">
+                  {selectedCharacter.name}
+                </h2>
+                <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-ash">
+                  {(selectedCharacter.status || "active").replace(/_/g, " ")}
+                  {selectedCharacter.first_chapter
+                    ? ` · ch. ${String(selectedCharacter.first_chapter).padStart(2, "0")} → ${
+                        selectedCharacter.last_chapter
+                          ? String(selectedCharacter.last_chapter).padStart(2, "0")
+                          : "—"
+                      }`
+                    : ""}
+                </p>
 
-                {/* Aliases */}
-                {selectedCharacter.aliases && selectedCharacter.aliases.length > 0 && (
-                  <div>
-                    <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1.5">
-                      Known Aliases &amp; Monikers
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedCharacter.aliases.map((al, idx) => (
-                        <span
-                          key={idx}
-                          className="font-mono text-xs px-2.5 py-1 rounded bg-surface-subtle border border-border-quiet text-ink-parchment"
-                        >
-                          {al}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {selectedCharacter.aliases?.length > 0 && (
+                  <p className="mt-3 font-serif text-[13px] italic text-ink-ash">
+                    also called {selectedCharacter.aliases.join(", ")}
+                  </p>
                 )}
 
-                {/* Description */}
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1.5">
-                    Character Biography &amp; Role
-                  </p>
-                  <p className="text-xs font-sans text-ink-bone leading-relaxed bg-surface-subtle p-3.5 rounded-lg border border-border-quiet">
-                    {selectedCharacter.description || "No biographical profile recorded yet."}
-                  </p>
-                </div>
+                <p className="mt-4 border-t border-border-quiet pt-4 text-[13px] leading-relaxed text-ink-bone">
+                  {selectedCharacter.description || "No biography recorded yet."}
+                </p>
 
-                {/* Physical Traits Invariant Grid */}
-                <div>
-                  <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-2">
-                    Physical Trait Invariants
-                  </p>
-                  {selectedCharacter.physical_traits &&
-                  Object.keys(selectedCharacter.physical_traits).length > 0 ? (
-                    <div className="space-y-2">
-                      {Object.entries(selectedCharacter.physical_traits).map(([trait, val]) => (
-                        <div
-                          key={trait}
-                          className="flex items-center justify-between p-2 rounded bg-surface-subtle border border-border-quiet text-xs font-mono"
-                        >
-                          <span className="text-ink-ash uppercase text-[10px]">{trait}</span>
-                          <span className="text-ink-parchment font-medium">{String(val)}</span>
-                        </div>
-                      ))}
+                {Object.keys(selectedCharacter.physical_traits || {}).length > 0 && (
+                  <dl className="mt-5 space-y-2">
+                    {Object.entries(selectedCharacter.physical_traits).map(([trait, value]) => (
+                      <div key={trait} className="flex items-baseline justify-between gap-3">
+                        <dt className="font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                          {trait}
+                        </dt>
+                        <dd className="text-right font-serif text-[13px] text-ink-bone">
+                          {String(value)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+
+                {selectedRelations.length > 0 && (
+                  <>
+                    <div className="mt-6">
+                      <SectionHeading
+                        label="Connections"
+                        meta={<span>{selectedRelations.length}</span>}
+                      />
                     </div>
-                  ) : (
-                    <p className="text-xs font-mono text-ink-ash bg-surface-subtle p-3 rounded-lg border border-border-quiet">
-                      No physical trait assertions parsed yet.
-                    </p>
-                  )}
-                </div>
+                    <ul className="divide-y divide-border-quiet">
+                      {selectedRelations.map((relation) => (
+                        <li key={relation.id} className="py-2.5">
+                          <p className="text-[13px] text-ink-bone">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedId(relation.other!.id)}
+                              className="font-serif text-ink-parchment transition-colors hover:text-wine-crimson"
+                            >
+                              {relation.other!.name}
+                            </button>
+                            <span className="text-ink-ash"> · {relation.relation.replace(/_/g, " ")}</span>
+                          </p>
+                          {relation.chapter ? (
+                            <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                              since ch. {relation.chapter}
+                            </p>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
 
-                {/* Chapter Horizon */}
-                <div className="flex items-center justify-between p-3 rounded bg-surface-subtle border border-border-quiet text-xs font-mono">
-                  <span className="text-ink-ash">Manuscript Arc:</span>
-                  <span className="text-ink-parchment font-medium">
-                    First in Ch. {selectedCharacter.first_chapter || 1} • Last in Ch.{" "}
-                    {selectedCharacter.last_chapter || 1}
-                  </span>
-                </div>
-
-                {/* Deep Link to Reader */}
-                <div className="pt-2">
-                  <Link
-                    href={`/projects/${projectId}/reader?chapter=${selectedCharacter.first_chapter || 1}`}
-                    className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-surface-subtle hover:bg-surface-elevated border border-border-quiet text-xs font-mono text-ink-parchment transition-colors"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-wine-accent" />
-                    Read First Appearance in Ch. {selectedCharacter.first_chapter || 1}
-                  </Link>
-                </div>
-              </Surface>
-            ) : null}
-          </div>
+                <Link
+                  href={`/projects/${projectId}/reader?chapter=${selectedCharacter.first_chapter || 1}`}
+                  className="mt-6 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash transition-colors hover:text-ink-parchment"
+                >
+                  <BookOpen className="h-3 w-3" />
+                  First appearance
+                </Link>
+              </div>
+            ) : (
+              <p className="font-serif text-[15px] italic leading-relaxed text-ink-ash">
+                Hover a person to read their dossier. Click to keep it open while you follow a line.
+              </p>
+            )}
+          </aside>
         </div>
+      )}
+
+      {/* Index */}
+      {visibleCharacters.length > 0 && (
+        <section className="mt-14">
+          <SectionHeading label="Index of names" meta={<span>{visibleCharacters.length}</span>} />
+          <ul className="mt-1 divide-y divide-border-quiet">
+            {visibleCharacters.map((character) => (
+              <li key={character.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(character.id)}
+                  className="flex w-full items-baseline justify-between gap-4 py-3 text-left"
+                >
+                  <span className="min-w-0 truncate">
+                    <span className="font-serif text-[15px] text-ink-bone">{character.name}</span>
+                    {character.aliases?.length > 0 && (
+                      <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
+                        {character.aliases.join(", ")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint">
+                    {connectionsById.get(character.id) || 0} links
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );
