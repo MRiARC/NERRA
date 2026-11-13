@@ -4,14 +4,15 @@ import { cn } from "@/lib/utils";
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  hint?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, label, error, id, type = "text", ...props }, ref) => {
+  ({ className, label, error, hint, id, type = "text", ...props }, ref) => {
     return (
       <div className="w-full space-y-1.5">
         {label && (
-          <label htmlFor={id} className="block text-xs font-medium text-[#B5ACA0]">
+          <label htmlFor={id} className="block text-xs font-medium text-ink-bone tracking-wide">
             {label}
           </label>
         )}
@@ -20,13 +21,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={id}
           type={type}
           className={cn(
-            "w-full rounded-lg bg-[#0A0B0E] border border-white/10 px-3.5 py-2 text-sm text-[#EDE6D6] placeholder:text-[#7D756C] transition-all duration-200 outline-none focus:border-[#C5A059]/60 focus:ring-2 focus:ring-[#C5A059]/15 disabled:opacity-50",
-            error && "border-[#9B2242] focus:border-[#9B2242] focus:ring-[#9B2242]/20",
+            "w-full rounded-[4px] bg-surface-subtle border border-border-subtle px-3 py-2 text-xs text-ink-parchment placeholder:text-ink-faint transition-all duration-150 outline-none focus:border-border-focus focus:ring-1 focus:ring-wine-accent/30 disabled:opacity-40",
+            error && "border-severity-contradiction focus:border-severity-contradiction focus:ring-severity-contradiction/20",
             className
           )}
           {...props}
         />
-        {error && <p className="text-[11px] text-[#F87171]">{error}</p>}
+        {hint && !error && <p className="text-[11px] text-ink-ash">{hint}</p>}
+        {error && <p className="text-[11px] text-severity-contradiction">{error}</p>}
       </div>
     );
   }

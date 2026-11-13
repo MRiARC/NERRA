@@ -1,7 +1,32 @@
 import type { Metadata } from "next";
+import { Newsreader, Literata, Plus_Jakarta_Sans } from "next/font/google";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { Toaster } from "sonner";
 import "./globals.css";
+
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
+  variable: "--font-newsreader",
+  display: "swap",
+});
+
+const literata = Literata({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  style: ["normal", "italic"],
+  variable: "--font-literata",
+  display: "swap",
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-jakarta",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "NERRA — Story Intelligence Operating System",
@@ -15,21 +40,24 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="h-full antialiased dark">
-      <body className="min-h-full flex flex-col bg-[#08090B] text-[#EDE6D6]">
+    <html
+      lang="en"
+      className={`h-full antialiased ${newsreader.variable} ${literata.variable} ${plusJakartaSans.variable}`}
+      data-theme="literary-obsidian"
+    >
+      <body className="min-h-full flex flex-col bg-surface-void text-ink-parchment selection:bg-wine-accent selection:text-ink-parchment">
         <QueryProvider>
-          {children}
-          <Toaster
-            theme="dark"
-            position="bottom-right"
-            toastOptions={{
-              style: {
-                background: "#140E13",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                color: "#EDE6D6",
-              },
-            }}
-          />
+          <ThemeProvider>
+            {children}
+            <Toaster
+              theme="dark"
+              position="bottom-right"
+              toastOptions={{
+                className:
+                  "!bg-surface-elevated !border !border-border-prominent !text-ink-parchment !shadow-2xl",
+              }}
+            />
+          </ThemeProvider>
         </QueryProvider>
       </body>
     </html>

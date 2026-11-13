@@ -74,8 +74,18 @@ class ProjectOut(BaseModel):
     id: uuid.UUID
     owner_id: uuid.UUID
     title: str
-    genre: str | None
+    genre: str | None = None
     created_at: object  # datetime — loosely typed to keep the schema simple
+    word_count: int = 0
+    chapter_count: int = 0
+    open_issue_count: int = 0
+    status: str = "draft"
+    character_count: int = 0
+    location_count: int = 0
+    object_count: int = 0
+    event_count: int = 0
+    claim_count: int = 0
+
 
 
 # ---------------------------------------------------------------------------
@@ -483,3 +493,28 @@ class ProjectCustomizationOut(BaseModel):
     custom_graph_write: dict = Field(default_factory=dict)
     custom_ui_config: dict = Field(default_factory=dict)
     updated_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Manuscript Chapters
+# ---------------------------------------------------------------------------
+
+
+class ChapterSummaryOut(BaseModel):
+    number: int
+    title: str
+    word_count: int
+    preview: str
+
+
+class ChapterDetailOut(BaseModel):
+    number: int
+    title: str
+    content: str
+    word_count: int
+
+
+class ChapterUpdateIn(BaseModel):
+    content: str = Field(min_length=1)
+    title: str | None = None
+

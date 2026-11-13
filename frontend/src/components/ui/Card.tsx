@@ -1,39 +1,58 @@
 import React, { forwardRef } from "react";
 import { cn } from "@/lib/utils";
+import { Surface, type SurfaceDepth, type SurfaceBorder } from "./Surface";
 
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: "burgundy" | "forest" | "void" | "subtle";
+  depth?: SurfaceDepth;
+  border?: SurfaceBorder;
   hoverEffect?: boolean;
+  /** Legacy variant prop for backward compatibility */
+  variant?: "burgundy" | "forest" | "void" | "subtle" | string;
 }
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ className, variant = "burgundy", hoverEffect = false, children, ...props }, ref) => {
-    const variantStyles = {
-      burgundy:
-        "bg-[#130D12] border border-white/[0.08] shadow-[0_4px_24px_rgba(0,0,0,0.4)]",
-      forest:
-        "bg-[#0C1310] border border-white/[0.08] shadow-[0_4px_24px_rgba(0,0,0,0.4)]",
-      void: "bg-[#08090B] border border-white/[0.06]",
-      subtle: "bg-white/[0.02] border border-white/[0.06]",
-    };
+  (
+    {
+      className,
+      depth = 2,
+      border = "subtle",
+      hoverEffect = false,
+      variant,
+      children,
+      ...props
+    },
+    ref
+  ) => {
+    // Map legacy variants
+    let resolvedDepth = depth;
+    let resolvedBorder = border;
 
-    const hoverStyles = hoverEffect
-      ? "hover:border-white/20 hover:shadow-[0_8px_32px_rgba(0,0,0,0.6)] hover:-translate-y-0.5 transition-all duration-300"
-      : "";
+    if (variant === "void") {
+      resolvedDepth = 0;
+      resolvedBorder = "quiet";
+    } else if (variant === "subtle") {
+      resolvedDepth = 1;
+      resolvedBorder = "quiet";
+    } else if (variant === "burgundy") {
+      resolvedDepth = 2;
+      resolvedBorder = "subtle";
+    } else if (variant === "forest") {
+      resolvedDepth = 2;
+      resolvedBorder = "thread";
+    }
 
     return (
-      <div
+      <Surface
         ref={ref}
-        className={cn(
-          "rounded-xl p-5 text-[#EDE6D6]",
-          variantStyles[variant],
-          hoverStyles,
-          className
-        )}
+        depth={resolvedDepth}
+        border={resolvedBorder}
+        interactive={hoverEffect}
+        rounded="sm"
+        className={cn("p-5 text-ink-parchment", className)}
         {...props}
       >
         {children}
-      </div>
+      </Surface>
     );
   }
 );

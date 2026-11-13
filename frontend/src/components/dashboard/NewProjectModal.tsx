@@ -20,6 +20,7 @@ export function NewProjectModal({
   onProjectCreated,
 }: NewProjectModalProps) {
   const [title, setTitle] = useState("");
+  const [genre, setGenre] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,9 +35,10 @@ export function NewProjectModal({
     setError("");
 
     try {
-      await api.projects.create(title.trim());
+      await api.projects.create(title.trim(), genre.trim() || undefined);
       toast.success(`Manuscript "${title}" created successfully`);
       setTitle("");
+      setGenre("");
       onClose();
       onProjectCreated();
     } catch (err: any) {
@@ -67,6 +69,14 @@ export function NewProjectModal({
           autoFocus
         />
 
+        <Input
+          id="manuscript-genre"
+          label="Genre / Literary Tone (Optional)"
+          placeholder="e.g. Gothic Fantasy Thriller, Hard Sci-Fi, Historical Noir"
+          value={genre}
+          onChange={(e) => setGenre(e.target.value)}
+        />
+
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button
             type="button"
@@ -79,7 +89,7 @@ export function NewProjectModal({
           </Button>
           <Button
             type="submit"
-            variant="wine"
+            variant="primary"
             size="sm"
             isLoading={isLoading}
             className="gap-2"

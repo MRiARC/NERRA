@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import type { Project } from "@/lib/types";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2 } from "lucide-react";
 
 interface ImportManuscriptModalProps {
   project: Project | null;
@@ -66,7 +66,7 @@ export function ImportManuscriptModal({
       isOpen={isOpen}
       onClose={onClose}
       title={`Import Draft to "${project.title}"`}
-      description="Upload your manuscript file (.txt, .md, .pdf). NERRA will automatically detect chapters, extract story entities, and audit consistency."
+      description="Upload your novel manuscript (.txt, .md, .docx, .pdf). NERRA will automatically extract characters, locations, temporal anchors, and audit continuity."
     >
       <div className="space-y-4 mt-2">
         {/* Drag and Drop Zone */}
@@ -78,45 +78,45 @@ export function ImportManuscriptModal({
           onDragLeave={() => setIsDragOver(false)}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
+          className={`border-2 border-dashed rounded-[4px] p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
             isDragOver
-              ? "border-[#C5A059] bg-[#C5A059]/10"
+              ? "border-wine-accent bg-wine-accent/10"
               : selectedFile
-              ? "border-[#1B8A5A] bg-[#1B8A5A]/10"
-              : "border-white/10 hover:border-white/20 bg-white/[0.02]"
+              ? "border-pine-accent bg-pine-accent/10"
+              : "border-border-subtle hover:border-border-prominent bg-surface-subtle"
           }`}
         >
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md,.pdf"
+            accept=".txt,.md,.pdf,.docx"
             onChange={handleFileChange}
             className="hidden"
           />
 
           {selectedFile ? (
             <>
-              <div className="w-12 h-12 rounded-full bg-[#1B8A5A]/20 border border-[#1B8A5A]/40 flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-[#34D399]" />
+              <div className="w-12 h-12 rounded-full bg-pine-accent/20 border border-pine-accent/40 flex items-center justify-center">
+                <CheckCircle2 className="w-6 h-6 text-pine-moss" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[#EDE6D6]">{selectedFile.name}</p>
-                <p className="text-xs text-[#7D756C] mt-0.5">
+                <p className="text-xs font-medium text-ink-parchment">{selectedFile.name}</p>
+                <p className="text-[11px] text-ink-ash mt-0.5">
                   {(selectedFile.size / 1024).toFixed(1)} KB • Ready for extraction
                 </p>
               </div>
             </>
           ) : (
             <>
-              <div className="w-12 h-12 rounded-full bg-white/[0.04] border border-white/10 flex items-center justify-center">
-                <UploadCloud className="w-6 h-6 text-[#C5A059]" />
+              <div className="w-12 h-12 rounded-full bg-surface-card border border-border-quiet flex items-center justify-center">
+                <UploadCloud className="w-6 h-6 text-wine-crimson" />
               </div>
               <div>
-                <p className="text-sm font-medium text-[#EDE6D6]">
+                <p className="text-xs font-medium text-ink-parchment">
                   Click to select or drag and drop manuscript
                 </p>
-                <p className="text-xs text-[#7D756C] mt-1">
-                  Supports .txt, .md, and .pdf files up to 50,000+ words
+                <p className="text-[11px] text-ink-ash mt-1">
+                  Supports .txt, .md, .docx, and .pdf files up to 50,000+ words
                 </p>
               </div>
             </>
@@ -126,6 +126,7 @@ export function ImportManuscriptModal({
         {/* Action Controls */}
         <div className="flex items-center justify-end gap-2 pt-2">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             onClick={onClose}
@@ -134,7 +135,8 @@ export function ImportManuscriptModal({
             Cancel
           </Button>
           <Button
-            variant="wine"
+            type="button"
+            variant="primary"
             size="sm"
             onClick={handleUpload}
             isLoading={isUploading}

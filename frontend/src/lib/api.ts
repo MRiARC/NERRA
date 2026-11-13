@@ -4,15 +4,32 @@
  * - Dual-auth: Bearer token + automatic HttpOnly cookie credentials
  * - Host-matched API resolution (localhost:3000 -> localhost:8001)
  * - 401 interception with rotating refresh token recycling
- * - Type-safe endpoint wrappers
+ * - Type-safe endpoint wrappers matching FastAPI router schemas
  */
 
 import type {
+  BibleExport,
+  ChapterDetail,
+  ChapterSummary,
+  Character,
+  ChatOut,
+  Claim,
+  Event,
   Issue,
+  KnowledgeMatrix,
+  Manuscript,
+  ManuscriptStatus,
+  PlotThread,
   Project,
+  ProjectCustomization,
+  StoryGraph,
+  Timeline,
   TokenOut,
   User,
   UserSession,
+  ValidationCandidate,
+  WorldData,
+  WorldRule,
 } from "./types";
 
 export function getApiBase(): string {
@@ -47,7 +64,7 @@ export function getAccessToken(): string | null {
   return null;
 }
 
-class ApiError extends Error {
+export class ApiError extends Error {
   status: number;
   data: any;
 
@@ -252,10 +269,10 @@ export const api = {
       return request<Project[]>("/projects");
     },
 
-    async create(title: string): Promise<Project> {
+    async create(title: string, genre?: string): Promise<Project> {
       return request<Project>("/projects", {
         method: "POST",
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, genre: genre || undefined }),
       });
     },
 
@@ -263,7 +280,7 @@ export const api = {
       return request<Project>(`/projects/${id}`);
     },
 
-    async update(id: string, payload: { title: string }): Promise<Project> {
+    async update(id: string, payload: { title?: string; genre?: string }): Promise<Project> {
       return request<Project>(`/projects/${id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
@@ -279,7 +296,7 @@ export const api = {
     async importManuscript(id: string, file: File): Promise<{ message: string; manuscript_id: string }> {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetchWithAuth(`/projects/${id}/manuscripts`, {
+      const res = await fetchWithAuth(`/projects/${id}/manuscripts/import`, {
         method: "POST",
         body: fd,
       });
@@ -290,8 +307,154 @@ export const api = {
       return res.json();
     },
 
-    async getIssues(projectId: string): Promise<Issue[]> {
-      return request<Issue[]>(`/projects/${projectId}/issues`);
+    async getManuscripts(projectId: string): Promise<Manuscript[]> {
+      return request<Manuscript[]>(`/projects/${projectId}/manuscripts`);
+    },
+
+    async getManuscriptStatus(projectId: string, manuscriptId: string): Promise<ManuscriptStatus> {
+      return request<ManuscriptStatus>(`/manuscripts/${manuscriptId}/status?project_id=${projectId}`);
+    },
+
+    async getChapters(projectId: string, manuscriptId: string): Promise<ChapterSummary[]> {
+      return request<ChapterSummary[]>(`/projects/${projectId}/manuscripts/${manuscriptId}/chapters`);
+    },
+
+    async getChapter(projectId: string, manuscriptId: string, chapterNumber: number): Promise<ChapterDetail> {
+      return request<ChapterDetail>(`/projects/${projectId}/manuscripts/${manuscriptId}/chapters/${chapterNumber}`);
+    },
+
+    async updateChapter(
+      projectId: string,
+      manuscriptId: string,
+      chapterNumber: number,
+      payload: { content: string; title?: string }
+    ): Promise<ChapterDetail> {
+      return request<ChapterDetail>(`/projects/${projectId}/manuscripts/${manuscriptId}/chapters/${chapterNumber}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async reanalyzeChapter(projectId: string, manuscriptId: string, chapterNumber?: number): Promise<ManuscriptStatus> {
+      const q = chapterNumber !== undefined ? `&chapter_number=${chapterNumber}` : "";
+      return request<ManuscriptStatus>(`/manuscripts/${manuscriptId}/reanalyze?project_id=${projectId}${q}`, {
+        method: "POST",
+      });
+    },
+  },
+
+  story: {
+    async getCharacters(projectId: string): Promise<Character[]> {
+      return request<Character[]>(`/projects/${projectId}/characters`);
+    },
+
+    async getCharacter(projectId: string, characterId: string): Promise<Character> {
+      return request<Character>(`/projects/${projectId}/characters/${characterId}`);
+    },
+
+    async getEvents(projectId: string): Promise<Event[]> {
+      return request<Event[]>(`/projects/${projectId}/events`);
+    },
+
+    async getTimeline(projectId: string, order = "narrative"): Promise<Timeline> {
+      return request<Timeline>(`/projects/${projectId}/timeline?order=${order}`);
+    },
+
+    async getGraph(projectId: string): Promise<StoryGraph> {
+      return request<StoryGraph>(`/projects/${projectId}/graph`);
+    },
+
+    async getKnowledgeMatrix(projectId: string, maxChapter?: number): Promise<KnowledgeMatrix> {
+      const q = maxChapter ? `?max_chapter=${maxChapter}` : "";
+      return request<KnowledgeMatrix>(`/projects/${projectId}/knowledge-matrix${q}`);
+    },
+
+    async getClaims(projectId: string, chapter?: number): Promise<Claim[]> {
+      const q = chapter ? `?chapter=${chapter}` : "";
+      return request<Claim[]>(`/projects/${projectId}/claims${q}`);
+    },
+
+    async getIssues(projectId: string, severity?: string): Promise<Issue[]> {
+      const q = severity ? `?severity=${severity}` : "";
+      return request<Issue[]>(`/projects/${projectId}/issues${q}`);
+    },
+
+    async patchIssue(projectId: string, issueId: string, status: string): Promise<Issue> {
+      return request<Issue>(`/projects/${projectId}/issues/${issueId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+    },
+
+    async reasonIssue(projectId: string, issueId: string): Promise<Issue> {
+      return request<Issue>(`/projects/${projectId}/issues/${issueId}/reason`, {
+        method: "POST",
+      });
+    },
+
+    async getWorld(projectId: string): Promise<WorldData> {
+      return request<WorldData>(`/projects/${projectId}/world`);
+    },
+
+    async getWorldRules(projectId: string): Promise<WorldRule[]> {
+      return request<WorldRule[]>(`/projects/${projectId}/world-rules`);
+    },
+
+    async createWorldRule(projectId: string, payload: { category: string; rule_text: string }): Promise<WorldRule> {
+      return request<WorldRule>(`/projects/${projectId}/world-rules`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async deleteWorldRule(projectId: string, ruleId: string): Promise<void> {
+      return request<void>(`/projects/${projectId}/world-rules/${ruleId}`, {
+        method: "DELETE",
+      });
+    },
+
+    async getPlotThreads(projectId: string): Promise<PlotThread[]> {
+      return request<PlotThread[]>(`/projects/${projectId}/plot-threads`);
+    },
+
+    async exportBible(projectId: string): Promise<BibleExport> {
+      return request<BibleExport>(`/projects/${projectId}/export/bible`);
+    },
+
+    async getCandidates(projectId: string): Promise<ValidationCandidate[]> {
+      return request<ValidationCandidate[]>(`/projects/${projectId}/candidates`);
+    },
+
+    async resolveCandidate(
+      projectId: string,
+      candidateId: string,
+      payload: { action: "approve" | "reject" | "merge" | "split"; target_character_id?: string; split_name?: string }
+    ): Promise<ValidationCandidate> {
+      return request<ValidationCandidate>(`/projects/${projectId}/candidates/${candidateId}/resolve`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async chat(projectId: string, question: string): Promise<ChatOut> {
+      return request<ChatOut>(`/projects/${projectId}/chat`, {
+        method: "POST",
+        body: JSON.stringify({ question }),
+      });
+    },
+
+    async getCustomization(projectId: string): Promise<ProjectCustomization> {
+      return request<ProjectCustomization>(`/projects/${projectId}/customization`);
+    },
+
+    async updateCustomization(
+      projectId: string,
+      payload: Partial<ProjectCustomization>
+    ): Promise<ProjectCustomization> {
+      return request<ProjectCustomization>(`/projects/${projectId}/customization`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
     },
   },
 };

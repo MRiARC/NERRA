@@ -8,8 +8,17 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, get_owned_project
 from app.database import get_db
 from app.models import Manuscript, User
-from app.schemas import ChangeDetectionOut, ChapterAppendIn, ImportOut, ManuscriptOut, StatusOut
-from app.services import change_detector
+from app.schemas import (
+    ChangeDetectionOut,
+    ChapterAppendIn,
+    ChapterDetailOut,
+    ChapterSummaryOut,
+    ChapterUpdateIn,
+    ImportOut,
+    ManuscriptOut,
+    StatusOut,
+)
+from app.services import change_detector, splitter
 from app.services.pipeline import append_chapter_to_manuscript, run_import_pipeline_guarded
 
 router = APIRouter(tags=["manuscripts"])
@@ -200,3 +209,122 @@ def reanalyze_manuscript(
         chapters_total=manuscript.chapters_total,
         error_note=manuscript.error_note,
     )
+
+
+@router.get(
+    "/projects/{project_id}/manuscripts/{manuscript_id}/chapters",
+    response_model=list[ChapterSummaryOut],
+)
+def list_manuscript_chapters(
+    project_id: uuid.UUID,
+    manuscript_id: uuid.UUID,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[ChapterSummaryOut]:
+    """List all parsed chapters for a manuscript with metadata and word counts."""
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None or manuscript.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    if not manuscript.raw_text:
+        return []
+
+    parsed = splitter.split_chapters(manuscript.raw_text)
+    summaries = []
+    for c in parsed:
+        words = len(c.content.split())
+        preview = (c.content[:200] + "...") if len(c.content) > 200 else c.content
+        summaries.append(
+            ChapterSummaryOut(
+                number=c.number,
+                title=c.title or f"Chapter {c.number}",
+                word_count=words,
+                preview=preview.strip(),
+            )
+        )
+    return summaries
+
+
+@router.get(
+    "/projects/{project_id}/manuscripts/{manuscript_id}/chapters/{chapter_number}",
+    response_model=ChapterDetailOut,
+)
+def get_manuscript_chapter(
+    project_id: uuid.UUID,
+    manuscript_id: uuid.UUID,
+    chapter_number: int,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChapterDetailOut:
+    """Retrieve full text and metadata for a specific chapter."""
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None or manuscript.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    if not manuscript.raw_text:
+        raise HTTPException(status_code=404, detail="Manuscript has no content")
+
+    parsed = splitter.split_chapters(manuscript.raw_text)
+    for c in parsed:
+        if c.number == chapter_number:
+            return ChapterDetailOut(
+                number=c.number,
+                title=c.title or f"Chapter {c.number}",
+                content=c.content,
+                word_count=len(c.content.split()),
+            )
+
+    raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
+
+
+@router.put(
+    "/projects/{project_id}/manuscripts/{manuscript_id}/chapters/{chapter_number}",
+    response_model=ChapterDetailOut,
+)
+def update_manuscript_chapter(
+    project_id: uuid.UUID,
+    manuscript_id: uuid.UUID,
+    chapter_number: int,
+    payload: ChapterUpdateIn,
+    project=Depends(get_owned_project),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ChapterDetailOut:
+    """Update prose content of a chapter in the manuscript."""
+    manuscript = db.get(Manuscript, manuscript_id)
+    if manuscript is None or manuscript.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    if not manuscript.raw_text:
+        raise HTTPException(status_code=404, detail="Manuscript has no content")
+
+    parsed = splitter.split_chapters(manuscript.raw_text)
+    target_idx = None
+    for idx, c in enumerate(parsed):
+        if c.number == chapter_number:
+            target_idx = idx
+            break
+
+    if target_idx is None:
+        raise HTTPException(status_code=404, detail=f"Chapter {chapter_number} not found")
+
+    # Reconstruct raw_text with updated chapter
+    reconstructed_parts = []
+    for idx, c in enumerate(parsed):
+        title = payload.title if (idx == target_idx and payload.title) else c.title
+        content = payload.content if idx == target_idx else c.content
+        reconstructed_parts.append(f"{title}\n\n{content}")
+
+    manuscript.raw_text = "\n\n".join(reconstructed_parts)
+    db.commit()
+    db.refresh(manuscript)
+
+    return ChapterDetailOut(
+        number=chapter_number,
+        title=payload.title or parsed[target_idx].title or f"Chapter {chapter_number}",
+        content=payload.content,
+        word_count=len(payload.content.split()),
+    )
+

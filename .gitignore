@@ -25,3 +25,7 @@ frontend/dist/
 
 # Logs
 *.log
+
+# Misc scratch
+API-Proxy-Guide.md
+

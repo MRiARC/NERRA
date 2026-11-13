@@ -2,9 +2,21 @@ import React, { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
+export type ButtonVariant =
+  | "primary"
+  | "wine"
+  | "outline"
+  | "secondary"
+  | "ghost"
+  | "forest"
+  | "danger"
+  | "subtle"
+  // Legacy alias:
+  | "brass";
+
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "wine" | "forest" | "brass" | "ghost" | "outline" | "subtle";
-  size?: "sm" | "md" | "lg" | "icon";
+  variant?: ButtonVariant;
+  size?: "xs" | "sm" | "md" | "lg" | "icon";
   isLoading?: boolean;
 }
 
@@ -12,7 +24,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
       className,
-      variant = "wine",
+      variant = "primary",
       size = "md",
       isLoading = false,
       disabled,
@@ -22,33 +34,58 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 select-none disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]";
+      "inline-flex items-center justify-center font-medium rounded-[4px] tracking-wide select-none transition-all duration-150 ease-out disabled:opacity-40 disabled:pointer-events-none active:scale-[0.985]";
 
     const sizeStyles = {
+      xs: "text-[11px] px-2 py-1 gap-1",
       sm: "text-xs px-3 py-1.5 gap-1.5",
-      md: "text-sm px-4 py-2 gap-2",
-      lg: "text-base px-5 py-2.5 gap-2.5",
-      icon: "p-2 w-9 h-9",
+      md: "text-xs px-4 py-2 gap-2",
+      lg: "text-sm px-5 py-2.5 gap-2.5",
+      icon: "p-2 w-8 h-8",
     };
 
-    const variantStyles = {
-      wine: "bg-[#9B2242] hover:bg-[#B52B50] text-[#EDE6D6] shadow-[0_0_15px_rgba(155,34,66,0.3)] border border-[#C43D65]/40",
-      forest: "bg-[#1B8A5A] hover:bg-[#23A56D] text-[#EDE6D6] shadow-[0_0_15px_rgba(27,138,90,0.3)] border border-[#2DD4BF]/30",
-      brass: "bg-[#C5A059] hover:bg-[#D9B46E] text-[#08090B] font-semibold shadow-[0_0_15px_rgba(197,160,89,0.3)] border border-[#E5C384]/50",
-      outline: "border border-white/10 hover:border-white/20 bg-white/[0.02] hover:bg-white/[0.05] text-[#EDE6D6]",
-      ghost: "text-[#B5ACA0] hover:text-[#EDE6D6] hover:bg-white/[0.05]",
-      subtle: "bg-[#181217] hover:bg-[#221820] text-[#EDE6D6] border border-white/[0.07]",
+    let normalizedVariant = variant;
+    if (variant === "brass") normalizedVariant = "primary";
+
+    const variantStyles: Record<string, string> = {
+      primary:
+        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/60 shadow-[0_2px_8px_rgba(122,29,57,0.3)]",
+      wine:
+        "bg-wine-accent hover:bg-wine-crimson text-ink-parchment border border-wine-crimson/60 shadow-[0_2px_8px_rgba(122,29,57,0.3)]",
+      outline:
+        "bg-surface-subtle hover:bg-surface-card text-ink-bone hover:text-ink-parchment border border-border-subtle hover:border-border-prominent",
+      secondary:
+        "bg-surface-subtle hover:bg-surface-card text-ink-bone hover:text-ink-parchment border border-border-subtle hover:border-border-prominent",
+      ghost:
+        "text-ink-bone hover:text-ink-parchment hover:bg-surface-subtle border border-transparent",
+      forest:
+        "bg-pine-accent hover:bg-pine-moss text-ink-parchment border border-pine-moss/60 shadow-[0_2px_8px_rgba(23,61,47,0.3)]",
+      danger:
+        "bg-severity-contradiction-bg text-severity-contradiction hover:bg-severity-contradiction/20 border border-severity-contradiction-border",
+      subtle:
+        "bg-surface-card hover:bg-surface-elevated text-ink-parchment border border-border-subtle",
     };
 
     return (
       <button
         ref={ref}
-        className={cn(baseStyles, sizeStyles[size], variantStyles[variant], className)}
+        className={cn(
+          baseStyles,
+          sizeStyles[size],
+          variantStyles[normalizedVariant] || variantStyles.primary,
+          className
+        )}
         disabled={disabled || isLoading}
         {...props}
       >
-        {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-        {children}
+        {isLoading ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>Processing...</span>
+          </>
+        ) : (
+          children
+        )}
       </button>
     );
   }
