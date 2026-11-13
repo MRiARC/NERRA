@@ -34,45 +34,41 @@ import type {
   ValidationCandidate,
   WorldData,
   WorldRule,
+  HealthOut,
+  AuditOut,
 } from "./types";
 
+/**
+ * Resolve the API base.
+ *
+ * By default requests go to the same origin under `/api`, which Next.js rewrites
+ * to the FastAPI server (`NERRA_API_URL`). That keeps cookies first-party and
+ * avoids CORS entirely. Set `NEXT_PUBLIC_API_URL` to call the API directly.
+ */
 export function getApiBase(): string {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname || "127.0.0.1";
-    return `http://${host}:8001`;
-  }
-  return "http://127.0.0.1:8001";
+  return "/api";
 }
 
 let inMemoryToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
+  // Access tokens stay in memory only: the HttpOnly cookie is the durable copy.
+  // On reload the 401 interceptor rotates a fresh token from the refresh cookie.
   inMemoryToken = token;
-  if (typeof window !== "undefined") {
-    if (token) {
-      localStorage.setItem("nerra_access_token", token);
-    } else {
-      localStorage.removeItem("nerra_access_token");
-    }
-  }
 }
 
 export function getAccessToken(): string | null {
-  if (inMemoryToken) return inMemoryToken;
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("nerra_access_token");
-  }
-  return null;
+  return inMemoryToken;
 }
 
 export class ApiError extends Error {
   status: number;
-  data: any;
+  data: unknown;
 
-  constructor(status: number, message: string, data?: any) {
+  constructor(status: number, message: string, data?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -143,7 +139,7 @@ async function fetchWithAuth(
     },
   };
 
-  let response = await fetch(url, mergedOptions);
+  const response = await fetch(url, mergedOptions);
 
   // If 401 and not already a refresh or login request, attempt token rotation
   if (
@@ -396,7 +392,7 @@ export const api = {
     },
 
     async getKnowledgeMatrix(projectId: string, maxChapter?: number): Promise<KnowledgeMatrix> {
-      const q = maxChapter ? `?max_chapter=${maxChapter}` : "";
+      const q = maxChapter ? `?chapter=${maxChapter}` : "";
       return request<KnowledgeMatrix>(`/projects/${projectId}/knowledge-matrix${q}`);
     },
 
@@ -405,9 +401,13 @@ export const api = {
       return request<Claim[]>(`/projects/${projectId}/claims${q}`);
     },
 
-    async getIssues(projectId: string, severity?: string): Promise<Issue[]> {
-      const q = severity ? `?severity=${severity}` : "";
+    async getIssues(projectId: string, status?: string): Promise<Issue[]> {
+      const q = status ? `?status_filter=${status}` : "";
       return request<Issue[]>(`/projects/${projectId}/issues${q}`);
+    },
+
+    async audit(projectId: string): Promise<AuditOut> {
+      return request<AuditOut>(`/projects/${projectId}/audit`, { method: "POST" });
     },
 
     async patchIssue(projectId: string, issueId: string, status: string): Promise<Issue> {
@@ -531,6 +531,12 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(payload),
       });
+    },
+  },
+
+  system: {
+    async health(): Promise<HealthOut> {
+      return request<HealthOut>("/health");
     },
   },
 

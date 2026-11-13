@@ -22,7 +22,7 @@ import {
   CheckCircle2,
   AlertTriangle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 
@@ -76,8 +76,8 @@ export default function BiblePage({ params }: BiblePageProps) {
       setNewRuleText("");
       setIsAddingRule(false);
       toast.success("Canon rule recorded into story bible.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to create rule.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to create rule."));
     } finally {
       setIsSubmitting(false);
     }
@@ -89,8 +89,8 @@ export default function BiblePage({ params }: BiblePageProps) {
       await api.story.deleteWorldRule(projectId, ruleId);
       await queryClient.invalidateQueries({ queryKey: ["world-rules", projectId] });
       toast.success("Rule excised from canon.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to delete rule.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to delete rule."));
     }
   };
 
@@ -109,8 +109,8 @@ export default function BiblePage({ params }: BiblePageProps) {
       a.click();
       URL.revokeObjectURL(url);
       toast.success("Story Bible exported successfully.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to export Story Bible.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to export Story Bible."));
     } finally {
       setIsExporting(false);
     }
@@ -126,8 +126,8 @@ export default function BiblePage({ params }: BiblePageProps) {
               World Mechanics &amp; Lore Codex
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               {rules.length} Canon Constraints Active
             </span>
           </div>
@@ -358,8 +358,8 @@ export default function BiblePage({ params }: BiblePageProps) {
                   </div>
 
                   <div className="pt-2 border-t border-border-quiet flex items-center justify-between text-xs font-mono">
-                    <span className="text-[11px] text-pine-forest flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+                    <span className="text-[11px] text-severity-thread flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
                       Enforced by Checker
                     </span>
 

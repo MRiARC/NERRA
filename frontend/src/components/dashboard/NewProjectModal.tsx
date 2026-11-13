@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import { toast } from "sonner";
 import { BookPlus } from "lucide-react";
 
@@ -41,8 +42,8 @@ export function NewProjectModal({
       setGenre("");
       onClose();
       onProjectCreated();
-    } catch (err: any) {
-      setError(err.message || "Failed to create project");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to create project"));
     } finally {
       setIsLoading(false);
     }

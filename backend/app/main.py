@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.database import Base, engine
 from app.routers import chat, manuscripts, projects, settings as settings_router, story
@@ -58,7 +59,29 @@ app.include_router(chat.router)
 
 @app.get("/health", tags=["system"])
 def health() -> dict:
-    return {"status": "ok", "app": "NERRA"}
+    """Liveness plus real dependency checks, so the UI never guesses."""
+    database_ok = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        database_ok = True
+    except Exception:  # noqa: BLE001 — health must always answer
+        database_ok = False
+
+    neo4j_ok = False
+    try:
+        from app.services.graph import is_neo4j_connected
+
+        neo4j_ok = is_neo4j_connected()
+    except Exception:  # noqa: BLE001
+        neo4j_ok = False
+
+    return {
+        "status": "ok" if database_ok else "degraded",
+        "app": "NERRA",
+        "database": database_ok,
+        "neo4j": neo4j_ok,
+    }
 
 
 @app.get("/", tags=["system"])

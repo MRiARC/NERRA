@@ -22,6 +22,7 @@ import {
   ArrowRight,
   Filter,
   Info,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
@@ -33,7 +34,7 @@ interface GraphPageProps {
 
 const KIND_META: Record<
   GraphNode["kind"],
-  { label: string; stroke: string; fill: string; dot: string; icon: any }
+  { label: string; stroke: string; fill: string; dot: string; icon: LucideIcon }
 > = {
   character: {
     label: "Cast",
@@ -128,6 +129,10 @@ export default function StoryGraphPage({ params }: GraphPageProps) {
 
   // Selected node details
   const selectedNode = positionedNodes.find((n) => n.id === selectedNodeId);
+  const selectedAliases: string[] =
+    selectedNode && Array.isArray(selectedNode.metadata?.aliases)
+      ? (selectedNode.metadata.aliases as string[])
+      : [];
 
   // Edges connected to selected node
   const connectedEdges = useMemo(() => {
@@ -147,8 +152,8 @@ export default function StoryGraphPage({ params }: GraphPageProps) {
               Knowledge Graph &amp; Custody Topology
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               {graphData?.neo4j_connected ? "Neo4j Cluster Synced" : "In-Memory Graph Synced"}
             </span>
           </div>
@@ -456,17 +461,17 @@ export default function StoryGraphPage({ params }: GraphPageProps) {
                 <div>
                   <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash">Entity Name</p>
                   <p className="text-base font-serif text-ink-parchment mt-0.5 font-medium">
-                    {selectedNode.label}
+                    {String(selectedNode.label ?? "")}
                   </p>
                 </div>
 
-                {selectedNode.metadata?.aliases && Array.isArray(selectedNode.metadata.aliases) && selectedNode.metadata.aliases.length > 0 && (
+                {selectedAliases.length > 0 && (
                   <div>
                     <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash mb-1">
                       Recorded Aliases
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {(selectedNode.metadata.aliases as string[]).map((al: string, aIdx: number) => (
+                      {selectedAliases.map((al: string, aIdx: number) => (
                         <span
                           key={aIdx}
                           className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-subtle border border-border-quiet text-ink-bone"

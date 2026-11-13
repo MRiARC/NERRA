@@ -22,7 +22,7 @@ import {
   HelpCircle,
   UserCheck,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import type { ValidationCandidate } from "@/lib/types";
@@ -71,8 +71,8 @@ export default function ValidationPage({ params }: ValidationPageProps) {
       await queryClient.invalidateQueries({ queryKey: ["characters", projectId] });
       await queryClient.invalidateQueries({ queryKey: ["claims", projectId] });
       toast.success(`Candidate ${action}d successfully.`);
-    } catch (err: any) {
-      toast.error(err.message || `Failed to ${action} candidate.`);
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, `Failed to ${action} candidate.`));
     } finally {
       setProcessingId(null);
     }
@@ -151,7 +151,7 @@ export default function ValidationPage({ params }: ValidationPageProps) {
         </div>
       ) : filteredCandidates.length === 0 ? (
         <Surface depth={2} border="subtle" className="p-12 text-center rounded-2xl max-w-xl mx-auto space-y-4">
-          <CheckCircle2 className="w-10 h-10 text-pine-forest mx-auto opacity-70" />
+          <CheckCircle2 className="w-10 h-10 text-severity-thread mx-auto opacity-70" />
           <h3 className="font-serif text-lg text-ink-parchment">No Pending Approvals</h3>
           <p className="text-xs text-ink-ash leading-relaxed">
             All extracted facts, entity aliases, and world assertions have been resolved or auto-admitted under your current strictness sensitivity.
@@ -245,7 +245,7 @@ export default function ValidationPage({ params }: ValidationPageProps) {
                         size="sm"
                         disabled={isProcessing}
                         onClick={() => handleResolve(candidate.id, "approve")}
-                        className="h-7 text-xs font-mono bg-pine-forest hover:bg-emerald-600 text-white"
+                        className="h-7 text-xs font-mono bg-severity-thread hover:bg-emerald-600 text-white"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
                       </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, use, useMemo, useRef, useEffect } from "react";
+import React, { useState, use, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -16,7 +16,7 @@ import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Divider } from "@/components/ui/Divider";
-import { formatWords } from "@/lib/utils";
+import { formatWords, getErrorMessage } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -98,13 +98,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
     );
   }, [allIssues, selectedChapterNumber]);
 
-  // Set active issue when chapter changes or when user clicks one
-  useEffect(() => {
-    if (chapterIssues.length > 0 && !selectedIssueId) {
-      setSelectedIssueId(chapterIssues[0].id);
-    }
-  }, [chapterIssues, selectedIssueId]);
-
+  // The active issue falls back to the first issue in this chapter; no effect needed.
   const activeIssue = useMemo(() => {
     return allIssues.find((i) => i.id === selectedIssueId) || chapterIssues[0] || null;
   }, [allIssues, selectedIssueId, chapterIssues]);
@@ -128,13 +122,14 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   }, [plotThreads, selectedChapterNumber]);
 
   // Split chapter text into paragraphs
+  const chapterContent = currentChapter?.content ?? "";
   const paragraphs = useMemo(() => {
-    if (!currentChapter?.content) return [];
-    return currentChapter.content
+    if (!chapterContent) return [];
+    return chapterContent
       .split(/\n\s*\n/)
       .map((p) => p.trim())
       .filter((p) => p.length > 0);
-  }, [currentChapter?.content]);
+  }, [chapterContent]);
 
   // Handle font size stepping
   const stepFontSize = (delta: number) => {
@@ -151,8 +146,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
           : "Issue dismissed for this draft."
       );
       refetchIssues();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update issue status");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to update issue status"));
     }
   };
 
@@ -164,8 +159,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
       const updated = await api.story.reasonIssue(projectId, issueId);
       toast.success("AI reasoning generated new canon context.");
       refetchIssues();
-    } catch (err: any) {
-      toast.error(err.message || "AI reasoning failed");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "AI reasoning failed"));
     } finally {
       setIsReasoning(false);
     }
@@ -191,8 +186,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
           citations: res.citations,
         },
       ]);
-    } catch (err: any) {
-      toast.error(err.message || "Chat failed");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Chat failed"));
       setChatMessages((prev) => [
         ...prev,
         {
@@ -206,9 +201,9 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-surface-obsidian text-ink-parchment pb-24 selection:bg-wine-crimson/40">
+    <div className="min-h-screen bg-surface-void text-ink-parchment pb-24 selection:bg-wine-crimson/40">
       {/* Top Floating Reading Telemetry & Controls Bar */}
-      <header className="sticky top-0 z-30 w-full bg-surface-obsidian/90 backdrop-blur-md border-b border-white/[0.04] transition-all">
+      <header className="sticky top-0 z-30 w-full bg-surface-void/90 backdrop-blur-md border-b border-white/[0.04] transition-all">
         <div className="max-w-[1720px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
           {/* Breadcrumbs & Chapter Title */}
           <div className="flex items-center gap-3 min-w-0">
@@ -220,14 +215,14 @@ export default function ReaderPage({ params }: ReaderPageProps) {
               <ChevronLeft className="w-5 h-5" />
             </Link>
             <div className="h-4 w-px bg-white/[0.06] shrink-0" />
-            <div className="flex items-center gap-2 text-ui-body-sm font-label-md truncate">
+            <div className="flex items-center gap-2 text-xs font-sans truncate">
               <span className="text-ink-ash">{project?.title || "Manuscript"}</span>
               <span className="text-ink-faint">/</span>
               <select
                 value={selectedChapterNumber}
                 onChange={(e) => setSelectedChapterNumber(Number(e.target.value))}
                 aria-label="Select chapter to read"
-                className="bg-surface-container-lowest border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-ui-body-sm focus:outline-none focus:border-primary/40 cursor-pointer"
+                className="bg-surface-field border border-white/[0.06] text-ink-parchment rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-wine-crimson/40 cursor-pointer"
               >
                 {chapters.length > 0 ? (
                   chapters.map((ch) => (
@@ -250,7 +245,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
           {/* Reading Atelier Controls */}
           <div className="flex items-center gap-3 shrink-0">
             {/* Font Size Adjusters */}
-            <div className="flex items-center bg-surface-container-lowest rounded-xl p-1 border border-white/[0.04]">
+            <div className="flex items-center bg-surface-field rounded-xl p-1 border border-white/[0.04]">
               <button
                 onClick={() => stepFontSize(-1)}
                 className="p-1.5 text-ink-ash hover:text-ink-parchment transition-colors rounded-lg hover:bg-white/[0.04]"
@@ -271,7 +266,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
             </div>
 
             {/* Word Telemetry */}
-            <div className="hidden md:flex items-center gap-2 text-ink-ash text-ui-body-sm bg-surface-container-lowest/70 px-3 py-1.5 rounded-xl border border-white/[0.04]">
+            <div className="hidden md:flex items-center gap-2 text-ink-ash text-xs bg-surface-field/70 px-3 py-1.5 rounded-xl border border-white/[0.04]">
               <span className="font-mono text-ink-bone text-xs">
                 {formatWords(currentChapter?.word_count || 0)} words
               </span>
@@ -282,10 +277,10 @@ export default function ReaderPage({ params }: ReaderPageProps) {
             {/* Switch to Editor */}
             <Link
               href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-container-low hover:bg-surface-container border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-ui-body-sm transition-all"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-subtle hover:bg-surface-card border border-white/[0.04] text-ink-bone hover:text-ink-parchment text-xs transition-all"
               title="Open in Manuscript Editor"
             >
-              <PenTool className="w-3.5 h-3.5 text-primary" />
+              <PenTool className="w-3.5 h-3.5 text-wine-crimson" />
               <span className="hidden sm:inline">Editor Studio</span>
             </Link>
 
@@ -294,8 +289,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
               onClick={() => setIsFocusMode(!isFocusMode)}
               className={`p-2 rounded-xl transition-all border ${
                 isFocusMode
-                  ? "bg-wine-dark text-primary border-primary/30"
-                  : "bg-surface-container-lowest text-ink-ash hover:text-ink-parchment border-white/[0.04]"
+                  ? "bg-wine-dark text-wine-crimson border-wine-crimson/30"
+                  : "bg-surface-field text-ink-ash hover:text-ink-parchment border-white/[0.04]"
               }`}
               title={isFocusMode ? "Exit Focus Mode" : "Focus Zen Mode"}
             >
@@ -314,10 +309,10 @@ export default function ReaderPage({ params }: ReaderPageProps) {
               {/* Folio Running Header & Motif Watermark */}
               <div className="flex items-center justify-between pb-8 mb-8 border-b border-white/[0.04]">
                 <div className="flex flex-col">
-                  <span className="font-headline italic text-ink-ash text-sm tracking-wider">
+                  <span className="font-serif italic text-ink-ash text-sm tracking-wider">
                     {project?.title || "Chapter"} {currentChapter?.word_count ? `• ${formatWords(currentChapter.word_count)} words` : ""}
                   </span>
-                  <h1 className="font-headline text-2xl sm:text-3xl font-medium text-ink-parchment mt-1">
+                  <h1 className="font-serif text-2xl sm:text-3xl font-medium text-ink-parchment mt-1">
                     {currentChapter?.title || `Chapter ${selectedChapterNumber}`}
                   </h1>
                 </div>
@@ -331,16 +326,16 @@ export default function ReaderPage({ params }: ReaderPageProps) {
               {/* Chapter Prose Stream */}
               {chapterLoading ? (
                 <div className="py-24 flex flex-col items-center justify-center gap-4 text-ink-ash">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
-                  <p className="font-headline italic text-sm">Translating folio parchment from the archive...</p>
+                  <Loader2 className="w-8 h-8 animate-spin text-wine-crimson" />
+                  <p className="font-serif italic text-sm">Translating folio parchment from the archive...</p>
                 </div>
               ) : paragraphs.length === 0 ? (
                 <div className="py-24 text-center text-ink-ash">
                   <BookOpen className="w-12 h-12 mx-auto mb-4 opacity-40" />
-                  <p className="font-headline text-lg text-ink-bone">No manuscript text found for this chapter.</p>
+                  <p className="font-serif text-lg text-ink-bone">No manuscript text found for this chapter.</p>
                   <Link
                     href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-                    className="inline-flex items-center gap-2 mt-4 text-primary hover:underline text-sm"
+                    className="inline-flex items-center gap-2 mt-4 text-wine-crimson hover:underline text-sm"
                   >
                     <PenTool className="w-4 h-4" /> Open Editor to write or paste text
                   </Link>
@@ -367,8 +362,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         className={`group relative flex items-start gap-4 transition-all duration-200 rounded-xl p-2 -mx-2 ${
                           matchedIssue
                             ? isParaSelected
-                              ? "bg-wine-dark/30 border-l-2 border-primary shadow-[inset_0_0_16px_rgba(148,27,46,0.2)]"
-                              : "bg-surface-container-lowest/50 border-l-2 border-primary/50"
+                              ? "bg-wine-dark/30 border-l-2 border-wine-crimson shadow-[inset_0_0_16px_rgba(148,27,46,0.2)]"
+                              : "bg-surface-field/50 border-l-2 border-wine-crimson/50"
                             : "hover:bg-white/[0.01]"
                         }`}
                       >
@@ -376,7 +371,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         <div className="flex flex-col items-center pt-1.5 w-6 shrink-0 select-none">
                           <span
                             className={`font-mono text-[11px] ${
-                              matchedIssue ? "text-primary font-bold" : "text-ink-faint/60 group-hover:text-ink-ash"
+                              matchedIssue ? "text-wine-crimson font-bold" : "text-ink-faint/60 group-hover:text-ink-ash"
                             } transition-colors`}
                           >
                             {paraNum}
@@ -387,7 +382,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                                 setSelectedIssueId(matchedIssue.id);
                                 setInspectorTab("context");
                               }}
-                              className="mt-1 text-primary hover:scale-110 transition-transform"
+                              className="mt-1 text-wine-crimson hover:scale-110 transition-transform"
                               title={`Continuity Alert: ${matchedIssue.type}`}
                             >
                               <AlertTriangle className="w-3.5 h-3.5 text-severity-contradiction" />
@@ -399,7 +394,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         <div className="flex-1">
                           {idx === 0 ? (
                             <p>
-                              <span className="float-left font-headline text-[56px] leading-[0.8] pr-3 pt-1 text-primary font-normal drop-shadow-[0_2px_12px_rgba(255,177,191,0.25)]">
+                              <span className="float-left font-serif text-[56px] leading-[0.8] pr-3 pt-1 text-wine-crimson font-normal drop-shadow-[0_2px_12px_rgba(255,177,191,0.25)]">
                                 {p.charAt(0)}
                               </span>
                               {p.slice(1)}
@@ -412,7 +407,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                                     setSelectedIssueId(matchedIssue.id);
                                     setInspectorTab("context");
                                   }}
-                                  className="cursor-pointer bg-wine-dark/40 text-primary-fixed border-b border-primary shadow-[inset_0_0_12px_rgba(148,27,46,0.25)] rounded px-1 py-0.5 hover:bg-wine-dark/60 transition-all inline"
+                                  className="cursor-pointer bg-wine-dark/40 text-wine-crimson border-b border-wine-crimson shadow-[inset_0_0_12px_rgba(148,27,46,0.25)] rounded px-1 py-0.5 hover:bg-wine-dark/60 transition-all inline"
                                 >
                                   {p}
                                 </span>
@@ -430,7 +425,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={() => handleResolveIssue(matchedIssue.id, "resolved")}
-                                    className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-bright text-ink-bone hover:text-ink-parchment text-[11px] font-medium transition-all"
+                                    className="px-2.5 py-1 rounded-lg bg-surface-card hover:bg-surface-elevated text-ink-bone hover:text-ink-parchment text-[11px] font-medium transition-all"
                                   >
                                     Acknowledge
                                   </button>
@@ -442,7 +437,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                                     }}
                                     className="px-2.5 py-1 rounded-lg bg-wine-dark hover:bg-wine-accent text-ink-parchment text-[11px] font-medium transition-all shadow-sm flex items-center gap-1"
                                   >
-                                    <Brain className="w-3 h-3 text-primary" />
+                                    <Brain className="w-3 h-3 text-wine-crimson" />
                                     Reason
                                   </button>
                                 </div>
@@ -459,7 +454,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
               )}
 
               {/* Bottom Folio Vignette / Pagination Stamp */}
-              <div className="mt-14 pt-8 border-t border-white/[0.04] flex items-center justify-between text-ink-faint text-ui-body-sm">
+              <div className="mt-14 pt-8 border-t border-white/[0.04] flex items-center justify-between text-ink-faint text-xs">
                 <span>
                   Chapter {selectedChapterNumber} of {chapters.length || 1}
                 </span>
@@ -477,7 +472,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                   <button
                     disabled={selectedChapterNumber >= (chapters.length || 1)}
                     onClick={() => setSelectedChapterNumber((prev) => prev + 1)}
-                    className="hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed text-ink-bone transition-colors flex items-center gap-1"
+                    className="hover:text-wine-crimson disabled:opacity-30 disabled:cursor-not-allowed text-ink-bone transition-colors flex items-center gap-1"
                   >
                     Next Chapter <ChevronRight className="w-4 h-4" />
                   </button>
@@ -486,16 +481,16 @@ export default function ReaderPage({ params }: ReaderPageProps) {
             </article>
 
             {/* Fast Prose Scratchpad Below Reading Slate */}
-            <div className="w-full max-w-[760px] mt-6 p-4 rounded-xl bg-surface-container-lowest/70 border border-white/[0.03] flex items-center justify-between gap-4">
+            <div className="w-full max-w-[760px] mt-6 p-4 rounded-xl bg-surface-field/70 border border-white/[0.03] flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
                 <PenTool className="w-4 h-4 text-ink-faint shrink-0" />
-                <span className="text-ui-body-sm text-ink-ash truncate">
+                <span className="text-xs text-ink-ash truncate">
                   Need to revise this chapter? Open the manuscript studio editor with real-time squiggles.
                 </span>
               </div>
               <Link
                 href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}`}
-                className="text-xs font-mono text-primary hover:text-ink-parchment uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1"
+                className="text-xs font-mono text-wine-crimson hover:text-ink-parchment uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1"
               >
                 Open Studio <ArrowRight className="w-3.5 h-3.5" />
               </Link>
@@ -507,12 +502,12 @@ export default function ReaderPage({ params }: ReaderPageProps) {
             <aside className="xl:col-span-5 2xl:col-span-4 flex flex-col gap-6 sticky top-24">
               <Surface depth={2} className="p-5 flex flex-col gap-5">
                 {/* Segmented Intelligence Tabs */}
-                <div className="flex items-center p-1 bg-surface-container-lowest rounded-xl">
+                <div className="flex items-center p-1 bg-surface-field rounded-xl">
                   <button
                     onClick={() => setInspectorTab("context")}
                     className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all ${
                       inspectorTab === "context"
-                        ? "bg-surface-container text-ink-parchment shadow-sm"
+                        ? "bg-surface-card text-ink-parchment shadow-sm"
                         : "text-ink-ash hover:text-ink-parchment"
                     }`}
                   >
@@ -522,13 +517,13 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                     onClick={() => setInspectorTab("continuity")}
                     className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 ${
                       inspectorTab === "continuity"
-                        ? "bg-surface-container text-ink-parchment shadow-sm"
+                        ? "bg-surface-card text-ink-parchment shadow-sm"
                         : "text-ink-ash hover:text-ink-parchment"
                     }`}
                   >
                     <span>Continuity</span>
                     {chapterIssues.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-wine-dark text-primary-fixed">
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono bg-wine-dark text-wine-crimson">
                         {chapterIssues.length}
                       </span>
                     )}
@@ -537,7 +532,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                     onClick={() => setInspectorTab("chat")}
                     className={`flex-1 py-1.5 text-center text-xs font-medium rounded-lg transition-all ${
                       inspectorTab === "chat"
-                        ? "bg-surface-container text-ink-parchment shadow-sm"
+                        ? "bg-surface-card text-ink-parchment shadow-sm"
                         : "text-ink-ash hover:text-ink-parchment"
                     }`}
                   >
@@ -550,11 +545,11 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                   <div className="flex flex-col gap-5">
                     {/* Focused Issue Card */}
                     {activeIssue ? (
-                      <div className="p-4 rounded-xl bg-gradient-to-br from-wine-dark/30 to-surface-container-lowest border border-wine-accent/30 shadow-md">
+                      <div className="p-4 rounded-xl bg-gradient-to-br from-wine-dark/30 to-surface-field border border-wine-accent/30 shadow-md">
                         <div className="flex items-start justify-between gap-3 mb-2.5">
                           <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 text-primary" />
-                            <span className="font-headline text-sm text-ink-parchment font-medium">
+                            <AlertTriangle className="w-4 h-4 text-wine-crimson" />
+                            <span className="font-serif text-sm text-ink-parchment font-medium">
                               {activeIssue.type.replace(/_/g, " ").toUpperCase()}
                             </span>
                           </div>
@@ -562,19 +557,19 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                             {activeIssue.severity.toUpperCase()}
                           </Badge>
                         </div>
-                        <p className="text-ui-body-sm text-[12px] text-ink-bone leading-relaxed">
+                        <p className="text-xs text-[12px] text-ink-bone leading-relaxed">
                           {activeIssue.description}
                         </p>
 
                         {/* Evidence quote */}
                         {activeIssue.evidence && activeIssue.evidence.length > 0 && (
-                          <div className="mt-3 p-2.5 rounded-lg bg-surface-obsidian/70 border border-white/[0.04] flex flex-col gap-1.5">
+                          <div className="mt-3 p-2.5 rounded-lg bg-surface-void/70 border border-white/[0.04] flex flex-col gap-1.5">
                             <div className="flex items-center justify-between text-[10px] font-mono text-ink-faint uppercase">
                               <span>Canon Anchor</span>
                               {activeIssue.evidence[0].chapter && (
                                 <button
                                   onClick={() => setSelectedChapterNumber(activeIssue.evidence![0].chapter!)}
-                                  className="text-primary hover:underline"
+                                  className="text-wine-crimson hover:underline"
                                 >
                                   Jump to Chapter {activeIssue.evidence[0].chapter}
                                 </button>
@@ -591,26 +586,26 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                           <button
                             disabled={isReasoning}
                             onClick={() => handleReasonIssue(activeIssue.id)}
-                            className="flex-1 py-1.5 px-3 rounded-lg bg-wine-dark hover:bg-wine-accent text-ink-parchment text-ui-body-sm font-medium transition-colors text-center shadow-sm flex items-center justify-center gap-1.5"
+                            className="flex-1 py-1.5 px-3 rounded-lg bg-wine-dark hover:bg-wine-accent text-ink-parchment text-xs font-medium transition-colors text-center shadow-sm flex items-center justify-center gap-1.5"
                           >
                             {isReasoning ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
                             ) : (
-                              <Brain className="w-3.5 h-3.5 text-primary" />
+                              <Brain className="w-3.5 h-3.5 text-wine-crimson" />
                             )}
                             Reason with Claude
                           </button>
                           <button
                             onClick={() => handleResolveIssue(activeIssue.id, "resolved")}
-                            className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-bright text-ink-ash hover:text-ink-parchment transition-colors"
+                            className="p-1.5 rounded-lg bg-surface-card hover:bg-surface-elevated text-ink-ash hover:text-ink-parchment transition-colors"
                             title="Mark as Acknowledged / Intentional Arc"
                           >
-                            <Check className="w-4 h-4 text-secondary" />
+                            <Check className="w-4 h-4 text-pine-moss" />
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="p-4 rounded-xl bg-surface-container-lowest border border-white/[0.03] text-center text-ink-ash text-xs">
+                      <div className="p-4 rounded-xl bg-surface-field border border-white/[0.03] text-center text-ink-ash text-xs">
                         No active contradiction selected for this chapter. Click any highlighted quote in the text.
                       </div>
                     )}
@@ -629,10 +624,10 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         {activeCharacters.map((c) => (
                           <div
                             key={c.id}
-                            className="p-2.5 rounded-xl bg-surface-container-lowest/80 border border-white/[0.02] flex items-center justify-between hover:bg-surface-container-lowest transition-colors"
+                            className="p-2.5 rounded-xl bg-surface-field/80 border border-white/[0.02] flex items-center justify-between hover:bg-surface-field transition-colors"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-7 h-7 rounded-full bg-wine-dark/40 flex items-center justify-center text-primary font-headline text-xs shrink-0">
+                              <div className="w-7 h-7 rounded-full bg-wine-dark/40 flex items-center justify-center text-wine-crimson font-serif text-xs shrink-0">
                                 {c.name.charAt(0)}
                               </div>
                               <div className="flex flex-col truncate">
@@ -668,7 +663,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                               className="p-2.5 rounded-xl bg-pine-deep/20 border border-pine-accent/30 flex flex-col gap-1"
                             >
                               <div className="flex items-center justify-between text-xs">
-                                <span className="text-secondary font-medium truncate">{t.title}</span>
+                                <span className="text-pine-moss font-medium truncate">{t.title}</span>
                                 <span className="font-mono text-[9px] text-ink-faint uppercase">{t.status}</span>
                               </div>
                               <p className="text-[11px] text-ink-bone line-clamp-2 leading-relaxed">
@@ -691,7 +686,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                       </span>
                       <button
                         onClick={() => refetchIssues()}
-                        className="text-[10px] font-mono text-primary hover:underline"
+                        className="text-[10px] font-mono text-wine-crimson hover:underline"
                       >
                         Re-scan
                       </button>
@@ -699,7 +694,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
 
                     {chapterIssues.length === 0 ? (
                       <div className="py-8 text-center text-ink-ash text-xs">
-                        <CheckCircle2 className="w-8 h-8 text-secondary mx-auto mb-2 opacity-80" />
+                        <CheckCircle2 className="w-8 h-8 text-pine-moss mx-auto mb-2 opacity-80" />
                         No open continuity issues recorded for this chapter.
                       </div>
                     ) : (
@@ -710,8 +705,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                             onClick={() => setSelectedIssueId(iss.id)}
                             className={`p-3 rounded-xl border cursor-pointer transition-all ${
                               selectedIssueId === iss.id
-                                ? "bg-wine-dark/30 border-primary shadow-sm"
-                                : "bg-surface-container-lowest border-white/[0.03] hover:border-white/[0.08]"
+                                ? "bg-wine-dark/30 border-wine-crimson shadow-sm"
+                                : "bg-surface-field border-white/[0.03] hover:border-white/[0.08]"
                             }`}
                           >
                             <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -746,7 +741,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                           className={`p-3 rounded-xl leading-relaxed ${
                             msg.role === "user"
                               ? "bg-wine-dark/40 text-ink-parchment border border-wine-accent/30 ml-4"
-                              : "bg-surface-container-lowest text-ink-bone border border-white/[0.03] mr-4"
+                              : "bg-surface-field text-ink-bone border border-white/[0.03] mr-4"
                           }`}
                         >
                           <div className="font-mono text-[9px] uppercase tracking-wider mb-1 text-ink-faint">
@@ -755,9 +750,9 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                           <p>{msg.content}</p>
                           {msg.citations && msg.citations.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-white/[0.04] space-y-1">
-                              <span className="font-mono text-[9px] text-primary uppercase">Citations:</span>
+                              <span className="font-mono text-[9px] text-wine-crimson uppercase">Citations:</span>
                               {msg.citations.map((c, ci) => (
-                                <div key={ci} className="text-[10px] text-ink-ash italic pl-2 border-l border-primary/30">
+                                <div key={ci} className="text-[10px] text-ink-ash italic pl-2 border-l border-wine-crimson/30">
                                   Ch. {c.chapter}: &ldquo;{c.excerpt}&rdquo;
                                 </div>
                               ))}
@@ -766,8 +761,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         </div>
                       ))}
                       {isChatLoading && (
-                        <div className="p-3 rounded-xl bg-surface-container-lowest text-ink-ash flex items-center gap-2">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                        <div className="p-3 rounded-xl bg-surface-field text-ink-ash flex items-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-wine-crimson" />
                           <span>Searching story graph & canon vectors...</span>
                         </div>
                       )}
@@ -780,7 +775,7 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         placeholder="Ask about this chapter's canon..."
-                        className="flex-1 bg-surface-container-lowest border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-ink-parchment placeholder-ink-faint focus:outline-none focus:border-primary/40"
+                        className="flex-1 bg-surface-field border border-white/[0.06] rounded-xl px-3 py-2 text-xs text-ink-parchment placeholder-ink-faint focus:outline-none focus:border-wine-crimson/40"
                       />
                       <Button
                         type="submit"

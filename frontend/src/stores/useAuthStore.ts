@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import type { User, UserSession } from "@/lib/types";
 
 interface AuthState {
@@ -50,8 +51,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       get().fetchSessions();
       return true;
-    } catch (err: any) {
-      set({ error: err.message || "Failed to log in", isLoading: false });
+    } catch (err: unknown) {
+      set({ error: getErrorMessage(err, "Failed to log in"), isLoading: false });
       return false;
     }
   },
@@ -66,8 +67,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       // Automatically log in after registration
       return await get().login(email, password);
-    } catch (err: any) {
-      set({ error: err.message || "Failed to register account", isLoading: false });
+    } catch (err: unknown) {
+      set({ error: getErrorMessage(err, "Failed to register account"), isLoading: false });
       return false;
     }
   },
@@ -94,8 +95,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await api.auth.revokeSession(id);
       await get().fetchSessions();
-    } catch (err: any) {
-      set({ error: err.message || "Failed to revoke session" });
+    } catch (err: unknown) {
+      set({ error: getErrorMessage(err, "Failed to revoke session") });
     }
   },
 
@@ -103,8 +104,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       await api.auth.revokeAllOtherSessions();
       await get().fetchSessions();
-    } catch (err: any) {
-      set({ error: err.message || "Failed to revoke sessions" });
+    } catch (err: unknown) {
+      set({ error: getErrorMessage(err, "Failed to revoke sessions") });
     }
   },
 

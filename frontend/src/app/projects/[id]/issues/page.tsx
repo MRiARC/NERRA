@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProject, useIssues, useManuscripts } from "@/hooks/useStoryData";
 import { api } from "@/lib/api";
+import { getErrorMessage } from "@/lib/utils";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -103,8 +104,8 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
         open: "Returned to Open Review Queue.",
       };
       toast.success(labels[status]);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update issue status.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to update issue status."));
     } finally {
       setIsPatching(false);
     }
@@ -118,8 +119,8 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
       const updated = await api.story.reasonIssue(projectId, activeIssue.id);
       await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
       toast.success("AI Hermeneutic Reasoning analysis updated.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to trigger AI reasoning pass.");
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, "Failed to trigger AI reasoning pass."));
     } finally {
       setIsReasoning(false);
     }
@@ -128,7 +129,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden selection:bg-wine-accent selection:text-ink-parchment">
       {/* Top Banner (Stitch Screen 3) */}
-      <header className="px-6 py-4 border-b border-border-quiet bg-surface-base shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <header className="px-6 py-4 border-b border-border-quiet bg-surface-subtle shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Link
@@ -209,7 +210,7 @@ export default function IssuesReviewPage({ params }: IssuesPageProps) {
         {/* Left Column: Issue Review Queue (Width: 380px - 440px) */}
         <aside className="w-full sm:w-[420px] lg:w-[460px] border-r border-border-quiet bg-surface-void flex flex-col shrink-0 overflow-hidden">
           {/* Search & Filter Bar */}
-          <div className="p-4 border-b border-border-quiet space-y-3 bg-surface-base">
+          <div className="p-4 border-b border-border-quiet space-y-3 bg-surface-subtle">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-ink-ash absolute left-3.5 top-3" />
               <input

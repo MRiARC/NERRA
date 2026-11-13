@@ -186,6 +186,7 @@ def append_chapter(
 def reanalyze_manuscript(
     manuscript_id: uuid.UUID,
     project_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     chapter_number: int | None = None,  # optional: re-run a single chapter
     x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
     x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
@@ -218,23 +219,20 @@ def reanalyze_manuscript(
                 db.commit()
             raise HTTPException(status_code=422, detail=str(exc))
     else:
-        from app.services.pipeline import run_import_pipeline
+        # A full re-analysis can take minutes; queue it and let the client poll
+        # /manuscripts/{id}/status instead of holding the request open.
+        from app.services.pipeline import reanalyze_manuscript_guarded
 
-        try:
-            run_import_pipeline(
-                manuscript.id,
-                db,
-                api_key=x_anthropic_key,
-                base_url=x_anthropic_base_url,
-            )
-        except Exception as exc:
-            db.rollback()
-            manuscript = db.get(Manuscript, manuscript_id)
-            if manuscript:
-                manuscript.status = "failed"
-                manuscript.error_note = str(exc)[:500]
-                db.commit()
-            raise HTTPException(status_code=422, detail=str(exc))
+        manuscript.status = "processing"
+        manuscript.chapters_done = 0
+        manuscript.error_note = None
+        db.commit()
+        background_tasks.add_task(
+            reanalyze_manuscript_guarded,
+            manuscript.id,
+            x_anthropic_key,
+            x_anthropic_base_url,
+        )
 
     db.refresh(manuscript)
     return StatusOut(

@@ -59,7 +59,7 @@ export interface Character {
   aliases: string[];
   description: string | null;
   status: string;
-  physical_traits: Record<string, any>;
+  physical_traits: Record<string, unknown>;
   first_chapter: number | null;
   last_chapter: number | null;
 }
@@ -81,7 +81,7 @@ export interface GraphNode {
   label: string;
   kind: "character" | "location" | "object" | "event" | string;
   chapter?: number | null;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GraphEdge {
@@ -170,6 +170,19 @@ export interface KnowledgeMatrix {
   facts: string[];
   cells: KnowledgeMatrixCell[];
   max_chapter: number;
+}
+
+export interface HealthOut {
+  status: string;
+  app: string;
+  database: boolean;
+  neo4j: boolean;
+}
+
+export interface AuditOut {
+  issues_open: number;
+  issues_total: number;
+  graph_synced: boolean;
 }
 
 export interface Claim {
@@ -275,9 +288,9 @@ export interface ProjectCustomization {
   project_id: string;
   custom_context?: string | null;
   custom_prompt?: string | null;
-  custom_validation?: Record<string, any>;
-  custom_graph_write?: Record<string, any>;
-  custom_ui_config?: Record<string, any>;
+  custom_validation?: Record<string, unknown>;
+  custom_graph_write?: Record<string, unknown>;
+  custom_ui_config?: Record<string, unknown>;
   updated_at?: string | null;
 }
 
@@ -287,7 +300,7 @@ export interface ValidationCandidate {
   manuscript_id?: string | null;
   chapter: number;
   candidate_type: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   confidence: number;
   route: string;
   ambiguity_reason?: string | null;
@@ -302,7 +315,7 @@ export interface CorrectionRule {
   rule_type: string;
   target_entity: string;
   instruction_text: string;
-  payload: Record<string, any>;
+  payload: Record<string, unknown>;
   active: boolean;
   created_at: string;
 }
@@ -325,7 +338,7 @@ export interface ManuscriptVersion {
   manuscript_id: string;
   version_number: number;
   content_hash: string;
-  diff_summary: Record<string, any>;
+  diff_summary: Record<string, unknown>;
   created_at: string;
 }
 
@@ -336,7 +349,7 @@ export interface UserSettings {
   primary_model?: string;
   embedding_model?: string;
   max_hop_depth?: number;
-  extra_config?: Record<string, any>;
+  extra_config?: Record<string, unknown>;
   updated_at?: string | null;
 }
 
@@ -346,7 +359,7 @@ export interface UserSettingsIn {
   primary_model?: string | null;
   embedding_model?: string | null;
   max_hop_depth?: number | null;
-  extra_config?: Record<string, any> | null;
+  extra_config?: Record<string, unknown> | null;
 }
 
 export interface AiConnectionTestResult {

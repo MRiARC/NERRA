@@ -33,7 +33,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 
@@ -103,8 +103,8 @@ export default function GlobalSettingsPage() {
       } else {
         toast.error(res.message);
       }
-    } catch (err: any) {
-      const msg = err?.data?.detail || err?.message || "Failed to test AI connection";
+    } catch (err: unknown) {
+      const msg = getErrorMessage(err, "Failed to test AI connection");
       setTestResult({ status: "error", message: msg });
       toast.error(msg);
     } finally {
@@ -137,8 +137,10 @@ export default function GlobalSettingsPage() {
         setBackendKeyMasked(res.anthropic_api_key_masked || null);
       }
       toast.success("Global AI Engine & Sovereign Keys saved to account & browser session.");
-    } catch (err: any) {
-      toast.error("Saved locally, but failed to sync to server database: " + (err?.message || ""));
+    } catch (err: unknown) {
+      toast.error(
+        "Saved locally, but failed to sync to server database: " + getErrorMessage(err, "unknown error")
+      );
     } finally {
       setSavingAi(false);
     }
@@ -173,8 +175,8 @@ export default function GlobalSettingsPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] text-pine-forest flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-card border border-border-quiet">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="font-mono text-[11px] text-severity-thread flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-card border border-border-quiet">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               Preferences Synchronized
             </span>
           </div>
@@ -311,7 +313,7 @@ export default function GlobalSettingsPage() {
                         </div>
 
                         {isSelected ? (
-                          <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-pine-forest/20 text-pine-forest border border-pine-forest/30 flex items-center gap-1">
+                          <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-severity-thread/20 text-severity-thread border border-severity-thread/30 flex items-center gap-1">
                             <Check className="w-3 h-3" /> Active Palette
                           </span>
                         ) : (
@@ -434,8 +436,8 @@ export default function GlobalSettingsPage() {
                       Sovereign API Key Override
                     </label>
                     {backendHasKey && (
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-pine-forest/15 text-pine-forest border border-pine-forest/30 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-severity-thread/15 text-severity-thread border border-severity-thread/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
                         Server Synced {backendKeyMasked ? `(${backendKeyMasked})` : ""}
                       </span>
                     )}
@@ -503,7 +505,7 @@ export default function GlobalSettingsPage() {
                     {testingConnection ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Zap className="w-3.5 h-3.5 text-amber-accent" />
+                      <Zap className="w-3.5 h-3.5 text-severity-warning" />
                     )}
                     <span>{testingConnection ? "Pinging Model..." : "Test AI Connection"}</span>
                   </Button>
@@ -513,14 +515,14 @@ export default function GlobalSettingsPage() {
                       className={cn(
                         "text-[11px] font-mono px-2.5 py-1 rounded-md border flex items-center gap-1.5",
                         testResult.status === "ok"
-                          ? "bg-pine-forest/10 text-pine-forest border-pine-forest/30"
+                          ? "bg-severity-thread/10 text-severity-thread border-severity-thread/30"
                           : "bg-wine-crimson/10 text-wine-crimson border-wine-crimson/30"
                       )}
                     >
                       <span
                         className={cn(
                           "w-1.5 h-1.5 rounded-full",
-                          testResult.status === "ok" ? "bg-pine-forest" : "bg-wine-crimson"
+                          testResult.status === "ok" ? "bg-severity-thread" : "bg-wine-crimson"
                         )}
                       />
                       {testResult.message}
@@ -563,8 +565,8 @@ export default function GlobalSettingsPage() {
                     {user?.display_name || "Author"}
                   </h3>
                   <p className="text-xs font-mono text-ink-ash">{user?.email}</p>
-                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-pine-forest pt-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+                  <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-severity-thread pt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
                     Verified Studio Session
                   </span>
                 </div>
@@ -655,7 +657,7 @@ export default function GlobalSettingsPage() {
                           {sess.user_agent || "Web Browser"}
                         </span>
                         {sess.is_current && (
-                          <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-pine-forest/20 text-pine-forest border border-pine-forest/30">
+                          <span className="font-mono text-[10px] px-2 py-0.5 rounded-full bg-severity-thread/20 text-severity-thread border border-severity-thread/30">
                             Current Device
                           </span>
                         )}
@@ -767,7 +769,11 @@ export default function GlobalSettingsPage() {
                 </label>
                 <select
                   value={defaultStrictness}
-                  onChange={(e) => setDefaultStrictness(e.target.value as any)}
+                  onChange={(e) =>
+                    setDefaultStrictness(
+                      e.target.value as "strict" | "balanced" | "relaxed"
+                    )
+                  }
                   className="w-full bg-surface-subtle border border-border-subtle rounded-xl px-3.5 py-2.5 text-xs text-ink-parchment outline-none focus:border-wine-accent cursor-pointer transition-colors"
                 >
                   <option value="balanced">Balanced (Flags major plot holes &amp; obvious contradictions)</option>

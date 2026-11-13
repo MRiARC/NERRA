@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Newsreader, Literata, Plus_Jakarta_Sans } from "next/font/google";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { Toaster } from "sonner";
+import { StudioToaster } from "@/components/providers/StudioToaster";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -46,17 +46,17 @@ export default function RootLayout({
       data-theme="literary-obsidian"
     >
       <body className="min-h-full flex flex-col bg-surface-void text-ink-parchment selection:bg-wine-accent selection:text-ink-parchment">
+        {/* Apply the persisted theme before hydration to avoid a dark flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){try{var raw=localStorage.getItem("nerra_theme_preference");if(!raw)return;var parsed=JSON.parse(raw);var theme=(parsed.state||parsed).theme;if(theme){document.documentElement.setAttribute("data-theme",theme);}}catch(e){}})();',
+          }}
+        />
         <QueryProvider>
           <ThemeProvider>
             {children}
-            <Toaster
-              theme="dark"
-              position="bottom-right"
-              toastOptions={{
-                className:
-                  "!bg-surface-elevated !border !border-border-prominent !text-ink-parchment !shadow-2xl",
-              }}
-            />
+            <StudioToaster />
           </ThemeProvider>
         </QueryProvider>
       </body>

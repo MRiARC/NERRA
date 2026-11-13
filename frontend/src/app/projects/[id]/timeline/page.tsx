@@ -70,8 +70,8 @@ export default function TimelinePage({ params }: TimelinePageProps) {
               Chrono-Spatial Integrity
             </span>
             <span className="text-border-subtle">•</span>
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-pine-forest">
-              <span className="w-1.5 h-1.5 rounded-full bg-pine-forest" />
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-severity-thread">
+              <span className="w-1.5 h-1.5 rounded-full bg-severity-thread" />
               Temporal Engine Active
             </span>
           </div>
@@ -141,7 +141,7 @@ export default function TimelinePage({ params }: TimelinePageProps) {
             <p className="text-[11px] font-mono uppercase tracking-wider text-ink-ash">Flashforwards</p>
             <p className="text-2xl font-serif text-ink-parchment mt-0.5">{timeline?.flashforward_count ?? 0}</p>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-surface-subtle border border-border-quiet flex items-center justify-center text-pine-forest">
+          <div className="w-8 h-8 rounded-lg bg-surface-subtle border border-border-quiet flex items-center justify-center text-severity-thread">
             <FastForward className="w-4 h-4" />
           </div>
         </Surface>
@@ -247,7 +247,7 @@ export default function TimelinePage({ params }: TimelinePageProps) {
                     ev.is_flashback
                       ? "bg-wine-accent border-surface-void"
                       : ev.is_flashforward
-                      ? "bg-pine-forest border-surface-void"
+                      ? "bg-severity-thread border-surface-void"
                       : hasConflict
                       ? "bg-wine-crimson border-surface-void"
                       : "bg-ink-bone border-surface-void"

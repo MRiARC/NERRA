@@ -1,7 +1,17 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+
+export function useSystemHealth() {
+  return useQuery({
+    queryKey: ["system-health"],
+    queryFn: () => api.system.health(),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 0,
+  });
+}
 
 export function useProject(projectId: string) {
   return useQuery({
@@ -59,10 +69,10 @@ export function useClaims(projectId: string, chapter?: number) {
   });
 }
 
-export function useIssues(projectId: string, severity?: string) {
+export function useIssues(projectId: string, status?: string) {
   return useQuery({
-    queryKey: ["issues", projectId, severity],
-    queryFn: () => api.story.getIssues(projectId, severity),
+    queryKey: ["issues", projectId, status],
+    queryFn: () => api.story.getIssues(projectId, status),
     enabled: Boolean(projectId),
   });
 }
