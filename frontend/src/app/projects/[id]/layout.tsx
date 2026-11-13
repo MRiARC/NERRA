@@ -46,7 +46,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
   const projectId = resolvedParams.id;
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading: authLoading, checkAuth } = useAuthStore();
+  const { isAuthenticated, isCheckingAuth: authLoading, checkAuth } = useAuthStore();
 
   useEffect(() => {
     checkAuth();

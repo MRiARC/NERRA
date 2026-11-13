@@ -6,7 +6,11 @@ import type { User, UserSession } from "@/lib/types";
 interface AuthState {
   user: User | null;
   sessions: UserSession[];
+  /** True only while a sign-in/registration request is in flight. */
   isLoading: boolean;
+  /** True while the boot session probe is in flight. Kept separate from
+   * `isLoading` so the sign-in form is not disabled on a cold visit. */
+  isCheckingAuth: boolean;
   isAuthenticated: boolean;
   error: string | null;
 
@@ -24,19 +28,20 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   sessions: [],
-  isLoading: true,
+  isLoading: false,
+  isCheckingAuth: true,
   isAuthenticated: false,
   error: null,
 
   checkAuth: async () => {
-    set({ isLoading: true, error: null });
+    set({ isCheckingAuth: true, error: null });
     try {
       const user = await api.auth.me();
-      set({ user, isAuthenticated: true, isLoading: false });
+      set({ user, isAuthenticated: true, isCheckingAuth: false });
       // Pre-fetch active sessions in background
       get().fetchSessions();
     } catch {
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, isAuthenticated: false, isCheckingAuth: false });
     }
   },
 
