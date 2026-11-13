@@ -5,37 +5,45 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/useAuthStore";
 import { Navbar } from "@/components/dashboard/Navbar";
-import { ProjectCard } from "@/components/dashboard/ProjectCard";
+import { ShelfRow } from "@/components/dashboard/ShelfRow";
 import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
 import { ImportManuscriptModal } from "@/components/dashboard/ImportManuscriptModal";
 import { SessionsDrawer } from "@/components/dashboard/SessionsDrawer";
 import { Button } from "@/components/ui/Button";
 import { Surface } from "@/components/ui/Surface";
 import { Badge } from "@/components/ui/Badge";
-import { formatWords } from "@/lib/utils";
 import type { Project } from "@/lib/types";
 import {
   BookPlus,
-  BookOpen,
-  GitBranch,
-  ShieldCheck,
-  Sparkles,
-  Layers,
-  ArrowRight,
-  Clock,
   Compass,
-  FileText,
-  AlertTriangle,
-  ScrollText,
+  Clock,
+  GitBranch,
+  ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
+
+/** Time-aware greeting. Rendered on the server too, hence the hydration guard. */
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Still awake";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function today(): string {
+  return new Date()
+    .toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
+    .toUpperCase();
+}
 
 export default function DashboardPage() {
   const { user, isAuthenticated, checkAuth, isCheckingAuth: authLoading } = useAuthStore();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [sessionsDrawerOpen, setSessionsDrawerOpen] = useState(false);
   const [uploadProject, setUploadProject] = useState<Project | null>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     checkAuth();
@@ -55,198 +63,185 @@ export default function DashboardPage() {
   const totalChapters = projects.reduce((acc, p) => acc + (p.chapter_count || 0), 0);
   const totalIssues = projects.reduce((acc, p) => acc + (p.open_issue_count || 0), 0);
 
+  const firstName = (user?.display_name || "").trim().split(/\s+/)[0] || "author";
+
+  const stateLine =
+    projects.length === 0
+      ? "The shelf is empty. The first page is yours."
+      : totalChapters === 0
+      ? `${projects.length === 1 ? "One story" : `${projects.length} stories`} on the shelf, not yet read. Bring in a draft and I will start mapping it.`
+      : totalIssues > 0
+      ? `${projects.length === 1 ? "One story" : `${projects.length} stories`} on the shelf. ${totalIssues} ${
+          totalIssues === 1 ? "thread is" : "threads are"
+        } waiting for you.`
+      : `${projects.length === 1 ? "One story" : `${projects.length} stories`} on the shelf. Nothing is broken today.`;
+
+  const ledger = [
+    { value: totalWords.toLocaleString(), label: "words" },
+    { value: String(totalChapters), label: totalChapters === 1 ? "chapter" : "chapters" },
+    {
+      value: String(totalIssues),
+      label: totalIssues === 1 ? "open thread" : "open threads",
+      alert: totalIssues > 0,
+    },
+    {
+      value: String(projects.length),
+      label: projects.length === 1 ? "story" : "stories",
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-surface-void flex flex-col selection:bg-wine-accent selection:text-ink-parchment">
-      {/* Top Studio Navbar */}
       <Navbar
         onOpenNewProject={() => setNewProjectOpen(true)}
         onOpenSessions={() => setSessionsDrawerOpen(true)}
       />
 
-      {/* Main Studio Canvas */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-12 sm:py-16">
         {isAuthenticated ? (
           <>
-            {/* Authenticated Writer's Studio Hero */}
-            <Surface
-              depth={2}
-              border="subtle"
-              rounded="lg"
-              className="p-8 sm:p-10"
+            {/* Nameplate */}
+            <motion.section
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
             >
-              <div className="max-w-2xl space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge variant="wine" size="sm" className="gap-1.5" dot>
-                    <span>Story Checker: Online</span>
-                  </Badge>
-                  <span className="text-xs text-ink-ash">•</span>
-                  <span className="text-xs text-ink-bone font-serif italic">
-                    Welcome back to your Study, {user?.display_name || "Author"}
-                  </span>
-                </div>
-
-                <h1 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-ink-parchment leading-tight">
-                  Your Novels & Story Atlas
-                </h1>
-
-                <p className="text-xs sm:text-sm text-ink-bone leading-relaxed">
-                  Your personal story assistant. Keep track of characters, catch timeline contradictions across chapters, and write with complete confidence.
-                </p>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <Button
-                    variant="primary"
-                    size="md"
-                    onClick={() => setNewProjectOpen(true)}
-                    className="gap-2"
-                  >
-                    <BookPlus className="w-4 h-4" />
-                    <span>Create New Story</span>
-                  </Button>
-                </div>
+              <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+                <span>Study</span>
+                <span aria-hidden className="h-px w-8 bg-border-subtle" />
+                <span suppressHydrationWarning>{today()}</span>
               </div>
-            </Surface>
 
-            {/* High-Level Telemetry Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
-                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
-                  <span>Total Words</span>
-                  <ScrollText className="w-4 h-4 text-wine-crimson" />
-                </div>
-                <div className="font-serif text-2xl font-medium text-ink-parchment">
-                  {formatWords(totalWords)}
-                </div>
-                <div className="text-xs text-ink-ash font-medium">
-                  Across {projects.length} {projects.length === 1 ? "story" : "stories"}
-                </div>
-              </Surface>
+              <h1 className="mt-6 font-serif text-[clamp(2.25rem,5vw,3.5rem)] font-medium leading-[1.05] tracking-tight text-ink-parchment">
+                <span suppressHydrationWarning>{greeting()}</span>, {firstName}.
+              </h1>
 
-              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
-                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
-                  <span>Chapters Ingested</span>
-                  <BookOpen className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div className="font-serif text-2xl font-medium text-ink-parchment">
-                  {totalChapters}
-                </div>
-                <div className="text-xs text-ink-ash font-medium">
-                  Ready in your workspace
-                </div>
-              </Surface>
+              <p className="mt-4 max-w-xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
+                {stateLine}
+              </p>
 
-              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
-                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
-                  <span>Plot Alerts</span>
-                  <AlertTriangle className="w-4 h-4 text-severity-contradiction" />
-                </div>
-                <div className="font-serif text-2xl font-medium text-ink-parchment flex items-baseline gap-2">
-                  <span>{totalIssues}</span>
-                  {totalIssues === 0 && (
-                    <span className="text-xs font-sans text-emerald-400 font-medium">All Consistent</span>
-                  )}
-                </div>
-                <div className="text-xs text-ink-ash font-medium">
-                  {totalIssues === 0 ? "No contradictions found" : "Items to review"}
-                </div>
-              </Surface>
-
-              <Surface depth={1} border="subtle" rounded="md" className="p-5 space-y-1 shadow-[inset_0_1px_0_0_var(--edge-highlight)]">
-                <div className="flex items-center justify-between text-ink-faint font-semibold uppercase tracking-wider text-xs">
-                  <span>Consistency Engine</span>
-                  <Sparkles className="w-4 h-4 text-wine-crimson" />
-                </div>
-                <div className="font-serif text-2xl font-medium text-ink-parchment">
-                  Ready
-                </div>
-                <div className="text-xs text-ink-ash font-medium">
-                  Monitoring your story
-                </div>
-              </Surface>
-            </div>
-
-            {/* Novel Workspace Grid */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-serif text-xl font-medium tracking-tight text-ink-parchment">
-                    Your Novels
-                  </h2>
-                  <p className="text-xs text-ink-ash mt-0.5">
-                    Select a story to open the editor, read chapters, or check consistency.
-                  </p>
-                </div>
-
+              <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-4">
                 <Button
-                  variant="outline"
-                  size="sm"
+                  variant="primary"
+                  size="md"
                   onClick={() => setNewProjectOpen(true)}
-                  className="gap-1.5"
+                  className="gap-2"
                 >
-                  <BookPlus className="w-3.5 h-3.5" />
-                  <span>New Manuscript</span>
+                  <BookPlus className="w-4 h-4" />
+                  <span>New story</span>
                 </Button>
-              </div>
 
-              {projectsLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {[1, 2, 3].map((n) => (
-                    <div
-                      key={n}
-                      className="h-[236px] rounded-xl bg-surface-subtle border border-border-quiet animate-pulse"
-                    />
-                  ))}
-                </div>
-              ) : projects.length === 0 ? (
-                <Surface
-                  depth={1}
-                  border="quiet"
-                  rounded="sm"
-                  className="p-12 text-center space-y-4 max-w-lg mx-auto"
+                <button
+                  type="button"
+                  onClick={() => projects.length > 0 && setUploadProject(projects[0])}
+                  disabled={projects.length === 0}
+                  className="group inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-ash"
                 >
-                  <div className="w-12 h-12 rounded-full bg-surface-card border border-border-subtle flex items-center justify-center text-ink-ash mx-auto">
-                    <BookOpen className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                      No manuscripts in your Study yet
-                    </h3>
-                    <p className="text-xs text-ink-bone mt-1 leading-relaxed">
-                      Initialize a novel project or import an existing draft (.txt, .md, .docx, .pdf) to begin automatic entity extraction and continuity checks.
-                    </p>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => setNewProjectOpen(true)}
-                    className="gap-2"
+                  <span>Import manuscript</span>
+                  <span
+                    aria-hidden
+                    className="h-px w-6 bg-current transition-all duration-300 group-enabled:group-hover:w-9"
+                  />
+                </button>
+              </div>
+            </motion.section>
+
+            {/* Ledger */}
+            <motion.section
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={reduceMotion ? undefined : { opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.12 }}
+              className="mt-14 border-y border-border-quiet py-6"
+            >
+              <dl className="grid grid-cols-2 gap-y-6 sm:flex sm:items-baseline sm:gap-0">
+                {ledger.map((entry, i) => (
+                  <div
+                    key={entry.label}
+                    className={
+                      i === 0
+                        ? "sm:pr-9"
+                        : "sm:border-l sm:border-border-quiet sm:px-9 last:sm:pr-0"
+                    }
                   >
-                    <BookPlus className="w-4 h-4" />
-                    <span>Create First Manuscript</span>
-                  </Button>
-                </Surface>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {projects.map((project) => (
-                    <ProjectCard
-                      key={project.id}
-                      project={project}
-                      onUploadClick={(proj) => setUploadProject(proj)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+                    <dd
+                      className={`font-serif text-2xl tabular-nums ${
+                        entry.alert ? "text-severity-contradiction" : "text-ink-parchment"
+                      }`}
+                    >
+                      {entry.value}
+                    </dd>
+                    <dt className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+                      {entry.label}
+                    </dt>
+                  </div>
+                ))}
+              </dl>
+            </motion.section>
+
+            {/* Shelf */}
+            <section className="mt-12">
+              <header className="flex items-baseline justify-between gap-4">
+                <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+                  Your shelf
+                </h2>
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+                  {projects.length} {projects.length === 1 ? "manuscript" : "manuscripts"}
+                </span>
+              </header>
+
+              <div className="mt-2">
+                {authLoading || projectsLoading ? (
+                  <div className="divide-y divide-border-quiet">
+                    {[0, 1, 2].map((n) => (
+                      <div key={n} className="flex items-center gap-6 py-7">
+                        <div className="h-12 w-[10px] rounded-full bg-surface-subtle" />
+                        <div className="flex-1 space-y-2.5">
+                          <div className="h-4 w-1/3 rounded bg-surface-subtle" />
+                          <div className="h-3 w-1/5 rounded bg-surface-subtle/70" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : projects.length === 0 ? (
+                  <div className="border-t border-dashed border-border-subtle py-20 text-center">
+                    <p className="font-serif text-2xl text-ink-parchment">
+                      The first page is blank.
+                    </p>
+                    <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+                      No manuscripts in this study
+                    </p>
+                    <div className="mt-7 flex justify-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNewProjectOpen(true)}
+                        className="gap-2"
+                      >
+                        <BookPlus className="w-3.5 h-3.5" />
+                        <span>Begin a story</span>
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div role="list">
+                    {projects.map((project, index) => (
+                      <ShelfRow
+                        key={project.id}
+                        project={project}
+                        index={index}
+                        staticEntry={Boolean(reduceMotion)}
+                        onUploadClick={(proj) => setUploadProject(proj)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
           </>
         ) : (
           /* Unauthenticated Landing / Guest Experience */
           <div className="space-y-12 py-8">
-            <Surface
-              depth={2}
-              border="subtle"
-              rounded="lg"
-              className="p-8 sm:p-14 text-center max-w-3xl mx-auto"
-            >
+            <Surface depth={2} border="subtle" rounded="lg" className="p-8 sm:p-14 text-center max-w-3xl mx-auto">
               <div className="space-y-4">
                 <Badge variant="wine" size="sm" className="gap-1.5" dot>
                   <span>Deterministic Story Intelligence</span>
@@ -257,7 +252,9 @@ export default function DashboardPage() {
                 </h1>
 
                 <p className="text-sm sm:text-base text-ink-bone max-w-xl mx-auto leading-relaxed">
-                  NERRA parses your novel into an interconnected universe: characters, knowledge states, physical object custody, and dual timelines—surfacing contradictions before your readers do.
+                  NERRA parses your novel into an interconnected universe: characters, knowledge
+                  states, physical object custody, and dual timelines—surfacing contradictions before
+                  your readers do.
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
@@ -287,7 +284,8 @@ export default function DashboardPage() {
                   Epistemic Knowledge Matrix
                 </h3>
                 <p className="text-ink-ash leading-relaxed">
-                  2D matrix tracking exactly who knows which secrets, since which chapter, and whether information was learned firsthand or overheard.
+                  2D matrix tracking exactly who knows which secrets, since which chapter, and whether
+                  information was learned firsthand or overheard.
                 </p>
               </Surface>
 
@@ -299,7 +297,8 @@ export default function DashboardPage() {
                   Dual Chronology Engine
                 </h3>
                 <p className="text-ink-ash leading-relaxed">
-                  Toggle seamlessly between Narrative In-Book order and In-Universe Chronological order, with automatic spatiotemporal collision warnings.
+                  Toggle seamlessly between Narrative In-Book order and In-Universe Chronological
+                  order, with automatic spatiotemporal collision warnings.
                 </p>
               </Surface>
 
@@ -308,10 +307,11 @@ export default function DashboardPage() {
                   <GitBranch className="w-4 h-4" />
                 </div>
                 <h3 className="font-serif text-base font-medium text-ink-parchment">
-                  Story Graph & Custody
+                  Story Graph &amp; Custody
                 </h3>
                 <p className="text-ink-ash leading-relaxed">
-                  Multi-hop entity graph tracking artifact custody handoffs and character dynamics with chapter-temporal validity.
+                  Multi-hop entity graph tracking artifact custody handoffs and character dynamics
+                  with chapter-temporal validity.
                 </p>
               </Surface>
             </div>
@@ -319,7 +319,6 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* Modals & Drawers */}
       <NewProjectModal
         isOpen={newProjectOpen}
         onClose={() => setNewProjectOpen(false)}
