@@ -667,7 +667,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
           </div>
 
           {/* Antigravity Docked Footer Settings */}
-          <div className="p-2 shrink-0">
+          <div className="p-2 pb-3 shrink-0">
             {!collapsed ? (
               <div className="flex items-center justify-between px-2 py-1.5 rounded-lg text-xs text-ink-faint hover:text-ink-parchment hover:bg-white/[0.04] transition-colors">
                 <Link

@@ -958,9 +958,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
               }
             }}
             className={[
-              "mt-6 w-full bg-transparent font-prose text-[18.5px] leading-[1.95] text-ink-bone outline-none sm:text-[19px]",
+              "mt-5 w-full bg-transparent font-prose text-[18px] leading-[1.75] text-ink-bone outline-none sm:text-[18.5px]",
               minHeightClassName,
-              "[&_p]:my-0 [&_p]:mb-[1.05em] [&_p:last-child]:mb-0",
+              "[&_p]:my-0 [&_p]:mb-[0.65em] [&_p:last-child]:mb-0",
               "[&_h2]:mb-[0.55em] [&_h2]:mt-[1.35em] [&_h2]:font-serif [&_h2]:text-[26px] [&_h2]:font-normal [&_h2]:leading-snug [&_h2]:tracking-tight [&_h2]:text-ink-parchment",
               "[&_h2:first-child]:mt-0",
               "[&_h3]:mb-[0.45em] [&_h3]:mt-[1.2em] [&_h3]:font-serif [&_h3]:text-[21px] [&_h3]:font-normal [&_h3]:text-ink-parchment",

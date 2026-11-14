@@ -24,6 +24,7 @@ import type {
   PlotThread,
   Project,
   ProjectCustomization,
+  Relationship,
   StoryGraph,
   Timeline,
   TokenOut,
@@ -384,6 +385,10 @@ export const api = {
   story: {
     async getCharacters(projectId: string): Promise<Character[]> {
       return request<Character[]>(`/projects/${projectId}/characters`);
+    },
+
+    async getRelationships(projectId: string): Promise<Relationship[]> {
+      return request<Relationship[]>(`/projects/${projectId}/relationships`);
     },
 
     async getCharacter(projectId: string, characterId: string): Promise<Character> {

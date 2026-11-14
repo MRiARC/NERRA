@@ -72,78 +72,86 @@ export function FindingNotes({
         </p>
       </div>
 
-      <ol className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2.5 pb-3">
-        {ordered.map((issue) => {
-          const paragraph = paragraphOfQuote(content, quoteForChapter(issue, chapterNumber));
-          const isActive = issue.id === activeIssueId;
-          const settledIssue = !isOpen(issue);
+      {ordered.length > 0 ? (
+        <ol className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto px-2.5 pb-3">
+          {ordered.map((issue) => {
+            const paragraph = paragraphOfQuote(content, quoteForChapter(issue, chapterNumber));
+            const isActive = issue.id === activeIssueId;
+            const settledIssue = !isOpen(issue);
 
-          return (
-            <li key={issue.id}>
-              <button
-                type="button"
-                data-finding={issue.id}
-                onClick={() => onOpen(issue)}
-                aria-pressed={isActive}
-                title="Open this finding"
-                className={cn(
-                  "group flex w-full flex-col gap-1.5 rounded-lg p-2.5 text-left transition-all",
-                  isActive
-                    ? "bg-white/[0.08] shadow-sm"
-                    : "bg-white/[0.02] hover:bg-white/[0.05]"
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "h-1.5 w-1.5 shrink-0 rounded-full",
-                        settledIssue
-                          ? "bg-ink-faint/40"
-                          : SEVERITY_DOT[issue.severity] ?? "bg-ink-faint",
-                        issue.severity === "red" && !settledIssue && "shadow-[0_0_6px_rgba(244,63,94,0.6)]"
-                      )}
-                    />
-                    <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint font-medium">
-                      {typeLabel(issue)}
-                    </span>
-                  </div>
-                  <span className="rounded bg-surface-void/70 px-1.5 py-0.5 font-mono text-[8.5px] tabular-nums text-ink-ash">
-                    {paragraph ? `¶${paragraph}` : "—"}
-                  </span>
-                </div>
-
-                <span
+            return (
+              <li key={issue.id}>
+                <button
+                  type="button"
+                  data-finding={issue.id}
+                  onClick={() => onOpen(issue)}
+                  aria-pressed={isActive}
+                  title="Open this finding"
                   className={cn(
-                    "line-clamp-2 font-serif text-[12px] leading-snug",
-                    settledIssue
-                      ? "text-ink-ash/60 line-through"
-                      : isActive
-                      ? "text-ink-parchment font-medium"
-                      : "text-ink-bone group-hover:text-ink-parchment"
+                    "group flex w-full flex-col gap-1.5 rounded-lg p-2.5 text-left transition-all",
+                    isActive
+                      ? "bg-white/[0.08] shadow-sm"
+                      : "bg-white/[0.02] hover:bg-white/[0.05]"
                   )}
                 >
-                  {issue.description}
-                </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "h-1.5 w-1.5 shrink-0 rounded-full",
+                          settledIssue
+                            ? "bg-ink-faint/40"
+                            : SEVERITY_DOT[issue.severity] ?? "bg-ink-faint",
+                          issue.severity === "red" && !settledIssue && "shadow-[0_0_6px_rgba(244,63,94,0.6)]"
+                        )}
+                      />
+                      <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint font-medium">
+                        {typeLabel(issue)}
+                      </span>
+                    </div>
+                    <span className="rounded bg-surface-void/70 px-1.5 py-0.5 font-mono text-[8.5px] tabular-nums text-ink-ash">
+                      {paragraph ? `¶${paragraph}` : "—"}
+                    </span>
+                  </div>
 
-                {settledIssue && (
-                  <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-ink-faint/70">
-                    {statusSentence(issue)}
+                  <span
+                    className={cn(
+                      "line-clamp-2 font-serif text-[12px] leading-snug",
+                      settledIssue
+                        ? "text-ink-ash/60 line-through"
+                        : isActive
+                        ? "text-ink-parchment font-medium"
+                        : "text-ink-bone group-hover:text-ink-parchment"
+                    )}
+                  >
+                    {issue.description}
                   </span>
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ol>
 
-      {ordered.length === 0 && (
-        <p className="px-4 pb-4 font-serif text-[12px] italic leading-relaxed text-ink-ash/80">
-          {isProcessing
-            ? "The re-reading is in progress. Findings will appear here."
-            : "The checker found nothing here that argues with the book."}
-        </p>
+                  {settledIssue && (
+                    <span className="font-mono text-[8px] uppercase tracking-[0.12em] text-ink-faint/70">
+                      {statusSentence(issue)}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <div className="flex-1 px-3 pt-2">
+          <div className="rounded-lg border border-border-quiet/50 bg-white/[0.02] p-3 text-left">
+            <p className="font-serif text-[12px] italic leading-relaxed text-ink-ash">
+              {isProcessing
+                ? "The re-reading is in progress. Findings will appear here."
+                : "The checker found nothing here that argues with the book."}
+            </p>
+            <div className="mt-2.5 flex items-center gap-2 font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+              <span className="h-1.5 w-1.5 rounded-full bg-severity-thread" />
+              <span>Canon holds</span>
+            </div>
+          </div>
+        </div>
       )}
 
       <button

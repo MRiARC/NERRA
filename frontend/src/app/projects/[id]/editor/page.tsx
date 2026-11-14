@@ -691,9 +691,14 @@ export default function EditorPage({ params }: EditorPageProps) {
               </ol>
 
               {sortedChapters.length === 0 && (
-                <p className="px-2 py-4 font-serif text-[12px] italic leading-relaxed text-ink-ash">
-                  No chapters yet. Import a manuscript to begin.
-                </p>
+                <div className="rounded-lg border border-dashed border-border-quiet/60 p-3 text-center">
+                  <p className="font-serif text-[12px] italic leading-relaxed text-ink-ash">
+                    No chapters yet.
+                  </p>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-wider text-ink-faint">
+                    Import draft to begin
+                  </p>
+                </div>
               )}
             </div>
           </nav>
@@ -830,7 +835,7 @@ export default function EditorPage({ params }: EditorPageProps) {
               </button>
             </div>
           )}
-          <div className="mx-auto w-full max-w-[820px] px-4 py-6 sm:px-8 sm:py-10">
+          <div className="mx-auto w-full max-w-[780px] px-3 py-4 sm:px-6 sm:py-6">
             {storedDraft && (
               <div className="mb-3 flex items-center justify-between gap-4 rounded-lg bg-surface-elevated/70 px-4 py-2.5 text-left shadow-sm">
                 <p className="font-serif text-[12px] italic text-ink-ash">
@@ -871,8 +876,8 @@ export default function EditorPage({ params }: EditorPageProps) {
             )}
 
             <article className={cn(
-              "mx-auto w-full max-w-[700px] rounded-2xl bg-surface-card/60 pb-10 pt-9 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.85)] sm:pb-14 sm:pt-11",
-              posture === "review" ? "px-5 sm:px-10" : "px-7 sm:px-14"
+              "w-full rounded-2xl border border-border-quiet/50 bg-surface-card/60 pb-8 pt-7 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.85)] sm:pb-12 sm:pt-9",
+              posture === "review" ? "px-5 sm:px-8" : "px-6 sm:px-10"
             )}>
               <div className="flex items-baseline justify-between pb-3">
                 <p className="font-mono text-[9px] uppercase tracking-[0.22em] text-wine-accent">
@@ -957,7 +962,7 @@ export default function EditorPage({ params }: EditorPageProps) {
 
             </article>
 
-            <div className="mx-auto mt-4 flex max-w-[680px] items-center justify-between gap-3 px-3 py-3">
+            <div className="mt-4 flex w-full items-center justify-between gap-3 px-3 py-2">
               <button
                 type="button"
                 onClick={() => previousChapter && goToChapter(previousChapter.number)}
