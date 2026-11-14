@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { ImportManuscriptModal } from "@/components/dashboard/ImportManuscriptModal";
 import { api } from "@/lib/api";
 import { formatWords, getErrorMessage } from "@/lib/utils";
-import { ArrowRight, Download, MoreHorizontal, Sparkles, Upload } from "lucide-react";
+import { ArrowRight, Download, Loader2, MoreHorizontal, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProjectHubPageProps {
@@ -238,6 +238,21 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           </div>
         </div>
       </header>
+
+      {/* Continuity Audit state banner */}
+      {isAuditing && (
+        <div className="mt-9 border-l-2 border-wine-accent py-2 pl-4 bg-surface-elevated/40 rounded-r-lg">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-wine-accent shrink-0" />
+            <p className="text-[13px] leading-relaxed text-ink-bone">
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-wine-accent font-semibold">
+                Auditing Canon ·{" "}
+              </span>
+              Checking cross-chapter continuity, world rules consistency, and timeline chronology with sovereign AI…
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Pipeline state — one line, only when it matters */}
       {status === "failed" && (
