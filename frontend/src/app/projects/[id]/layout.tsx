@@ -695,7 +695,12 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         </aside>
 
         {/* Workspace Canvas (Fluid, edge-to-edge content container) */}
-        <main className="flex flex-1 flex-col overflow-hidden min-h-0 bg-surface-void">
+        <main
+          className={cn(
+            "flex flex-1 flex-col min-h-0 bg-surface-void",
+            isEditorPage || pathname.includes("/chat") ? "overflow-hidden" : "overflow-y-auto"
+          )}
+        >
           {children}
         </main>
       </div>
