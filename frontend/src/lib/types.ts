@@ -368,3 +368,39 @@ export interface AiConnectionTestResult {
 }
 
 
+
+export interface StoryEvent {
+  id: string;
+  project_id: string;
+  chapter_number: number;
+  scene_order: number;
+  story_time_order: number;
+  summary: string;
+  location: string | null;
+  is_flashback: boolean;
+}
+export interface PipelineProgress {
+  status: "idle" | "running" | "completed" | "failed";
+  current_chapter?: number;
+  total_chapters?: number;
+  step?: string;
+  error?: string | null;
+}
+
+export interface StoryEvent {
+  id: string;
+  project_id: string;
+  chapter_number: number;
+  scene_order: number;
+  story_time_order: number;
+  summary: string;
+  location: string | null;
+  is_flashback: boolean;
+}
+export interface PipelineProgress {
+  status: "idle" | "running" | "completed" | "failed";
+  current_chapter?: number;
+  total_chapters?: number;
+  step?: string;
+  error?: string | null;
+}
