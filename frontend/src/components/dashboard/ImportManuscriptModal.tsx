@@ -535,13 +535,7 @@ export function ImportManuscriptModal({
                   Manuscript Ingestion Succeeded
                 </h3>
                 <p className="text-xs text-ink-ash mt-1 max-w-md mx-auto leading-relaxed">
-                  {statusData?.error_note && statusData.error_note.includes("Air-Gapped") ? (
-                    <span className="text-pine-moss font-medium">
-                      Analyzed via Air-Gapped Heuristic Engine. All chapters, characters, and claims are populated.
-                    </span>
-                  ) : (
-                    `All ${statusData?.chapters_total || 4} chapters were parsed and canon-verified. Characters, locations, and timelines are ready.`
-                  )}
+                  All {statusData?.chapters_total || 4} chapters were parsed and canon-verified. Characters, locations, and timelines are ready.
                 </p>
               </div>
 

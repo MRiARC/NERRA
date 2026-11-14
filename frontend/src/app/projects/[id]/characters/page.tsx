@@ -81,19 +81,24 @@ export default function CharactersPage({ params }: CharactersPageProps) {
   const edges = useMemo(() => {
     const raw = graph?.edges || [];
     return raw
-      .filter((edge) => positionById.has(edge.source) && positionById.has(edge.target))
-      .map((edge) => ({
-        ...edge,
-        from: positionById.get(edge.source)!,
-        to: positionById.get(edge.target)!,
-      }));
+      .map((edge) => {
+        const src = edge.source.replace(/^char:/i, "");
+        const dst = edge.target.replace(/^char:/i, "");
+        if (!positionById.has(src) || !positionById.has(dst)) return null;
+        return {
+          ...edge,
+          from: positionById.get(src)!,
+          to: positionById.get(dst)!,
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
   }, [graph?.edges, positionById]);
 
   const connectionsById = useMemo(() => {
     const map = new Map<string, number>();
     for (const edge of edges) {
-      map.set(edge.source, (map.get(edge.source) || 0) + 1);
-      map.set(edge.target, (map.get(edge.target) || 0) + 1);
+      map.set(edge.from.id, (map.get(edge.from.id) || 0) + 1);
+      map.set(edge.to.id, (map.get(edge.to.id) || 0) + 1);
     }
     return map;
   }, [edges]);
@@ -104,9 +109,9 @@ export default function CharactersPage({ params }: CharactersPageProps) {
   const selectedRelations = useMemo(() => {
     if (!selectedCharacter) return [];
     return edges
-      .filter((edge) => edge.source === selectedCharacter.id || edge.target === selectedCharacter.id)
+      .filter((edge) => edge.from.id === selectedCharacter.id || edge.to.id === selectedCharacter.id)
       .map((edge) => {
-        const otherId = edge.source === selectedCharacter.id ? edge.target : edge.source;
+        const otherId = edge.from.id === selectedCharacter.id ? edge.to.id : edge.from.id;
         const other = characters.find((c) => c.id === otherId);
         return { id: edge.id, other, relation: edge.relation, chapter: edge.since_chapter };
       })
@@ -204,8 +209,8 @@ export default function CharactersPage({ params }: CharactersPageProps) {
               {edges.map((edge) => {
                 const isLit =
                   !selectedCharacter ||
-                  edge.source === selectedCharacter.id ||
-                  edge.target === selectedCharacter.id;
+                  edge.from.id === selectedCharacter.id ||
+                  edge.to.id === selectedCharacter.id;
                 const warmth = (edge.sentiment || "").toLowerCase();
                 const stroke =
                   warmth.includes("neg") || warmth.includes("hostil") || warmth.includes("conflict")
