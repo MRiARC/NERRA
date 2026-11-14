@@ -913,11 +913,14 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
     return (
       <div className="mt-4">
-        {/* Format bar — attached as a sleek subheading deck right below chapter title */}
+        {/* Format bar — attached as a sleek subheading deck spanning edge-to-edge of the editor box */}
         <div
           className={cn(
-            "sticky z-20 flex items-center justify-between border-b border-border-quiet/50 bg-surface-card/90 backdrop-blur-md py-2 mb-5 transition-all w-full",
-            isFindOpen ? "top-[49px]" : "top-0"
+            "sticky z-20 flex items-center justify-between border-b border-border-quiet/60 bg-surface-card/95 backdrop-blur-md py-2 mb-5 transition-all",
+            isFindOpen ? "top-[49px]" : "top-0",
+            posture === "review"
+              ? "-mx-5 px-5 sm:-mx-8 sm:px-8"
+              : "-mx-6 px-6 sm:-mx-10 sm:px-10"
           )}
         >
           <div className="flex items-center gap-0.5">
