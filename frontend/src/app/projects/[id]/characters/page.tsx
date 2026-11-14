@@ -232,7 +232,7 @@ export default function CharactersPage({ params }: CharactersPageProps) {
         const a = cleanId(rel.character_a_id);
         const b = cleanId(rel.character_b_id);
         if (a !== pId && b !== pId) continue;
-        const otherId = a === pId ? b : a;
+        const otherId: string = a === pId ? b : a;
         if (otherId === activeFocalId || otherId === pId) continue;
         const other = charMap.get(otherId);
         if (other && !secondaries.some((s) => s.character.id === other.id)) {
@@ -256,11 +256,11 @@ export default function CharactersPage({ params }: CharactersPageProps) {
     const aliases = (inspectedCharacter.aliases || []).map((a) => a.toLowerCase());
     return allIssues.filter((issue) => {
       const desc = (issue.description || "").toLowerCase();
-      const entity = (issue.entity_name || "").toLowerCase();
+      const entities = (issue.related_entities || []).map((e) => e.toLowerCase());
       return (
-        entity === name ||
+        entities.includes(name) ||
         desc.includes(name) ||
-        aliases.some((alias) => desc.includes(alias) || entity === alias)
+        aliases.some((alias) => desc.includes(alias) || entities.includes(alias))
       );
     });
   }, [inspectedCharacter, allIssues]);
