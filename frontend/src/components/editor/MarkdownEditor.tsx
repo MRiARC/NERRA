@@ -515,6 +515,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       heading: false,
       quote: false,
     });
+    const [floatingMenu, setFloatingMenu] = useState<{ x: number; y: number } | null>(null);
 
     // Paint the markdown into the editable surface only when the value arrives
     // from outside (chapter load, restore, replace-all). Our own keystrokes are
@@ -869,20 +870,38 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
       focusMark,
     }));
 
-    // Paragraph indicator and the highlighted format buttons follow the caret.
+    // Paragraph indicator and the floating format menu follow the selection (PR #48).
     useEffect(() => {
       const handleSelectionChange = () => {
         const root = rootRef.current;
         const selection = window.getSelection();
-        if (!root || !selection || selection.rangeCount === 0) return;
-        if (!root.contains(selection.getRangeAt(0).startContainer)) return;
+        if (!root || !selection || selection.rangeCount === 0) {
+          setFloatingMenu(null);
+          return;
+        }
 
-        const block = currentBlock();
-        if (!block) return;
+        const range = selection.getRangeAt(0);
+        if (!root.contains(range.commonAncestorContainer) && !root.contains(range.startContainer)) {
+          setFloatingMenu(null);
+          return;
+        }
+
+        if (selection.isCollapsed || selection.toString().trim().length === 0) {
+          setFloatingMenu(null);
+          refreshFormats();
+          return;
+        }
+
+        const rect = range.getBoundingClientRect();
+        setFloatingMenu({
+          x: Math.min(Math.max(rect.left + rect.width / 2, 120), window.innerWidth - 160),
+          y: Math.max(rect.top - 8, 72),
+        });
 
         refreshFormats();
 
-        if (onParagraphChange) {
+        const block = currentBlock();
+        if (block && onParagraphChange) {
           const index = Array.from(root.children).indexOf(block);
           onParagraphChange(index + 1);
         }
@@ -893,34 +912,85 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
     }, [currentBlock, onParagraphChange, refreshFormats]);
 
     return (
-      <div className="mt-5">
-        {/* Format bar — clean floating hardware deck, flush with prose */}
-        <div
-          className={cn(
-            "sticky z-20 flex items-center gap-0.5 rounded-lg bg-surface-card/80 backdrop-blur-md px-2 py-1.5 shadow-sm transition-all mb-4 w-full",
-            isFindOpen ? "top-[49px]" : "top-0"
-          )}
-        >
-          <FormatButton label="Heading" active={formats.heading} onClick={() => applyBlock("h2")}>
-            <Heading2 className="h-3.5 w-3.5" />
-          </FormatButton>
-          <FormatButton label="Bold" active={formats.bold} onClick={() => applyInline("bold")}>
-            <Bold className="h-3.5 w-3.5" />
-          </FormatButton>
-          <FormatButton label="Italic" active={formats.italic} onClick={() => applyInline("italic")}>
-            <Italic className="h-3.5 w-3.5" />
-          </FormatButton>
-          <span aria-hidden className="mx-1 h-4 w-px bg-border-quiet/60" />
-          <FormatButton label="Quote" active={formats.quote} onClick={() => applyBlock("blockquote")}>
-            <Quote className="h-3.5 w-3.5" />
-          </FormatButton>
-          <FormatButton label="Scene break" onClick={insertSceneBreak}>
-            <Minus className="h-3.5 w-3.5" />
-          </FormatButton>
-          <span className="ml-auto hidden font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint/50 sm:inline">
-            {isMac ? "⌘B bold · ⌘I italic" : "Ctrl+B bold · Ctrl+I italic"}
-          </span>
-        </div>
+      <div className="mt-4">
+        {/* Floating formatting toolbar, only over a text selection — PR #48 */}
+        {floatingMenu && (
+          <div
+            className="fixed z-50 flex items-center gap-0.5 rounded border border-border-quiet bg-surface-elevated px-1.5 py-1 shadow-xl backdrop-blur select-none"
+            style={{
+              left: floatingMenu.x,
+              top: floatingMenu.y,
+              transform: "translate(-50%, -120%)",
+            }}
+          >
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyInline("bold")}
+              aria-label="Bold"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center font-serif text-[13px] font-bold rounded transition-colors",
+                formats.bold
+                  ? "bg-white/[0.12] text-ink-parchment"
+                  : "text-ink-ash hover:text-ink-parchment hover:bg-white/[0.05]"
+              )}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyInline("italic")}
+              aria-label="Italic"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center font-serif text-[13px] italic rounded transition-colors",
+                formats.italic
+                  ? "bg-white/[0.12] text-ink-parchment"
+                  : "text-ink-ash hover:text-ink-parchment hover:bg-white/[0.05]"
+              )}
+            >
+              I
+            </button>
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyBlock("h2")}
+              aria-label="Heading"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center font-serif text-[11px] uppercase tracking-wide rounded transition-colors",
+                formats.heading
+                  ? "bg-white/[0.12] text-ink-parchment"
+                  : "text-ink-ash hover:text-ink-parchment hover:bg-white/[0.05]"
+              )}
+            >
+              H
+            </button>
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => applyBlock("blockquote")}
+              aria-label="Quote"
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded transition-colors",
+                formats.quote
+                  ? "bg-white/[0.12] text-ink-parchment"
+                  : "text-ink-ash hover:text-ink-parchment hover:bg-white/[0.05]"
+              )}
+            >
+              <Quote className="h-3 w-3" />
+            </button>
+            <span aria-hidden className="mx-0.5 h-4 w-px bg-border-quiet" />
+            <button
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={insertSceneBreak}
+              aria-label="Scene break"
+              className="flex h-7 w-7 items-center justify-center font-serif text-[12px] text-ink-ash rounded transition-colors hover:text-ink-parchment hover:bg-white/[0.05]"
+            >
+              ⁂
+            </button>
+          </div>
+        )}
 
         <div className="relative">
           {isEmpty && (
