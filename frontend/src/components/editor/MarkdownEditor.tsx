@@ -913,6 +913,36 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
     return (
       <div className="mt-4">
+        {/* Format bar — attached as a sleek subheading deck right below chapter title */}
+        <div
+          className={cn(
+            "sticky z-20 flex items-center justify-between border-b border-border-quiet/50 bg-surface-card/90 backdrop-blur-md py-2 mb-5 transition-all w-full",
+            isFindOpen ? "top-[49px]" : "top-0"
+          )}
+        >
+          <div className="flex items-center gap-0.5">
+            <FormatButton label="Heading" active={formats.heading} onClick={() => applyBlock("h2")}>
+              <Heading2 className="h-3.5 w-3.5" />
+            </FormatButton>
+            <FormatButton label="Bold" active={formats.bold} onClick={() => applyInline("bold")}>
+              <Bold className="h-3.5 w-3.5" />
+            </FormatButton>
+            <FormatButton label="Italic" active={formats.italic} onClick={() => applyInline("italic")}>
+              <Italic className="h-3.5 w-3.5" />
+            </FormatButton>
+            <span aria-hidden className="mx-1 h-3.5 w-px bg-border-quiet/60" />
+            <FormatButton label="Quote" active={formats.quote} onClick={() => applyBlock("blockquote")}>
+              <Quote className="h-3.5 w-3.5" />
+            </FormatButton>
+            <FormatButton label="Scene break" onClick={insertSceneBreak}>
+              <Minus className="h-3.5 w-3.5" />
+            </FormatButton>
+          </div>
+          <span className="hidden font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint/60 sm:inline">
+            {isMac ? "⌘B bold · ⌘I italic" : "Ctrl+B bold · Ctrl+I italic"}
+          </span>
+        </div>
+
         {/* Floating formatting toolbar, only over a text selection — PR #48 */}
         {floatingMenu && (
           <div
