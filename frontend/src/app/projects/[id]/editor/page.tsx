@@ -279,9 +279,14 @@ export default function EditorPage({ params }: EditorPageProps) {
     setIsReanalyzing(true);
     try {
       await api.projects.reanalyzeChapter(projectId, manuscriptId, selectedChapterNumber);
-      toast.info(`Chapter ${selectedChapterNumber} queued for re-reading.`);
+      toast.success(`Chapter ${selectedChapterNumber} re-analyzed.`);
+      await Promise.all([
+        refetchIssues(),
+        refetchChapters(),
+        refetchCurrentChapter(),
+      ]);
     } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Could not queue the re-analysis."));
+      toast.error(getErrorMessage(error, "Could not complete the re-analysis."));
     } finally {
       setIsReanalyzing(false);
     }
@@ -523,10 +528,10 @@ export default function EditorPage({ params }: EditorPageProps) {
             type="button"
             onClick={handleReanalyze}
             disabled={isReanalyzingNow}
-            className="hidden items-center gap-1.5 rounded-lg bg-surface-elevated/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-ash transition-colors hover:text-ink-parchment sm:inline-flex"
+            className="hidden items-center gap-1.5 rounded-lg bg-surface-elevated/60 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-ash transition-colors hover:text-ink-parchment disabled:opacity-60 sm:inline-flex"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", isReanalyzingNow && "animate-spin")} />
-            Re-read
+            <RefreshCw className={cn("h-3.5 w-3.5", isReanalyzingNow && "animate-spin text-wine-accent")} />
+            {isReanalyzingNow ? "Analyzing…" : "Re-read"}
           </button>
 
           <Link
@@ -736,6 +741,20 @@ export default function EditorPage({ params }: EditorPageProps) {
 
         {/* The leaf — softened */}
         <main className="relative min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface-void">
+          {/* Re-analysis in-flight banner */}
+          {isReanalyzingNow && (
+            <div className="sticky top-0 z-20 flex items-center justify-between border-b border-border-subtle bg-surface-elevated/95 px-6 py-2.5 backdrop-blur">
+              <div className="flex items-center gap-2.5">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-wine-accent" />
+                <span className="font-mono text-xs text-ink-parchment">
+                  Re-analyzing Chapter {selectedChapterNumber} with sovereign AI…
+                </span>
+              </div>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ink-ash">
+                Multi-pass Entity &amp; Rule Extraction
+              </span>
+            </div>
+          )}
           {/* Find — docked neatly above the prose without displacing sidebars */}
           {findOpen && (
             <div className="sticky top-0 z-30 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 bg-surface-card/95 px-5 py-2.5 shadow-md backdrop-blur sm:px-8">

@@ -214,12 +214,7 @@ def get_project_timeline(
     user: User = Depends(get_current_user),
 ) -> TimelineOut:
     """Dual Timeline Engine (Milestone 2.2): chronological vs narrative order."""
-    unassigned = (
-        db.query(StoryEvent)
-        .filter(StoryEvent.project_id == project.id, StoryEvent.story_time_order.is_(None))
-        .first()
-    )
-    if unassigned:
+    if order == "chronological":
         timeline.compute_story_chronology(db, project.id, use_llm=False)
     data = timeline.get_project_timeline(db, project.id, order=order, character=character)
     return TimelineOut(**data)

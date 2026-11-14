@@ -500,3 +500,7 @@ def reanalyze_chapter(
         graph.sync_project_graph(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Graph sync skipped on reanalyze: %s", exc)
+
+    manuscript.status = "ready"
+    manuscript.error_note = None
+    db.commit()
