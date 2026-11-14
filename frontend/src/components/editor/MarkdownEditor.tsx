@@ -894,14 +894,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
 
     return (
       <div className="mt-5">
-        {/* Format bar — solid hardware deck, flush with the card in both postures */}
+        {/* Format bar — clean floating hardware deck, flush with prose */}
         <div
           className={cn(
-            "sticky z-20 flex items-center gap-0.5 border-b border-border-quiet bg-surface-card py-2 shadow-sm transition-all",
-            isFindOpen ? "top-[49px]" : "top-0",
-            posture === "review"
-              ? "-mx-5 px-5 sm:-mx-10 sm:px-10"
-              : "-mx-7 px-7 sm:-mx-14 sm:px-14"
+            "sticky z-20 flex items-center gap-0.5 rounded-lg bg-surface-card/80 backdrop-blur-md px-2 py-1.5 shadow-sm transition-all mb-4 w-full",
+            isFindOpen ? "top-[49px]" : "top-0"
           )}
         >
           <FormatButton label="Heading" active={formats.heading} onClick={() => applyBlock("h2")}>

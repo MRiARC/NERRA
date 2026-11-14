@@ -415,7 +415,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         <aside
           className={cn(
             "flex h-full shrink-0 flex-col overflow-hidden bg-surface-void select-none z-30 transition-[width] duration-150 ease-out",
-            collapsed ? "w-13" : "w-60"
+            collapsed ? "w-[52px]" : "w-60"
           )}
         >
           {/* Top Quick Actions (New Novel & Library Shelf) */}
@@ -695,7 +695,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         </aside>
 
         {/* Workspace Canvas (Fluid, edge-to-edge content container) */}
-        <main className="flex flex-1 flex-col overflow-y-auto min-h-0 bg-surface-void">
+        <main className="flex flex-1 flex-col overflow-hidden min-h-0 bg-surface-void">
           {children}
         </main>
       </div>

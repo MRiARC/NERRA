@@ -611,10 +611,10 @@ export default function EditorPage({ params }: EditorPageProps) {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-x-hidden">
         {/* Contents rail — clean chapter list */}
         {posture === "write" && showRail && (
-          <nav className="w-[264px] shrink-0 flex-col bg-surface-subtle/10 p-4 flex">
+          <nav className="w-60 shrink-0 flex-col bg-surface-subtle/10 p-4 flex">
             <div className="pb-3 pt-0.5">
               <div className="flex items-center justify-between">
                 <p className="font-mono text-[9px] uppercase tracking-[0.2em] font-medium text-wine-crimson">
@@ -876,7 +876,7 @@ export default function EditorPage({ params }: EditorPageProps) {
             )}
 
             <article className={cn(
-              "w-full rounded-2xl border border-border-quiet/50 bg-surface-card/60 pb-8 pt-7 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.85)] sm:pb-12 sm:pt-9",
+              "w-full rounded-2xl bg-surface-card/25 pb-8 pt-7 sm:pb-12 sm:pt-9 transition-colors",
               posture === "review" ? "px-5 sm:px-8" : "px-6 sm:px-10"
             )}>
               <div className="flex items-baseline justify-between pb-3">
