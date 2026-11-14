@@ -72,7 +72,7 @@ export function FindingRow({ issue, index, projectId }: FindingRowProps) {
         </p>
 
         <Link
-          href={`/projects/${projectId}/issues`}
+          href={`/projects/${projectId}/editor?scope=book&issue=${issue.id}`}
           className="mt-3 inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint transition-colors duration-200 hover:text-ink-parchment group-hover:text-ink-ash"
         >
           <span>Review</span>

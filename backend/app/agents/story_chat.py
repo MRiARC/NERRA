@@ -24,6 +24,10 @@ class ChatState(TypedDict, total=False):
     contexts: list[dict]  # [{chapter, content}] retrieved passages + facts
     answer: str
     citations: list[dict]  # [{chapter, excerpt}]
+    api_key: str | None
+    base_url: str | None
+    model: str | None
+    user_id: str | None
 
 
 def classify_query_intent(question: str, use_llm: bool = True) -> str:
@@ -391,9 +395,18 @@ QUESTION:
 {question}
 """
 
-    client = get_anthropic_client()
+    from app.services.extractor import resolve_ai_credentials
+    creds = resolve_ai_credentials(
+        project_id=state.get("project_id"),
+        user_id=state.get("user_id"),
+        explicit_api_key=state.get("api_key"),
+        explicit_base_url=state.get("base_url"),
+        explicit_model=state.get("model"),
+    )
+    client = get_anthropic_client(api_key=creds["api_key"], base_url=creds["base_url"])
+    active_model = creds.get("model") or settings.chat_model
     response = client.messages.create(
-        model=settings.chat_model,
+        model=active_model,
         max_tokens=settings.chat_max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -446,7 +459,14 @@ def build_graph():
     return graph.compile()
 
 
-def run_story_chat(project_id, question: str) -> dict:
+def run_story_chat(
+    project_id,
+    question: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    user_id=None,
+) -> dict:
     """Compile the graph once per process, then invoke it.
 
     Guarantees every answer carries at least one chapter citation.
@@ -455,7 +475,14 @@ def run_story_chat(project_id, question: str) -> dict:
     if _compiled is None:
         _compiled = build_graph()
     final_state = _compiled.invoke(
-        {"project_id": str(project_id), "question": question}
+        {
+            "project_id": str(project_id),
+            "question": question,
+            "api_key": api_key,
+            "base_url": base_url,
+            "model": model,
+            "user_id": str(user_id) if user_id else None,
+        }
     )
     answer = final_state.get("answer", "")
     citations = list(final_state.get("citations") or [])

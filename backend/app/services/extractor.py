@@ -220,45 +220,83 @@ def resolve_ai_credentials(
     base_url = explicit_base_url.strip() if explicit_base_url and explicit_base_url.strip() else None
     model = explicit_model.strip() if explicit_model and explicit_model.strip() else None
 
-    # 2. Check project customization if DB session and project_id are provided
-    if db and project_id:
+    # Handle local DB session if caller did not provide one
+    local_db = None
+    active_db = db
+    if active_db is None and (project_id or user_id or (not api_key or not base_url)):
         try:
-            from app.models import Project, ProjectCustomization
-            import uuid
-            pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
-            cust = db.query(ProjectCustomization).filter(ProjectCustomization.project_id == pid).first()
-            if cust and cust.custom_ui_config:
-                cfg = cust.custom_ui_config
-                if not api_key and cfg.get("api_key_override"):
-                    api_key = str(cfg["api_key_override"]).strip()
-                if not base_url and cfg.get("custom_base_url"):
-                    base_url = str(cfg["custom_base_url"]).strip()
-                if not model and cfg.get("primary_model"):
-                    model = str(cfg["primary_model"]).strip()
+            from app.database import SessionLocal
+            local_db = SessionLocal()
+            active_db = local_db
+        except Exception:
+            active_db = None
 
-            if not user_id:
-                proj = db.get(Project, pid)
-                if proj:
-                    user_id = proj.owner_id
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Project AI credential resolution skipped: %s", exc)
+    try:
+        # 2. Check project customization if DB session and project_id are provided
+        if active_db and project_id:
+            try:
+                from app.models import Project, ProjectCustomization
+                import uuid
+                pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
+                cust = active_db.query(ProjectCustomization).filter(ProjectCustomization.project_id == pid).first()
+                if cust and cust.custom_ui_config:
+                    cfg = cust.custom_ui_config
+                    if not api_key and cfg.get("api_key_override"):
+                        api_key = str(cfg["api_key_override"]).strip()
+                    if not base_url and cfg.get("custom_base_url"):
+                        base_url = str(cfg["custom_base_url"]).strip()
+                    if not model and cfg.get("primary_model"):
+                        model = str(cfg["primary_model"]).strip()
 
-    # 3. Check user sovereign settings in DB
-    if db and user_id:
-        try:
-            from app.models import UserSettings
-            import uuid
-            uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
-            u_settings = db.query(UserSettings).filter(UserSettings.user_id == uid).first()
-            if u_settings:
-                if not api_key and u_settings.anthropic_api_key:
-                    api_key = u_settings.anthropic_api_key.strip()
-                if not base_url and u_settings.anthropic_base_url:
-                    base_url = u_settings.anthropic_base_url.strip()
-                if not model and u_settings.primary_model:
-                    model = u_settings.primary_model.strip()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("User sovereign credential resolution skipped: %s", exc)
+                if not user_id:
+                    proj = active_db.get(Project, pid)
+                    if proj:
+                        user_id = proj.owner_id
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Project AI credential resolution skipped: %s", exc)
+
+        # 3. Check user sovereign settings in DB
+        if active_db and user_id:
+            try:
+                from app.models import UserSettings
+                import uuid
+                uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+                u_settings = active_db.query(UserSettings).filter(UserSettings.user_id == uid).first()
+                if u_settings:
+                    if not api_key and u_settings.anthropic_api_key:
+                        api_key = u_settings.anthropic_api_key.strip()
+                    if not base_url and u_settings.anthropic_base_url:
+                        base_url = u_settings.anthropic_base_url.strip()
+                    if not model and u_settings.primary_model:
+                        model = u_settings.primary_model.strip()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("User sovereign credential resolution skipped: %s", exc)
+
+        # 3b. Fallback: if user_id was unknown and credentials still missing, check latest UserSettings
+        if active_db and (not api_key or not base_url):
+            try:
+                from app.models import UserSettings
+                latest_u = (
+                    active_db.query(UserSettings)
+                    .filter(UserSettings.anthropic_api_key.isnot(None))
+                    .order_by(UserSettings.updated_at.desc())
+                    .first()
+                )
+                if latest_u:
+                    if not api_key and latest_u.anthropic_api_key:
+                        api_key = latest_u.anthropic_api_key.strip()
+                    if not base_url and latest_u.anthropic_base_url:
+                        base_url = latest_u.anthropic_base_url.strip()
+                    if not model and latest_u.primary_model:
+                        model = latest_u.primary_model.strip()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Fallback UserSettings resolution skipped: %s", exc)
+    finally:
+        if local_db is not None:
+            try:
+                local_db.close()
+            except Exception:
+                pass
 
     final_key = api_key or getattr(settings, "anthropic_api_key", "")
     final_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
@@ -280,7 +318,18 @@ def get_anthropic_client(api_key: str | None = None, base_url: str | None = None
 
     from app.services import llm_budget
 
-    active_key = (api_key.strip() if api_key else "") or settings.anthropic_api_key
+    active_key = api_key.strip() if api_key and api_key.strip() else None
+    active_base_url = base_url.strip() if base_url and base_url.strip() else None
+
+    # If key or base_url are omitted, resolve from sovereign store
+    if not active_key or active_base_url is None:
+        creds = resolve_ai_credentials(explicit_api_key=active_key, explicit_base_url=active_base_url)
+        if not active_key:
+            active_key = creds.get("api_key")
+        if active_base_url is None:
+            active_base_url = creds.get("base_url")
+
+    active_key = active_key or settings.anthropic_api_key
     if not active_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not configured. Please add your Sovereign Key in Global Settings or backend/.env"
@@ -291,10 +340,11 @@ def get_anthropic_client(api_key: str | None = None, base_url: str | None = None
         "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
         "max_retries": 1,
     }
-    active_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
+    active_base_url = active_base_url if active_base_url is not None else getattr(settings, "anthropic_base_url", None)
     if active_base_url:
         kwargs["base_url"] = active_base_url
     raw_client = anthropic.Anthropic(**kwargs)
+
 
     class _ResilientMessages:
         def __init__(self, inner):
@@ -375,7 +425,10 @@ def extract_chapter(
     model: str | None = None,
 ) -> ExtractionPayload:
     """Call Claude and return a validated ExtractionPayload."""
-    client = get_anthropic_client(api_key=api_key, base_url=base_url)
+    try:
+        client = get_anthropic_client(api_key=api_key, base_url=base_url)
+    except TypeError:
+        client = get_anthropic_client()
     prompt = EXTRACTION_PROMPT_TEMPLATE.format(
         chapter_number=chapter_number,
         roster=roster,
@@ -439,7 +492,10 @@ def extract_chapter_multipass(
         world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
 
     def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
-        client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        try:
+            client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        except TypeError:
+            client = get_anthropic_client()
         custom_note = (
             f"\nPROJECT CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}\n"
             if custom_prompt and custom_prompt.strip()

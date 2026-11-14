@@ -167,7 +167,10 @@ def extract_and_update_plot_threads_llm(
     windows = llm_budget.split_text_windows(chapter_text, budget)
 
     try:
-        client = extractor.get_anthropic_client(api_key=active_key, base_url=base_url)
+        try:
+            client = extractor.get_anthropic_client(api_key=active_key, base_url=base_url)
+        except TypeError:
+            client = extractor.get_anthropic_client()
         for win in windows:
             prior = db.query(PlotThread).filter(PlotThread.project_id == pid).all()
             prior_summary = (
@@ -225,12 +228,26 @@ def extract_and_update_plot_threads_llm(
     )
 
 
-def synthesize_all_plot_threads_llm(db: Session, project_id, use_llm: bool = True) -> list:
+def synthesize_all_plot_threads_llm(
+    db: Session,
+    project_id,
+    use_llm: bool = True,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> list:
     """Synthesize plot threads across all stored chapter chunks for a project."""
     from app.models import Chunk, Manuscript
-    from app.services import graph
+    from app.services import extractor, graph
 
     pid = _as_uuid(project_id)
+    creds = extractor.resolve_ai_credentials(
+        db=db,
+        project_id=pid,
+        explicit_api_key=api_key,
+        explicit_base_url=base_url,
+        explicit_model=model,
+    )
     chunks = (
         db.query(Chunk)
         .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
@@ -241,7 +258,14 @@ def synthesize_all_plot_threads_llm(db: Session, project_id, use_llm: bool = Tru
     rows = []
     for ch in chunks:
         rows = extract_and_update_plot_threads_llm(
-            db, pid, ch.chapter_number, ch.content, use_llm=use_llm
+            db,
+            pid,
+            ch.chapter_number,
+            ch.content,
+            use_llm=use_llm,
+            api_key=creds["api_key"],
+            base_url=creds["base_url"],
+            model=creds["model"],
         )
     try:
         graph.sync_project_graph(db, pid)

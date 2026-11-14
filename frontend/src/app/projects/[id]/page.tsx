@@ -388,7 +388,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
         <div className="mt-5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em]">
           <Link
-            href={`/projects/${projectId}/issues`}
+            href={`/projects/${projectId}/editor?scope=book`}
             className="inline-flex items-center gap-1.5 text-ink-ash transition-colors hover:text-ink-parchment"
           >
             <span>All {openIssues.length} findings</span>

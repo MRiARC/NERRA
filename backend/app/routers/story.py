@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_owned_project
@@ -214,7 +214,13 @@ def get_project_timeline(
     user: User = Depends(get_current_user),
 ) -> TimelineOut:
     """Dual Timeline Engine (Milestone 2.2): chronological vs narrative order."""
-    timeline.compute_story_chronology(db, project.id)
+    unassigned = (
+        db.query(StoryEvent)
+        .filter(StoryEvent.project_id == project.id, StoryEvent.story_time_order.is_(None))
+        .first()
+    )
+    if unassigned:
+        timeline.compute_story_chronology(db, project.id, use_llm=False)
     data = timeline.get_project_timeline(db, project.id, order=order, character=character)
     return TimelineOut(**data)
 
@@ -307,6 +313,9 @@ def list_claims(
 @router.post("/projects/{project_id}/audit")
 def run_project_audit(
     project_id: uuid.UUID,
+    x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
+    x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
+    x_primary_model: str | None = Header(default=None, alias="X-Primary-Model"),
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -317,7 +326,13 @@ def run_project_audit(
     import pipeline runs.
     """
     try:
-        consistency.run_consistency_pass(db, project.id)
+        consistency.run_consistency_pass(
+            db,
+            project.id,
+            api_key=x_anthropic_key,
+            base_url=x_anthropic_base_url,
+            model=x_primary_model,
+        )
     except Exception as exc:  # noqa: BLE001 — surface a usable error to the UI
         raise HTTPException(
             status_code=422, detail=f"Consistency audit failed: {exc}"
@@ -657,12 +672,22 @@ def patch_plot_thread_endpoint(
 @router.post("/projects/{project_id}/plot-threads/sync", response_model=list[PlotThreadOut])
 def sync_plot_threads_endpoint(
     project_id: uuid.UUID,
+    x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
+    x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
+    x_primary_model: str | None = Header(default=None, alias="X-Primary-Model"),
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Run Claude Sonnet cross-chapter synthesis to refresh all plot threads."""
-    return plot_threads.synthesize_all_plot_threads_llm(db, project.id, use_llm=True)
+    return plot_threads.synthesize_all_plot_threads_llm(
+        db,
+        project.id,
+        use_llm=True,
+        api_key=x_anthropic_key,
+        base_url=x_anthropic_base_url,
+        model=x_primary_model,
+    )
 
 
 @router.get("/projects/{project_id}/customization", response_model=ProjectCustomizationOut)

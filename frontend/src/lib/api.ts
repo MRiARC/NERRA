@@ -220,7 +220,18 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
     throw new ApiError(res.status, errDetail);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204) {
+    return {} as T;
+  }
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    return {} as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return text as unknown as T;
+  }
 }
 
 export const api = {
