@@ -10,17 +10,23 @@
 import type {
   AiConnectionTestResult,
   BibleExport,
+  ChangeDetectionOut,
   ChapterDetail,
   ChapterSummary,
   Character,
   ChatOut,
   Claim,
+  CorrectionRule,
   Event,
+  FeedbackActionOut,
+  ImportOut,
+  InspectionOut,
   Issue,
   KnowledgeMatrix,
   Manuscript,
   ManuscriptStatus,
   ManuscriptVersion,
+  ObjectCustodyOut,
   PlotThread,
   Project,
   ProjectCustomization,
@@ -221,18 +227,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
     throw new ApiError(res.status, errDetail);
   }
-  if (res.status === 204) {
-    return {} as T;
-  }
-  const text = await res.text();
-  if (!text || !text.trim()) {
-    return {} as T;
-  }
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return text as unknown as T;
-  }
+  return res.json() as Promise<T>;
 }
 
 export const api = {
@@ -332,9 +327,61 @@ export const api = {
       });
     },
 
-    async importManuscript(id: string, file: File): Promise<{ message: string; manuscript_id: string }> {
+    async inspectManuscript(
+      id: string,
+      fileOrFiles: File | File[] | null,
+      text?: string
+    ): Promise<InspectionOut> {
       const fd = new FormData();
-      fd.append("file", file);
+      if (text) {
+        fd.append("text", text);
+      }
+      if (fileOrFiles) {
+        if (Array.isArray(fileOrFiles)) {
+          if (fileOrFiles.length === 1) {
+            fd.append("file", fileOrFiles[0]);
+          } else {
+            fileOrFiles.forEach((f) => fd.append("files", f));
+          }
+        } else {
+          fd.append("file", fileOrFiles);
+        }
+      }
+      const res = await fetchWithAuth(`/projects/${id}/manuscripts/inspect`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Inspection failed" }));
+        throw new ApiError(res.status, err.detail || "Failed to inspect manuscript");
+      }
+      return res.json();
+    },
+
+    async importManuscript(
+      id: string,
+      fileOrFiles: File | File[] | null,
+      title?: string,
+      text?: string
+    ): Promise<ImportOut> {
+      const fd = new FormData();
+      if (title) {
+        fd.append("title", title);
+      }
+      if (text) {
+        fd.append("text", text);
+      }
+      if (fileOrFiles) {
+        if (Array.isArray(fileOrFiles)) {
+          if (fileOrFiles.length === 1) {
+            fd.append("file", fileOrFiles[0]);
+          } else {
+            fileOrFiles.forEach((f) => fd.append("files", f));
+          }
+        } else {
+          fd.append("file", fileOrFiles);
+        }
+      }
       const res = await fetchWithAuth(`/projects/${id}/manuscripts/import`, {
         method: "POST",
         body: fd,
@@ -352,6 +399,29 @@ export const api = {
 
     async getManuscriptStatus(projectId: string, manuscriptId: string): Promise<ManuscriptStatus> {
       return request<ManuscriptStatus>(`/manuscripts/${manuscriptId}/status?project_id=${projectId}`);
+    },
+
+    async diffManuscript(
+      projectId: string,
+      text?: string,
+      file?: File
+    ): Promise<ChangeDetectionOut> {
+      const fd = new FormData();
+      if (text) {
+        fd.append("text", text);
+      }
+      if (file) {
+        fd.append("file", file);
+      }
+      const res = await fetchWithAuth(`/projects/${projectId}/manuscripts/diff`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Diff preview failed" }));
+        throw new ApiError(res.status, err.detail || "Failed to preview manuscript diff");
+      }
+      return res.json();
     },
 
     async getChapters(projectId: string, manuscriptId: string): Promise<ChapterSummary[]> {
@@ -387,12 +457,12 @@ export const api = {
       return request<Character[]>(`/projects/${projectId}/characters`);
     },
 
-    async getRelationships(projectId: string): Promise<Relationship[]> {
-      return request<Relationship[]>(`/projects/${projectId}/relationships`);
-    },
-
     async getCharacter(projectId: string, characterId: string): Promise<Character> {
       return request<Character>(`/projects/${projectId}/characters/${characterId}`);
+    },
+
+    async getRelationships(projectId: string): Promise<Relationship[]> {
+      return request<Relationship[]>(`/projects/${projectId}/relationships`);
     },
 
     async getEvents(projectId: string): Promise<Event[]> {
@@ -546,6 +616,70 @@ export const api = {
       return request<ProjectCustomization>(`/projects/${projectId}/customization`, {
         method: "PUT",
         body: JSON.stringify(payload),
+      });
+    },
+
+    async mergeCharacters(
+      projectId: string,
+      payload: { target_character_id: string; duplicate_character_id: string }
+    ): Promise<Character> {
+      return request<Character>(`/projects/${projectId}/characters/merge`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async getObjectCustody(projectId: string, objectId: string): Promise<ObjectCustodyOut[]> {
+      return request<ObjectCustodyOut[]>(`/projects/${projectId}/objects/${objectId}/custody`);
+    },
+
+    async patchClaimFeedback(
+      projectId: string,
+      claimId: string,
+      payload: {
+        value?: string;
+        attribute?: string;
+        subject?: string;
+        status?: string;
+        reason?: string;
+        re_audit?: boolean;
+      }
+    ): Promise<FeedbackActionOut> {
+      return request<FeedbackActionOut>(`/projects/${projectId}/claims/${claimId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async renameCharacterFeedback(
+      projectId: string,
+      characterId: string,
+      payload: { new_name: string; re_audit?: boolean }
+    ): Promise<FeedbackActionOut> {
+      return request<FeedbackActionOut>(`/projects/${projectId}/characters/${characterId}/rename`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async splitCharacterFeedback(
+      projectId: string,
+      characterId: string,
+      payload: { alias_to_split: string; new_character_name?: string; re_audit?: boolean }
+    ): Promise<FeedbackActionOut> {
+      return request<FeedbackActionOut>(`/projects/${projectId}/characters/${characterId}/split`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
+    async getCorrectionRules(projectId: string): Promise<CorrectionRule[]> {
+      return request<CorrectionRule[]>(`/projects/${projectId}/corrections`);
+    },
+
+    async deleteCorrectionRule(projectId: string, correctionId: string): Promise<void> {
+      return request<void>(`/projects/${projectId}/corrections/${correctionId}`, {
+        method: "DELETE",
       });
     },
   },

@@ -246,6 +246,36 @@ export interface PlotThread {
   updated_at?: string;
 }
 
+export interface ChapterInspectionItem {
+  index: number;
+  filename: string;
+  title: string;
+  word_count: number;
+  char_count: number;
+  preview: string;
+  sequence_confirmed: boolean;
+}
+
+export interface InspectionOut {
+  source_mode: "single_file" | "zip_archive" | "folder" | "multi_file" | "pasted_text" | string;
+  total_files: number;
+  total_chapters: number;
+  total_words: number;
+  total_characters: number;
+  chapters: ChapterInspectionItem[];
+  ignored_files: string[];
+  warning?: string | null;
+}
+
+export interface ImportOut {
+  manuscript_id: string;
+  project_id: string;
+  status: string;
+  chapters_total?: number | null;
+  total_words?: number | null;
+  source_mode?: string | null;
+}
+
 export interface Manuscript {
   id: string;
   title: string;
@@ -369,6 +399,32 @@ export interface AiConnectionTestResult {
 
 
 
+export interface ChangeDetectionOut {
+  event_type: string;
+  changed_chapters: number[];
+  unchanged_chapters: number[];
+  stale_claim_chapters: number[];
+  paragraph_diffs: Record<string, unknown>;
+}
+
+export interface ObjectCustodyOut {
+  id: string;
+  object_id: string;
+  chapter: number;
+  holder_type: string;
+  holder_name: string;
+  action: string;
+  evidence_quote?: string | null;
+}
+
+export interface FeedbackActionOut {
+  updated_id: string;
+  correction_rule?: CorrectionRule | null;
+  re_audit_chapters: number[];
+  issues_created: number;
+  impact_notes: string[];
+}
+
 export interface StoryEvent {
   id: string;
   project_id: string;
@@ -385,6 +441,32 @@ export interface PipelineProgress {
   total_chapters?: number;
   step?: string;
   error?: string | null;
+}
+
+export interface ChangeDetectionOut {
+  event_type: string;
+  changed_chapters: number[];
+  unchanged_chapters: number[];
+  stale_claim_chapters: number[];
+  paragraph_diffs: Record<string, unknown>;
+}
+
+export interface ObjectCustodyOut {
+  id: string;
+  object_id: string;
+  chapter: number;
+  holder_type: string;
+  holder_name: string;
+  action: string;
+  evidence_quote?: string | null;
+}
+
+export interface FeedbackActionOut {
+  updated_id: string;
+  correction_rule?: CorrectionRule | null;
+  re_audit_chapters: number[];
+  issues_created: number;
+  impact_notes: string[];
 }
 
 export interface StoryEvent {

@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { ThemeSwitcher } from "@/components/ui/ThemeSwitcher";
 import {
   PanelLeft,
+  Activity,
   Plus,
   Layers,
   BookMarked,
@@ -240,6 +241,13 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
       name: "Version History",
       href: `/projects/${projectId}/versions`,
       icon: History,
+      meta: null,
+    },
+    {
+      id: "telemetry",
+      name: "Engine Telemetry",
+      href: `/projects/${projectId}/telemetry`,
+      icon: Activity,
       meta: null,
     },
     {
