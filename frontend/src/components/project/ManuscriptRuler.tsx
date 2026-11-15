@@ -8,7 +8,7 @@ interface ManuscriptRulerProps {
   chapters: ChapterSummary[];
   issues: Issue[];
   selectedChapter: number | null;
-  onSelect: (chapterNumber: number | null) => void;
+  onSelect: (chapterNumber: number) => void;
 }
 
 type ChapterFindings = { critical: number; minor: number };
@@ -40,6 +40,7 @@ export function ManuscriptRuler({
   }, [issues]);
 
   const affectedChapters = findingsByChapter.size;
+  const activeChapter = selectedChapter ?? chapters[0]?.number ?? null;
 
   if (chapters.length === 0) return null;
 
@@ -51,13 +52,13 @@ export function ManuscriptRuler({
           const critical = findings?.critical ?? 0;
           const minor = findings?.minor ?? 0;
           const total = critical + minor;
-          const isActive = selectedChapter !== null && chapter.number === selectedChapter;
+          const isActive = chapter.number === activeChapter;
 
           return (
             <button
               key={chapter.number}
               type="button"
-              onClick={() => onSelect(isActive ? null : chapter.number)}
+              onClick={() => onSelect(chapter.number)}
               aria-label={`Chapter ${chapter.number}: ${chapter.title}, ${
                 total > 0 ? `${total} open findings` : "no open findings"
               }`}
@@ -85,13 +86,13 @@ export function ManuscriptRuler({
 
               <span
                 className={cn(
-                  "block h-10 w-full rounded-[2px] transition-all duration-150",
+                  "block h-10 w-full rounded-[2px] transition-all duration-200",
                   critical > 0
                     ? "bg-wine-crimson/65 group-hover:bg-wine-crimson"
                     : minor > 0
                     ? "bg-severity-warning/55 group-hover:bg-severity-warning/80"
                     : "bg-border-prominent group-hover:bg-ink-faint",
-                  isActive && "ring-2 ring-ink-parchment ring-offset-2 ring-offset-surface-void"
+                  isActive && "ring-2 ring-wine-crimson/50 ring-offset-2 ring-offset-surface-void"
                 )}
               />
             </button>
