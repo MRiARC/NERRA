@@ -236,14 +236,21 @@ def run_import_pipeline(
         else:
             if extract_is_mocked:
                 roster = extractor.get_roster(db, manuscript.project_id)
-                payload = extractor.extract_chapter(
-                    chapter.number,
-                    chapter.content,
-                    roster,
-                    api_key=resolved_api_key,
-                    base_url=resolved_base_url,
-                    model=resolved_model,
-                )
+                try:
+                    payload = extractor.extract_chapter(
+                        chapter.number,
+                        chapter.content,
+                        roster,
+                        api_key=resolved_api_key,
+                        base_url=resolved_base_url,
+                        model=resolved_model,
+                    )
+                except TypeError:
+                    payload = extractor.extract_chapter(
+                        chapter.number,
+                        chapter.content,
+                        roster,
+                    )
             else:
                 signals = signal_scanner.scan_chapter_signals(chapter.content)
                 ctx_packet = context_builder.build_story_context_packet(

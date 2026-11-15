@@ -89,14 +89,38 @@ class ProjectOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Manuscripts (import / pipeline status)
+# Manuscripts (import / inspection / pipeline status)
 # ---------------------------------------------------------------------------
+
+
+class ChapterInspectionItem(BaseModel):
+    index: int
+    filename: str
+    title: str
+    word_count: int
+    char_count: int
+    preview: str
+    sequence_confirmed: bool = True
+
+
+class InspectionOut(BaseModel):
+    source_mode: str
+    total_files: int
+    total_chapters: int
+    total_words: int
+    total_characters: int
+    chapters: list[ChapterInspectionItem]
+    ignored_files: list[str] = []
+    warning: str | None = None
 
 
 class ImportOut(BaseModel):
     manuscript_id: uuid.UUID
     project_id: uuid.UUID
     status: str
+    chapters_total: int | None = None
+    total_words: int | None = None
+    source_mode: str | None = None
 
 
 class StatusOut(BaseModel):

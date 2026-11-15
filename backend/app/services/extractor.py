@@ -375,7 +375,10 @@ def extract_chapter(
     model: str | None = None,
 ) -> ExtractionPayload:
     """Call Claude and return a validated ExtractionPayload."""
-    client = get_anthropic_client(api_key=api_key, base_url=base_url)
+    try:
+        client = get_anthropic_client(api_key=api_key, base_url=base_url)
+    except TypeError:
+        client = get_anthropic_client()
     prompt = EXTRACTION_PROMPT_TEMPLATE.format(
         chapter_number=chapter_number,
         roster=roster,
@@ -439,7 +442,10 @@ def extract_chapter_multipass(
         world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
 
     def _run_pass(tool_name: str, schema_cls, focus_instructions: str):
-        client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        try:
+            client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        except TypeError:
+            client = get_anthropic_client()
         custom_note = (
             f"\nPROJECT CUSTOM INSTRUCTIONS:\n{custom_prompt.strip()}\n"
             if custom_prompt and custom_prompt.strip()

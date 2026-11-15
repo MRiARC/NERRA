@@ -246,6 +246,36 @@ export interface PlotThread {
   updated_at?: string;
 }
 
+export interface ChapterInspectionItem {
+  index: number;
+  filename: string;
+  title: string;
+  word_count: number;
+  char_count: number;
+  preview: string;
+  sequence_confirmed: boolean;
+}
+
+export interface InspectionOut {
+  source_mode: "single_file" | "zip_archive" | "folder" | "multi_file" | "pasted_text" | string;
+  total_files: number;
+  total_chapters: number;
+  total_words: number;
+  total_characters: number;
+  chapters: ChapterInspectionItem[];
+  ignored_files: string[];
+  warning?: string | null;
+}
+
+export interface ImportOut {
+  manuscript_id: string;
+  project_id: string;
+  status: string;
+  chapters_total?: number | null;
+  total_words?: number | null;
+  source_mode?: string | null;
+}
+
 export interface Manuscript {
   id: string;
   title: string;

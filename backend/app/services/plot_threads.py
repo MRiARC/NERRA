@@ -167,7 +167,10 @@ def extract_and_update_plot_threads_llm(
     windows = llm_budget.split_text_windows(chapter_text, budget)
 
     try:
-        client = extractor.get_anthropic_client(api_key=active_key, base_url=base_url)
+        try:
+            client = extractor.get_anthropic_client(api_key=active_key, base_url=base_url)
+        except TypeError:
+            client = extractor.get_anthropic_client()
         for win in windows:
             prior = db.query(PlotThread).filter(PlotThread.project_id == pid).all()
             prior_summary = (

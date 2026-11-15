@@ -131,7 +131,7 @@ def test_signal_scanner_and_deep_context_builder(db_session, client, auth_header
 
 
 def test_multipass_extraction_merges_three_passes(monkeypatch):
-    def _mock_client():
+    def _mock_client(*args, **kwargs):
         class _Msgs:
             @staticmethod
             def create(**kwargs):
