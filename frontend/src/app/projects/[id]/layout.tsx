@@ -698,7 +698,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
         <main
           className={cn(
             "flex flex-1 flex-col min-h-0 bg-surface-void",
-            isEditorPage || pathname.includes("/chat") ? "overflow-hidden" : "overflow-y-auto"
+            isEditorPage || pathname.includes("/chat") || pathname.includes("/characters") || pathname.includes("/graph") ? "overflow-hidden" : "overflow-y-auto"
           )}
         >
           {children}
