@@ -36,12 +36,21 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   const activeManuscript = manuscripts[0];
   const { data: chapters = [] } = useChapters(projectId, activeManuscript?.id);
 
-  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(1);
+  const [hasInitializedChapter, setHasInitializedChapter] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState<FindingFilter>("major");
   const [isAuditing, setIsAuditing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Default to first chapter once chapters are available
+  useEffect(() => {
+    if (!hasInitializedChapter && chapters.length > 0) {
+      setSelectedChapterNumber(chapters[0].number);
+      setHasInitializedChapter(true);
+    }
+  }, [chapters, hasInitializedChapter]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -76,8 +85,8 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   );
 
   const activeSelectedChapter = useMemo(() => {
-    if (chapters.length === 0) return null;
-    return chapters.find((c) => c.number === selectedChapterNumber) || chapters[0];
+    if (chapters.length === 0 || selectedChapterNumber === null) return null;
+    return chapters.find((c) => c.number === selectedChapterNumber) || null;
   }, [chapters, selectedChapterNumber]);
 
   const selectedChapterFindings = useMemo(() => {
@@ -87,13 +96,40 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
     ).length;
   }, [openIssues, activeSelectedChapter]);
 
+  // Scoped issues: when a chapter is selected, filter strictly to that chapter's findings
+  const scopedIssues = useMemo(() => {
+    if (selectedChapterNumber === null) return openIssues;
+    return openIssues.filter((issue) =>
+      issue.evidence?.some((e) => e.chapter === selectedChapterNumber)
+    );
+  }, [openIssues, selectedChapterNumber]);
+
+  const scopedCriticalIssues = useMemo(
+    () => scopedIssues.filter((i) => i.severity === "red"),
+    [scopedIssues]
+  );
+  const scopedMinorIssues = useMemo(
+    () => scopedIssues.filter((i) => i.severity !== "red"),
+    [scopedIssues]
+  );
+
+  const filterOptions: Array<{ id: FindingFilter; label: string; count: number }> = [
+    { id: "major", label: "Major", count: scopedCriticalIssues.length },
+    { id: "minor", label: "Minor", count: scopedMinorIssues.length },
+    { id: "all", label: "All", count: scopedIssues.length },
+  ];
+
   const filteredFindings = useMemo(() => {
     const list =
-      filter === "major" ? criticalIssues : filter === "minor" ? minorIssues : openIssues;
+      filter === "major"
+        ? scopedCriticalIssues
+        : filter === "minor"
+        ? scopedMinorIssues
+        : scopedIssues;
     return [...list].sort(
       (a, b) => (a.evidence?.[0]?.chapter ?? 999) - (b.evidence?.[0]?.chapter ?? 999)
     );
-  }, [filter, criticalIssues, minorIssues, openIssues]);
+  }, [filter, scopedCriticalIssues, scopedMinorIssues, scopedIssues]);
 
   const stateLine = useMemo(() => {
     if (totalChapters === 0) {
@@ -149,11 +185,6 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   };
 
   const status = activeManuscript?.status || "ready";
-  const filterOptions: Array<{ id: FindingFilter; label: string; count: number }> = [
-    { id: "major", label: "Major", count: criticalIssues.length },
-    { id: "minor", label: "Minor", count: minorIssues.length },
-    { id: "all", label: "All", count: openIssues.length },
-  ];
 
   return (
     <div className="flex-1 w-full max-w-5xl mx-auto px-6 sm:px-8 py-6 sm:py-8">
@@ -355,11 +386,11 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
           <ManuscriptRuler
             chapters={chapters}
             issues={openIssues}
-            selectedChapter={activeSelectedChapter?.number ?? null}
+            selectedChapter={selectedChapterNumber}
             onSelect={(chapterNumber) => setSelectedChapterNumber(chapterNumber)}
           />
 
-          {activeSelectedChapter && (
+          {activeSelectedChapter ? (
             <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
               <p className="min-w-0">
                 <span className="font-serif text-lg text-ink-parchment">
@@ -373,6 +404,14 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               </p>
 
               <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedChapterNumber(null)}
+                  className="text-wine-crimson transition-colors hover:text-ink-parchment"
+                  title="Show all chapters"
+                >
+                  All chapters
+                </button>
                 <Link
                   href={`/projects/${projectId}/reader?chapter=${activeSelectedChapter.number}`}
                   className="text-ink-ash transition-colors hover:text-ink-parchment"
@@ -386,6 +425,20 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                   Write
                 </Link>
               </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <p className="min-w-0">
+                <span className="font-serif text-lg text-ink-parchment">
+                  Whole Manuscript
+                </span>
+                <span className="ml-2 text-[13px] text-ink-ash">
+                  {chapters.length} chapters · {openIssues.length} total findings
+                </span>
+              </p>
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+                Click any chapter above to filter
+              </span>
             </div>
           )}
         </section>
@@ -412,7 +465,19 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       {/* Findings */}
       <section className="mt-8 sm:mt-10">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 border-b border-border-prominent pb-3">
-          <h2 className="font-serif text-xl font-medium text-ink-parchment">Findings</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-serif text-xl font-medium text-ink-parchment">Findings</h2>
+            {selectedChapterNumber !== null ? (
+              <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-parchment border border-border-quiet flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-wine-crimson shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+                <span>Ch. {String(selectedChapterNumber).padStart(2, "0")} only</span>
+              </span>
+            ) : (
+              <span className="rounded-full bg-white/[0.04] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint border border-border-quiet/50">
+                All Chapters
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.16em]">
             {filterOptions.map((option) => (
@@ -423,7 +488,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 onClick={() => setFilter(option.id)}
                 className={`transition-colors ${
                   filter === option.id
-                    ? "text-ink-parchment"
+                    ? "text-ink-parchment font-semibold"
                     : "text-ink-faint hover:text-ink-ash"
                 }`}
               >
@@ -431,16 +496,41 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 <span className="ml-1 tabular-nums text-ink-faint">{option.count}</span>
               </button>
             ))}
+
+            <span aria-hidden className="text-border-prominent">·</span>
+
+            {selectedChapterNumber !== null ? (
+              <button
+                type="button"
+                onClick={() => setSelectedChapterNumber(null)}
+                className="text-ink-faint hover:text-ink-parchment transition-colors"
+                title="View findings across all chapters"
+              >
+                All chapters ({openIssues.length})
+              </button>
+            ) : (
+              chapters[0] && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedChapterNumber(chapters[0].number)}
+                  className="text-ink-faint hover:text-ink-parchment transition-colors"
+                >
+                  Filter by chapter
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {filteredFindings.length === 0 ? (
           <p className="py-6 font-serif text-[14px] italic text-ink-ash">
-            Nothing outstanding in this category. The manuscript holds.
+            {selectedChapterNumber !== null
+              ? `Nothing outstanding in Chapter ${selectedChapterNumber} under this category. The chapter holds.`
+              : "Nothing outstanding in this category. The manuscript holds."}
           </p>
         ) : (
           <div>
-            {filteredFindings.slice(0, 4).map((issue, index) => (
+            {filteredFindings.map((issue, index) => (
               <FindingRow key={issue.id} issue={issue} index={index} projectId={projectId} />
             ))}
           </div>
@@ -448,14 +538,24 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
         <div className="mt-4 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em]">
           <Link
-            href={`/projects/${projectId}/editor?scope=book`}
+            href={
+              selectedChapterNumber !== null
+                ? `/projects/${projectId}/editor?chapter=${selectedChapterNumber}&scope=chapter`
+                : `/projects/${projectId}/editor?scope=book`
+            }
             className="inline-flex items-center gap-1.5 text-ink-ash transition-colors hover:text-ink-parchment"
           >
-            <span>All {openIssues.length} findings</span>
+            <span>
+              {selectedChapterNumber !== null
+                ? `Open Chapter ${selectedChapterNumber} in editor`
+                : `All ${openIssues.length} findings in editor`}
+            </span>
             <ArrowRight className="w-3 h-3" />
           </Link>
           <span className="text-ink-faint">
-            {openIssues.length > 4 ? `Showing 4 of ${filteredFindings.length}` : ""}
+            {selectedChapterNumber !== null
+              ? `Showing all ${filteredFindings.length} findings for Chapter ${selectedChapterNumber}`
+              : `Showing ${filteredFindings.length} findings`}
           </span>
         </div>
       </section>
