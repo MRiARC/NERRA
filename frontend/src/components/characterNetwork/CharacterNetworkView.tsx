@@ -44,7 +44,6 @@ export function CharacterNetworkView({
   const [currentChapter, setCurrentChapter] = useState(initialChapter);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -500,7 +499,6 @@ export function CharacterNetworkView({
                 setSelectedConnectionId(id);
                 if (id) setSelectedNodeId(null);
               }}
-              onHoverNode={setHoveredNodeId}
             />
           )}
         </main>

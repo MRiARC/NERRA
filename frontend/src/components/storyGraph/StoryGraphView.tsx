@@ -53,7 +53,6 @@ export function StoryGraphView({
   const [lensMode, setLensMode] = useState<LensMode>(initialLens);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -549,7 +548,6 @@ export function StoryGraphView({
               graphData={graphData}
               selectedNodeId={selectedNodeId}
               selectedConnectionId={selectedConnectionId}
-              hoveredNodeId={hoveredNodeId}
               searchQuery={searchQuery}
               statusFilter={statusFilter}
               toneFilter={toneFilter}
@@ -561,7 +559,6 @@ export function StoryGraphView({
                 setSelectedConnectionId(connId);
                 setSelectedNodeId(null);
               }}
-              onHoverNode={setHoveredNodeId}
             />
           )}
         </main>

@@ -20,13 +20,13 @@ export interface CharacterNetworkCanvasProps {
   graphData: CharacterNetworkGraph;
   selectedNodeId: string | null;
   selectedConnectionId: string | null;
-  hoveredNodeId: string | null;
+  hoveredNodeId?: string | null;
   searchQuery: string;
   statusFilter: string;
   toneFilter: string;
   onSelectNode: (nodeId: string | null) => void;
   onSelectConnection: (connectionId: string | null) => void;
-  onHoverNode: (nodeId: string | null) => void;
+  onHoverNode?: (nodeId: string | null) => void;
 }
 
 export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas({
@@ -44,9 +44,9 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const graphInstanceRef = useRef<any>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isRendered, setIsRendered] = useState(false);
-  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const [localHoveredNodeId, setLocalHoveredNodeId] = useState<string | null>(null);
+  const [localHoveredEdgeId, setLocalHoveredEdgeId] = useState<string | null>(null);
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const previousEdgeIdsRef = useRef<Set<string>>(new Set());
   const updateSeqRef = useRef<number>(0);
@@ -64,30 +64,19 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
     }
   };
 
-  // Debounced hover state dispatcher: micro-batches rapid pointer traversals
-  const debouncedHoverNode = (id: string | null) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    if (!id) {
-      hoverTimeoutRef.current = setTimeout(() => {
-        onHoverNode(null);
-      }, 40);
-    } else {
-      onHoverNode(id);
-    }
-  };
-
   // Active hover targets for floating HUD tooltips
   const hoveredNode = useMemo(() => {
-    if (!hoveredNodeId) return null;
-    return graphData.nodes.find((n) => n.id === hoveredNodeId) || null;
-  }, [graphData.nodes, hoveredNodeId]);
+    const activeId = localHoveredNodeId || hoveredNodeId;
+    if (!activeId) return null;
+    return graphData.nodes.find((n) => n.id === activeId) || null;
+  }, [graphData.nodes, localHoveredNodeId, hoveredNodeId]);
 
   const hoveredConn = useMemo(() => {
-    if (!hoveredEdgeId) return null;
+    if (!localHoveredEdgeId) return null;
     return (
+      graphData.connections.find((c) => c.connectionId === localHoveredEdgeId) || null
+    );
+  }, [graphData.connections, localHoveredEdgeId]);
       graphData.connections.find((c) => c.connectionId === hoveredEdgeId) || null
     );
   }, [graphData.connections, hoveredEdgeId]);
@@ -192,12 +181,13 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
         }
       });
 
-      // Hover feedback and cursor states
+      // Hover feedback and cursor states — Scene-graph native
       graph.on(NodeEvent.POINTER_ENTER, (e: any) => {
         const id = resolveNodeId(e);
         updateCursor("grab");
         if (id) {
-          debouncedHoverNode(id);
+          setLocalHoveredNodeId(id);
+          setLocalHoveredEdgeId(null);
           const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
           const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
           if (clientX != null && clientY != null) {
@@ -216,7 +206,7 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
 
       graph.on(NodeEvent.POINTER_LEAVE, () => {
         updateCursor("default");
-        debouncedHoverNode(null);
+        setLocalHoveredNodeId(null);
       });
 
       graph.on(NodeEvent.DRAG_START, () => {
@@ -231,7 +221,8 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
         const id = resolveEdgeId(e);
         updateCursor("pointer");
         if (id) {
-          setHoveredEdgeId(id);
+          setLocalHoveredEdgeId(id);
+          setLocalHoveredNodeId(null);
           const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
           const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
           if (clientX != null && clientY != null) {
@@ -250,7 +241,7 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
 
       graph.on(EdgeEvent.POINTER_LEAVE, () => {
         updateCursor("default");
-        setHoveredEdgeId(null);
+        setLocalHoveredEdgeId(null);
       });
 
       graphInstanceRef.current = graph;
@@ -279,7 +270,7 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
       graphData,
       selectedNodeId,
       selectedConnectionId,
-      hoveredNodeId,
+      hoveredNodeId: null, // GPU scene-graph handles hover spotlighting directly
       searchQuery,
       statusFilter,
       toneFilter,
@@ -369,7 +360,6 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
     graphData,
     selectedNodeId,
     selectedConnectionId,
-    hoveredNodeId,
     searchQuery,
     statusFilter,
     toneFilter,

@@ -14,13 +14,13 @@ export interface StoryGraphCanvasProps {
   graphData: StoryGraphData;
   selectedNodeId: string | null;
   selectedConnectionId: string | null;
-  hoveredNodeId: string | null;
+  hoveredNodeId?: string | null;
   searchQuery: string;
   statusFilter: string;
   toneFilter: string;
   onSelectNode: (nodeId: string | null) => void;
   onSelectConnection: (connectionId: string | null) => void;
-  onHoverNode: (nodeId: string | null) => void;
+  onHoverNode?: (nodeId: string | null) => void;
 }
 
 export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
@@ -40,7 +40,8 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
   const graphInstanceRef = useRef<any>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isRendered, setIsRendered] = useState(false);
-  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+  const [localHoveredNodeId, setLocalHoveredNodeId] = useState<string | null>(null);
+  const [localHoveredEdgeId, setLocalHoveredEdgeId] = useState<string | null>(null);
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const previousEdgeIdsRef = useRef<Set<string>>(new Set());
   const updateSeqRef = useRef<number>(0);
@@ -58,31 +59,18 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
     }
   };
 
-  const debouncedHoverNode = (id: string | null) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    if (!id) {
-      hoverTimeoutRef.current = setTimeout(() => {
-        onHoverNode(null);
-      }, 40);
-    } else {
-      onHoverNode(id);
-    }
-  };
-
   const hoveredNode = useMemo(() => {
-    if (!hoveredNodeId) return null;
-    return graphData.nodes.find((n) => n.id === hoveredNodeId) || null;
-  }, [graphData.nodes, hoveredNodeId]);
+    const activeId = localHoveredNodeId || hoveredNodeId;
+    if (!activeId) return null;
+    return graphData.nodes.find((n) => n.id === activeId) || null;
+  }, [graphData.nodes, localHoveredNodeId, hoveredNodeId]);
 
   const hoveredConn = useMemo(() => {
-    if (!hoveredEdgeId) return null;
+    if (!localHoveredEdgeId) return null;
     return (
-      graphData.connections.find((c) => c.connectionId === hoveredEdgeId) || null
+      graphData.connections.find((c) => c.connectionId === localHoveredEdgeId) || null
     );
-  }, [graphData.connections, hoveredEdgeId]);
+  }, [graphData.connections, localHoveredEdgeId]);
 
   // Initialize G6 Graph instance
   useEffect(() => {
@@ -146,13 +134,13 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
           return null;
         };
 
-        // Pointer event listeners
+        // Pointer event listeners — Scene-graph native event handling
         graph.on("node:pointerenter", (e: any) => {
           const rawId = e.target?.id || e.targetType === "node" ? e.target?.id : null;
           const nodeId = rawId || resolveNodeId(e.target);
           if (nodeId) {
-            debouncedHoverNode(nodeId);
-            setHoveredEdgeId(null);
+            setLocalHoveredNodeId(nodeId);
+            setLocalHoveredEdgeId(null);
             if (e.client) updateTooltipPosition(e.client.x, e.client.y);
           }
         });
@@ -162,7 +150,7 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
         });
 
         graph.on("node:pointerleave", () => {
-          debouncedHoverNode(null);
+          setLocalHoveredNodeId(null);
         });
 
         graph.on("node:click", (e: any) => {
@@ -178,8 +166,8 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
           const rawId = e.target?.id || e.targetType === "edge" ? e.target?.id : null;
           const edgeId = rawId || resolveEdgeId(e.target);
           if (edgeId) {
-            setHoveredEdgeId(edgeId);
-            debouncedHoverNode(null);
+            setLocalHoveredEdgeId(edgeId);
+            setLocalHoveredNodeId(null);
             if (e.client) updateTooltipPosition(e.client.x, e.client.y);
           }
         });
@@ -189,7 +177,7 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
         });
 
         graph.on("edge:pointerleave", () => {
-          setHoveredEdgeId(null);
+          setLocalHoveredEdgeId(null);
         });
 
         graph.on("edge:click", (e: any) => {
@@ -242,7 +230,7 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
     const adapterOptions: G6AdapterOptions = {
       selectedNodeId,
       selectedConnectionId,
-      hoveredNodeId,
+      hoveredNodeId: null, // Scene-graph handles hover spotlighting directly on GPU via hover-activate
       searchQuery,
       statusFilter,
       toneFilter,
@@ -304,7 +292,6 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
     graphData,
     selectedNodeId,
     selectedConnectionId,
-    hoveredNodeId,
     searchQuery,
     statusFilter,
     toneFilter,

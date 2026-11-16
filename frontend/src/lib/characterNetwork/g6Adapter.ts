@@ -486,6 +486,10 @@ export function mapToG6GraphData(
     const baseOffset = conn.isReciprocal ? 32 : 24;
     const curveOffset = (index % 2 === 0 ? 1 : -1) * baseOffset;
 
+    const degA = degreeMap.get(conn.characterAId) || 1;
+    const degB = degreeMap.get(conn.characterBId) || 1;
+    const maxEndpointDegree = Math.max(degA, degB);
+
     edges.push({
       id: conn.connectionId,
       source: conn.characterAId,
@@ -498,6 +502,8 @@ export function mapToG6GraphData(
         sentimentDistribution: conn.sentimentDistribution,
         relationsSummary,
         records: conn.records,
+        labelText: prettyLabel,
+        maxEndpointDegree,
       },
       style: {
         stroke: isConnSelected ? "#ffffff" : toneConfig.stroke,
@@ -505,7 +511,8 @@ export function mapToG6GraphData(
         lineDash: isPureThread ? [3, 3] : conn.isReciprocal ? [5, 4] : undefined,
         opacity: edgeOpacity,
         cursor: "pointer",
-        labelText: prettyLabel,
+        // Semantic LOD: Suppress resting label to eliminate clutter; display on hover/active or select
+        labelText: isConnSelected ? prettyLabel : "",
         labelFill: toneConfig.contrastText,
         labelFontSize: 11,
         labelFontWeight: "bold",
@@ -573,14 +580,20 @@ export function getG6GraphConfig(
         iterations: 3,
       },
       manyBody: {
-        strength: -420,
+        strength: (d: any) => {
+          const deg = d.data?.degree || 1;
+          return -360 - Math.min(deg * 22, 450);
+        },
+        theta: 0.6,
         distanceMin: 50,
-        distanceMax: 650,
+        distanceMax: 800,
       },
       link: {
         distance: (edge: any) => {
-          const recs = edge.data?.records?.length || 1;
-          return Math.max(160, 240 - recs * 15);
+          const maxDeg = edge.data?.maxEndpointDegree || 1;
+          const dMin = 145;
+          const beta = 34;
+          return Math.round(dMin + beta * Math.sqrt(maxDeg));
         },
         strength: 0.35,
       },
@@ -609,6 +622,9 @@ export function getG6GraphConfig(
           haloLineWidth: 6,
           haloOpacity: 0.4,
         },
+        inactive: {
+          opacity: 0.2,
+        },
       },
     },
     edge: {
@@ -636,13 +652,16 @@ export function getG6GraphConfig(
           labelFontSize: 12,
           labelFontWeight: "bold" as const,
         },
+        inactive: {
+          opacity: 0.08,
+        },
       },
     },
     behaviors: [
       { type: "drag-canvas" },
       { type: "zoom-canvas", maxZoom: 2.0, minZoom: 0.3 },
       { type: "drag-element" },
-      { type: "hover-activate", degree: 0 },
+      { type: "hover-activate", degree: 1, state: "active", inactiveState: "inactive" },
       { type: "auto-adapt-label", enable: false, padding: 4 },
     ],
   };

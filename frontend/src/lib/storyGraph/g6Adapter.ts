@@ -290,6 +290,8 @@ export function mapToG6GraphData(
         rawId: node.rawId,
         name: node.name,
         kind: node.kind,
+        degree,
+        size: baseSize * 2,
         state: node.state,
         firstChapter: node.firstChapter,
         lastChapter: node.lastChapter,
@@ -370,6 +372,10 @@ export function mapToG6GraphData(
     const extraCount = conn.records.length > 1 ? ` (+${conn.records.length - 1})` : "";
     const labelText = rawLabel ? `${rawLabel}${extraCount}` : "";
 
+    const srcDeg = degreeMap.get(conn.sourceId) || 1;
+    const tgtDeg = degreeMap.get(conn.targetId) || 1;
+    const maxEndpointDegree = Math.max(srcDeg, tgtDeg);
+
     // Dynamic curve offset: alternating curvature arcs around the center
     // preventing straight lines from cutting through central characters or overlapping
     const baseOffset = conn.isReciprocal ? 30 : 22;
@@ -390,6 +396,9 @@ export function mapToG6GraphData(
         records: conn.records,
         isReciprocal: conn.isReciprocal,
         connectionTypes: conn.connectionTypes,
+        labelText,
+        strokeColor,
+        maxEndpointDegree,
       },
       style: {
         type: "quadratic",
@@ -400,7 +409,9 @@ export function mapToG6GraphData(
         lineDash,
         opacity: isDimmed ? 0.12 : isSelected || isConnectedToFocus ? 1 : 0.8,
         cursor: "pointer",
-        labelText,
+        // Semantic LOD: In resting state (L0), suppress label to eliminate clutter.
+        // Full label is revealed on hover/active or when selected (L1/L2).
+        labelText: isSelected || isConnectedToFocus ? labelText : "",
         labelFill: isDimmed
           ? "#334155"
           : isConnectedToFocus || isSelected
@@ -428,6 +439,7 @@ export function mapToG6GraphData(
 
 /**
  * Returns G6 Force-Directed Physics Graph Configuration.
+ * Fully scale-invariant, GPU-accelerated event-loop decoupled setup.
  */
 export function getG6GraphConfig(
   container: HTMLElement | string = "container",
@@ -448,11 +460,85 @@ export function getG6GraphConfig(
         distance: 24,
       },
     ],
+    behaviors: [
+      { type: "drag-canvas" },
+      { type: "zoom-canvas", maxZoom: 2.0, minZoom: 0.3 },
+      { type: "drag-element" },
+      {
+        type: "hover-activate",
+        degree: 1,
+        state: "active",
+        inactiveState: "inactive",
+      },
+    ],
+    node: {
+      type: "circle",
+      style: (model: any) => ({
+        ...model.style,
+      }),
+      state: {
+        active: {
+          lineWidth: 3,
+          stroke: "#f8fafc",
+          halo: true,
+          haloStroke: "#38bdf8",
+          haloLineWidth: 8,
+          haloOpacity: 0.5,
+        },
+        selected: {
+          lineWidth: 4,
+          stroke: "#ffffff",
+          halo: true,
+          haloStroke: "#38bdf8",
+          haloLineWidth: 12,
+          haloOpacity: 0.65,
+        },
+        inactive: {
+          opacity: 0.2,
+        },
+      },
+    },
     edge: {
       type: "quadratic",
       style: (model: any) => ({
         ...model.style,
       }),
+      state: {
+        active: {
+          lineWidth: 3.5,
+          labelText: (d: any) => d.data?.labelText || "",
+          labelFill: "#f8fafc",
+          labelFontSize: 11,
+          labelFontFamily: "ui-monospace, SFMono-Regular, monospace",
+          labelFontWeight: "600",
+          labelBackground: true,
+          labelBackgroundFill: "rgba(12, 15, 20, 0.98)",
+          labelBackgroundStroke: (d: any) => d.data?.strokeColor || "#38bdf8",
+          labelBackgroundLineWidth: 1,
+          labelBackgroundRadius: 4,
+          labelBackgroundPadding: [2, 6, 2, 6],
+          opacity: 1,
+        },
+        selected: {
+          lineWidth: 4,
+          stroke: "#38bdf8",
+          labelText: (d: any) => d.data?.labelText || "",
+          labelFill: "#ffffff",
+          labelFontSize: 12,
+          labelFontFamily: "ui-monospace, SFMono-Regular, monospace",
+          labelFontWeight: "700",
+          labelBackground: true,
+          labelBackgroundFill: "rgba(12, 15, 20, 0.98)",
+          labelBackgroundStroke: "#38bdf8",
+          labelBackgroundLineWidth: 1.5,
+          labelBackgroundRadius: 4,
+          labelBackgroundPadding: [2, 6, 2, 6],
+          opacity: 1,
+        },
+        inactive: {
+          opacity: 0.08,
+        },
+      },
     },
     layout: {
       type: "d3-force",
@@ -468,24 +554,28 @@ export function getG6GraphConfig(
         iterations: 3,
       },
       manyBody: {
-        strength: -420,
+        strength: (d: any) => {
+          const deg = d.data?.degree || 1;
+          // Scale-invariant repulsion: high degree hubs push stronger to give satellites room
+          return -360 - Math.min(deg * 22, 450);
+        },
+        theta: 0.6,
         distanceMin: 50,
-        distanceMax: 650,
+        distanceMax: 800,
       },
       link: {
         distance: (edge: any) => {
-          const recs = edge.data?.records?.length || 1;
-          return Math.max(160, 240 - recs * 15);
+          const maxDeg = edge.data?.maxEndpointDegree || 1;
+          // Scale-invariant perimeter allocation formula from ADR-006:
+          // d = d_min + beta * sqrt(maxDeg)
+          const dMin = 145;
+          const beta = 34;
+          return Math.round(dMin + beta * Math.sqrt(maxDeg));
         },
         strength: 0.35,
       },
       alphaDecay: 0.035,
       velocityDecay: 0.4,
     },
-    behaviors: [
-      { type: "drag-canvas" },
-      { type: "zoom-canvas", maxZoom: 2.0, minZoom: 0.3 },
-      { type: "drag-element" },
-    ],
   };
 }
