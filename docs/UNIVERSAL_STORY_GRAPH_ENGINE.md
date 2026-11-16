@@ -205,8 +205,9 @@ stateDiagram-v2
 | Tier | Name | Target Cognitive Goal | Edge Rendering | Label Policy |
 | :--- | :--- | :--- | :--- | :--- |
 | **L0** | **Macro Constellation** | Global topology, faction dynamics, power balance | Curved quadratic arcs with tone-based color and thread-based thickness | Labels suppressed. Zero text collisions. Clean astronomical constellation. |
-| **L1** | **Meso Spotlight** | Neighborhood analysis of a specific character | Connected edges brighten; unrelated edges fade to $\alpha = 0.35$ | Connected edge badges pop up in high-contrast padded pills (`rgba(12, 15, 20, 0.98)`). |
-| **L2** | **Micro Dossier** | Deep narrative inspection | Selected edge highlighted in cyan halo | Full citation drawer with chapter citations, sentiment graphs, and state history. |
+| **L1** | **Hover Spotlight** | Rapid neighborhood preview on cursor dwell ($\ge 120\text{ms}$) | Connected edges brighten; unrelated edges fade gently to $\alpha = 0.35$ | Connected edge badges pop up in high-contrast padded pills. Zero React re-renders. |
+| **L2** | **Ego-Network Isolation (Focus Mode)** | Committed character focus without background noise or overlapping webs | Only incident edges to the selected entity and its direct satellites remain; all unrelated edges disappear | Unrelated entities vanish completely. Only the 1-hop ego network $G[N[v]]$ is simulated and centered. Full graph re-expands on deselect. |
+| **L3** | **Micro Dossier Inspector** | Deep narrative and canonical inspection | Selected entity highlighted with radiant halo | Full citation drawer with chapter citations, sentiment distributions, and state history. |
 
 ---
 

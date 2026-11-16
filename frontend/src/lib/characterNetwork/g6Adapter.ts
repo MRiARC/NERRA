@@ -91,6 +91,7 @@ export interface G6AdapterOptions {
   searchQuery?: string;
   statusFilter?: string; // "all" | "alive" | "deceased" | "incapacitated" | "unknown"
   toneFilter?: string; // "all" | "friction" | "warmth" | "neutral"
+  isolateOnSelect?: boolean;
 }
 
 /**
@@ -356,6 +357,7 @@ export function mapToG6GraphData(
     searchQuery = "",
     statusFilter = "all",
     toneFilter = "all",
+    isolateOnSelect = true,
   } = options;
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -378,11 +380,28 @@ export function mapToG6GraphData(
     }
   }
 
-  // 3. Filter and build G6 Nodes
+  // 3. Ego-Network Isolation (Focus Mode)
+  // When a character is selected, isolate their 1-hop neighborhood: only related characters and edges show;
+  // all unrelated characters and edges disappear. When unselected (clicking canvas/character again), everything reappears.
+  let egoCharacterIds: Set<string> | null = null;
+  if (isolateOnSelect && selectedNodeId) {
+    egoCharacterIds = new Set<string>([selectedNodeId]);
+    for (const conn of graph.connections) {
+      if (conn.characterAId === selectedNodeId) egoCharacterIds.add(conn.characterBId);
+      if (conn.characterBId === selectedNodeId) egoCharacterIds.add(conn.characterAId);
+    }
+  }
+
+  // 4. Filter and build G6 Nodes
   const nodes: G6NodeModel[] = [];
   const includedNodeIds = new Set<string>();
 
   for (const node of graph.nodes) {
+    // Ego-network filter: disappear all unrelated characters
+    if (egoCharacterIds && !egoCharacterIds.has(node.id)) {
+      continue;
+    }
+
     // Status filter
     const statusNorm = node.state.status.toLowerCase();
     if (statusFilter !== "all" && statusNorm !== statusFilter) {

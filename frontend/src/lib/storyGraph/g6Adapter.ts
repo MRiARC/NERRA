@@ -113,6 +113,7 @@ export interface G6AdapterOptions {
   searchQuery?: string;
   statusFilter?: string;
   toneFilter?: string;
+  isolateOnSelect?: boolean;
 }
 
 export function formatRelationLabel(relation: string): string {
@@ -251,6 +252,7 @@ export function mapToG6GraphData(
     searchQuery = "",
     statusFilter = "all",
     toneFilter = "all",
+    isolateOnSelect = true,
   } = options;
 
   const query = searchQuery.trim().toLowerCase();
@@ -307,8 +309,27 @@ export function mapToG6GraphData(
     }
   }
 
-  // 3. Map G6 Nodes
-  const g6Nodes = filteredNodes.map((node) => {
+  // 3. Ego-Network Isolation (Focus Mode)
+  // When a node is clicked/selected, isolate its 1-hop neighborhood: only related entities and edges show;
+  // all unrelated nodes and edges disappear. When unselected (clicking canvas/node again), everything reappears.
+  let displayNodes = filteredNodes;
+  let displayConnections = filteredConnections;
+
+  if (isolateOnSelect && selectedNodeId && visibleNodeIdSet.has(selectedNodeId)) {
+    const egoNodeIdSet = new Set<string>([selectedNodeId]);
+    for (const conn of filteredConnections) {
+      if (conn.sourceId === selectedNodeId) egoNodeIdSet.add(conn.targetId);
+      if (conn.targetId === selectedNodeId) egoNodeIdSet.add(conn.sourceId);
+    }
+
+    displayNodes = filteredNodes.filter((n) => egoNodeIdSet.has(n.id));
+    displayConnections = filteredConnections.filter(
+      (conn) => egoNodeIdSet.has(conn.sourceId) && egoNodeIdSet.has(conn.targetId)
+    );
+  }
+
+  // 4. Map G6 Nodes
+  const g6Nodes = displayNodes.map((node) => {
     const isSelected = selectedNodeId === node.id;
     const isHovered = hoveredNodeId === node.id;
     const isFocused = isSelected || isHovered;
@@ -409,8 +430,8 @@ export function mapToG6GraphData(
     };
   });
 
-  // 4. Map G6 Edges with curved quadratic geometry to eliminate center-line slicing
-  const g6Edges = filteredConnections.map((conn, index) => {
+  // 5. Map G6 Edges with curved quadratic geometry to eliminate center-line slicing
+  const g6Edges = displayConnections.map((conn, index) => {
     const isSelected = selectedConnectionId === conn.connectionId;
     const isConnectedToFocus = activeFocusId
       ? conn.sourceId === activeFocusId || conn.targetId === activeFocusId

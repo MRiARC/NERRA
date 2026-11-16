@@ -483,23 +483,42 @@ export function CharacterNetworkView({
               </div>
             </div>
           ) : (
-            <CharacterNetworkCanvas
-              graphData={displayedGraph}
-              selectedNodeId={selectedNodeId}
-              selectedConnectionId={selectedConnectionId}
-              hoveredNodeId={hoveredNodeId}
-              searchQuery={searchQuery}
-              statusFilter={statusFilter}
-              toneFilter={toneFilter}
-              onSelectNode={(id) => {
-                setSelectedNodeId(id);
-                if (id) setSelectedConnectionId(null);
-              }}
-              onSelectConnection={(id) => {
-                setSelectedConnectionId(id);
-                if (id) setSelectedNodeId(null);
-              }}
-            />
+            <>
+              {/* Floating Focus Mode HUD Indicator */}
+              {selectedNodeId && activeNode && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-surface-card/90 backdrop-blur-md border border-wine-accent/50 shadow-xl text-xs text-ink-parchment animate-in fade-in slide-in-from-top-2">
+                  <span className="w-2 h-2 rounded-full bg-wine-accent animate-pulse" />
+                  <span className="font-serif font-medium">Focus: {activeNode.name}</span>
+                  <span className="text-ink-ash font-mono text-[11px]">
+                    ({networkGraph.connections.filter(c => c.characterAId === selectedNodeId || c.characterBId === selectedNodeId).length} bonds)
+                  </span>
+                  <button
+                    onClick={() => setSelectedNodeId(null)}
+                    className="ml-1 p-0.5 rounded-full hover:bg-surface-elevated text-ink-ash hover:text-ink-parchment transition-colors"
+                    title="Show All Characters"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              <CharacterNetworkCanvas
+                graphData={displayedGraph}
+                selectedNodeId={selectedNodeId}
+                selectedConnectionId={selectedConnectionId}
+                hoveredNodeId={hoveredNodeId}
+                searchQuery={searchQuery}
+                statusFilter={statusFilter}
+                toneFilter={toneFilter}
+                onSelectNode={(id) => {
+                  setSelectedNodeId((prev) => (prev === id ? null : id));
+                  setSelectedConnectionId(null);
+                }}
+                onSelectConnection={(id) => {
+                  setSelectedConnectionId(id);
+                  if (id) setSelectedNodeId(null);
+                }}
+              />
+            </>
           )}
         </main>
 

@@ -13,6 +13,7 @@ import {
   Sparkles,
   Network,
   ChevronDown,
+  X,
 } from "lucide-react";
 import {
   useCharacters,
@@ -544,22 +545,41 @@ export function StoryGraphView({
               </div>
             </div>
           ) : (
-            <StoryGraphCanvas
-              graphData={graphData}
-              selectedNodeId={selectedNodeId}
-              selectedConnectionId={selectedConnectionId}
-              searchQuery={searchQuery}
-              statusFilter={statusFilter}
-              toneFilter={toneFilter}
-              onSelectNode={(nodeId) => {
-                setSelectedNodeId(nodeId);
-                setSelectedConnectionId(null);
-              }}
-              onSelectConnection={(connId) => {
-                setSelectedConnectionId(connId);
-                setSelectedNodeId(null);
-              }}
-            />
+            <>
+              {/* Floating Focus Mode HUD Indicator */}
+              {selectedNodeId && activeNode && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-surface-card/90 backdrop-blur-md border border-wine-accent/50 shadow-xl text-xs text-ink-parchment animate-in fade-in slide-in-from-top-2">
+                  <span className="w-2 h-2 rounded-full bg-wine-accent animate-pulse" />
+                  <span className="font-serif font-medium">Focus: {activeNode.name}</span>
+                  <span className="text-ink-ash font-mono text-[11px]">
+                    ({graphData.connections.filter(c => c.sourceId === selectedNodeId || c.targetId === selectedNodeId).length} links)
+                  </span>
+                  <button
+                    onClick={() => setSelectedNodeId(null)}
+                    className="ml-1 p-0.5 rounded-full hover:bg-surface-elevated text-ink-ash hover:text-ink-parchment transition-colors"
+                    title="Show All Entities"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              <StoryGraphCanvas
+                graphData={graphData}
+                selectedNodeId={selectedNodeId}
+                selectedConnectionId={selectedConnectionId}
+                searchQuery={searchQuery}
+                statusFilter={statusFilter}
+                toneFilter={toneFilter}
+                onSelectNode={(nodeId) => {
+                  setSelectedNodeId((prev) => (prev === nodeId ? null : nodeId));
+                  setSelectedConnectionId(null);
+                }}
+                onSelectConnection={(connId) => {
+                  setSelectedConnectionId(connId);
+                  setSelectedNodeId(null);
+                }}
+              />
+            </>
           )}
         </main>
 

@@ -271,3 +271,40 @@ test("World & Cast Network - Universal Line-Clamping & 2D Bounding Hull Collisio
     "inactiveState must be undefined to avoid rapid cursor sweeping flicker"
   );
 });
+
+test("World & Cast Network - Ego-Network Isolation Focus Mode", () => {
+  const fullGraph = transformStoryGraph({
+    projectId: "proj-1",
+    characters: mockCharacters,
+    relationships: mockRelationships,
+    storyGraph: mockStoryGraph,
+    chapter: 10,
+    lensMode: "full",
+  });
+
+  // Total 6 nodes in full graph
+  assert.equal(fullGraph.nodes.length, 6);
+
+  // 1. Resting Constellation (no selection): all 6 nodes returned
+  const restingData = mapToG6GraphData(fullGraph, { selectedNodeId: null });
+  assert.equal(restingData.nodes.length, 6, "All 6 nodes present in resting constellation");
+
+  // 2. Click/Select Corin Vance (char:char-1)
+  // Corin connects to: Vespera (char:char-2), Silas (char:char-3), Obsidian Dagger (obj:dagger-1), Archives (loc:setting-1)
+  // Cataclysm (event:event-1) is UNRELATED to Corin
+  const corinId = "char:char-1";
+  const isolatedData = mapToG6GraphData(fullGraph, { selectedNodeId: corinId });
+
+  // Unrelated nodes disappear: Silas (char:char-3, 2-hop) and Cataclysm (event:event-1) must NOT be present
+  assert.ok(isolatedData.nodes.some((n) => n.id === corinId), "Selected node must be present");
+  assert.ok(isolatedData.nodes.some((n) => n.id === "char:char-2"), "Connected neighbor Vespera must be present");
+  assert.ok(isolatedData.nodes.some((n) => n.id === "obj:relic-1"), "Connected relic must be present");
+  assert.ok(isolatedData.nodes.some((n) => n.id === "loc:setting-1"), "Connected location must be present");
+  assert.ok(!isolatedData.nodes.some((n) => n.id === "char:char-3"), "Unrelated character Silas must disappear");
+  assert.ok(!isolatedData.nodes.some((n) => n.id === "event:event-1"), "Unrelated event Cataclysm must disappear");
+  assert.equal(isolatedData.nodes.length, 4, "Only Corin + 3 connected neighbors show (4 total; Silas and Cataclysm disappeared)");
+
+  // 3. Deselect Corin: all 6 nodes reappear
+  const restoredData = mapToG6GraphData(fullGraph, { selectedNodeId: null });
+  assert.equal(restoredData.nodes.length, 6, "All 6 nodes reappear on deselect");
+});
