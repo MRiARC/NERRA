@@ -330,8 +330,8 @@ export function mapToG6GraphData(
     };
   });
 
-  // 4. Map G6 Edges
-  const g6Edges = filteredConnections.map((conn) => {
+  // 4. Map G6 Edges with curved quadratic geometry to eliminate center-line slicing
+  const g6Edges = filteredConnections.map((conn, index) => {
     const isSelected = selectedConnectionId === conn.connectionId;
     const isConnectedToFocus = activeFocusId
       ? conn.sourceId === activeFocusId || conn.targetId === activeFocusId
@@ -370,6 +370,12 @@ export function mapToG6GraphData(
     const extraCount = conn.records.length > 1 ? ` (+${conn.records.length - 1})` : "";
     const labelText = rawLabel ? `${rawLabel}${extraCount}` : "";
 
+    // Dynamic curve offset: alternating curvature arcs around the center
+    // preventing straight lines from cutting through central characters or overlapping
+    const baseOffset = conn.isReciprocal ? 30 : 22;
+    const curveSign = index % 2 === 0 ? 1 : -1;
+    const curveOffset = curveSign * baseOffset;
+
     return {
       id: conn.connectionId,
       source: conn.sourceId,
@@ -386,19 +392,31 @@ export function mapToG6GraphData(
         connectionTypes: conn.connectionTypes,
       },
       style: {
+        type: "quadratic",
+        curveOffset,
+        curvePosition: 0.5,
         stroke: isSelected ? "#38bdf8" : strokeColor,
-        lineWidth: isSelected ? 3.0 : lineWidth,
+        lineWidth: isSelected ? 3.2 : isConnectedToFocus ? lineWidth + 1.2 : lineWidth,
         lineDash,
-        opacity: isDimmed ? 0.12 : isSelected ? 1 : 0.75,
+        opacity: isDimmed ? 0.12 : isSelected || isConnectedToFocus ? 1 : 0.8,
         cursor: "pointer",
         labelText,
-        labelFill: isDimmed ? "#334155" : EDITORIAL_PALETTE.text.secondary,
-        labelFontSize: 9.5,
+        labelFill: isDimmed
+          ? "#334155"
+          : isConnectedToFocus || isSelected
+          ? "#f8fafc"
+          : EDITORIAL_PALETTE.text.secondary,
+        labelFontSize: isConnectedToFocus || isSelected ? 10.5 : 9.5,
         labelFontFamily: "ui-monospace, SFMono-Regular, monospace",
+        labelFontWeight: isConnectedToFocus || isSelected ? "600" : "400",
         labelBackground: true,
-        labelBackgroundFill: "rgba(9, 11, 14, 0.9)",
-        labelBackgroundRadius: 3,
-        labelBackgroundPadding: [1, 4, 1, 4],
+        labelBackgroundFill: isConnectedToFocus
+          ? "rgba(12, 15, 20, 0.98)"
+          : "rgba(9, 11, 14, 0.92)",
+        labelBackgroundStroke: isConnectedToFocus ? strokeColor : "rgba(255, 255, 255, 0.08)",
+        labelBackgroundLineWidth: isConnectedToFocus ? 1 : 0.5,
+        labelBackgroundRadius: 4,
+        labelBackgroundPadding: [2, 6, 2, 6],
         endArrow: conn.isReciprocal || isSpatial ? false : true,
         endArrowSize: 5,
       },
@@ -424,14 +442,45 @@ export function getG6GraphConfig(
     width: containerWidth,
     height: containerHeight,
     autoFit: "center",
+    transforms: [
+      {
+        type: "process-parallel-edges",
+        distance: 24,
+      },
+    ],
+    edge: {
+      type: "quadratic",
+      style: (model: any) => ({
+        ...model.style,
+      }),
+    },
     layout: {
       type: "d3-force",
-      linkDistance: 130,
-      nodeStrength: -320,
-      edgeStrength: 0.25,
+      preventOverlap: true,
+      nodeSize: 80,
       center: [cx, cy],
-      alphaDecay: 0.04,
-      velocityDecay: 0.35,
+      collide: {
+        radius: (d: any) => {
+          const s = d.data?.size || d.style?.size || 36;
+          return s + 36;
+        },
+        strength: 0.85,
+        iterations: 3,
+      },
+      manyBody: {
+        strength: -420,
+        distanceMin: 50,
+        distanceMax: 650,
+      },
+      link: {
+        distance: (edge: any) => {
+          const recs = edge.data?.records?.length || 1;
+          return Math.max(160, 240 - recs * 15);
+        },
+        strength: 0.35,
+      },
+      alphaDecay: 0.035,
+      velocityDecay: 0.4,
     },
     behaviors: [
       { type: "drag-canvas" },

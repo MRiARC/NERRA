@@ -553,27 +553,39 @@ export function getG6GraphConfig(
     padding: [40, 60, 40, 60],
     animation: false,
     zoomRange: [0.3, 2.0] as [number, number],
+    transforms: [
+      {
+        type: "process-parallel-edges",
+        distance: 24,
+      },
+    ],
     layout: {
       type: "d3-force",
       preventOverlap: true,
       nodeSize: 80,
-      linkDistance: 240,
-      nodeStrength: -280,
-      edgeStrength: 0.35,
-      collideStrength: 0.7,
-      alphaMin: 0.015,
-      alphaDecay: 0.04,
-      centerX,
-      centerY,
-      centerStrength: 0.06,
-      x: {
-        x: centerX,
-        strength: 0.05,
+      center: [centerX, centerY],
+      collide: {
+        radius: (d: any) => {
+          const s = d.data?.size || d.style?.size || 40;
+          return s + 36;
+        },
+        strength: 0.85,
+        iterations: 3,
       },
-      y: {
-        y: centerY,
-        strength: 0.05,
+      manyBody: {
+        strength: -420,
+        distanceMin: 50,
+        distanceMax: 650,
       },
+      link: {
+        distance: (edge: any) => {
+          const recs = edge.data?.records?.length || 1;
+          return Math.max(160, 240 - recs * 15);
+        },
+        strength: 0.35,
+      },
+      alphaDecay: 0.035,
+      velocityDecay: 0.4,
     },
     node: {
       type: "circle",
