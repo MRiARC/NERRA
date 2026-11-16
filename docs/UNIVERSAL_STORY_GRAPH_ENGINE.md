@@ -9,16 +9,22 @@
 
 ## Executive Summary
 
-As a manuscript scales from a 3-character locked-room mystery to a 27-cast web serial or a multi-generational epic with 2,000+ chapters, graph visualization engines typically suffer from three systemic failures:
+As a manuscript scales from a 3-character locked-room mystery to a 27-cast web serial or a multi-generational epic with 2,000+ chapters, graph visualization engines typically suffer from four systemic failures:
 1. **Interactive Event-Loop Lag**: Bridging cursor micro-interactions (hovering, panning) into the declarative React render lifecycle creates quadratic DOM/Canvas re-renders, causing severe frame drops and highlighting latency.
-2. **Topological Clumping (The Star-Graph Collapse)**: When a dominant viewpoint character (e.g., *Narrator*, *Protagonist*) connects to 20+ peripheral satellites, static physics engines drag all nodes into an indistinguishable central knot.
-3. **Cognitive Overload (Label Soup)**: Rendering relationship labels globally at all times violates information visualization theory, transforming the graph into an unreadable matrix of clashing text boxes.
+2. **Traversal Strobe (Cursor Blinking)**: Instantaneous, zero-hysteresis state toggling plunges the entire canvas into darkness during rapid mouse transit across intermediate nodes, creating a high-contrast strobe-light flicker.
+3. **Topological Clumping (The Star-Graph Collapse)**: When a dominant viewpoint character (e.g., *Narrator*, *Protagonist*) connects to 20+ peripheral satellites, static physics engines drag all nodes into an indistinguishable central knot.
+4. **Cognitive Overload & Text Collision (Label Soup)**: Rendering unconstrained paragraph-length database strings and relationship labels globally on a 2D Euclidean canvas guarantees massive visual collisions.
 
-This Architecture Decision Record establishes a **scale-invariant, mathematically grounded foundation** for Nera's World & Cast Network. It eliminates hardcoded special-cases in favor of four fundamental invariants: **Event-Loop Decoupling**, **Degree-Proportional Topological Physics**, **Semantic Level of Detail (LOD)**, and **Temporal Delta Streaming for 1,000+ Chapter Lifespans**.
+This Architecture Decision Record establishes a **scale-invariant, mathematically grounded foundation** for Nera's World & Cast Network. It eliminates hardcoded special-cases in favor of five fundamental universal systems:
+- **Event-Loop Decoupling**
+- **Hover Intent & Traversal Hysteresis**
+- **Full 2D Bounding-Hull Collision Physics**
+- **Spatial Envelope Typography Clamping**
+- **Semantic Level of Detail (LOD) with Temporal Delta Streaming**
 
 ---
 
-## 1. Architectural Invariant 1: Event-Loop Decoupling
+## 1. Universal Interaction Architecture: Event-Loop Decoupling & Hover Intent
 
 ### 1.1 The Anti-Pattern (React Lifecycle Pollution)
 
@@ -48,13 +54,15 @@ onPointerEnter() ──► setState(hoveredNodeId)
 
 ### 1.2 The Invariant: Canvas Scene-Graph State Machine
 
-Micro-interactions belong strictly to the **Canvas/GPU render loop**. React should only be notified when an explicit, state-committing action occurs (such as a mouse click selecting a node to open the Dossier Inspector).
+Micro-interactions belong strictly to the **Canvas/GPU render loop**. React is notified **only on committed actions** (such as clicking a node to open the Dossier Inspector).
 
 ```mermaid
 flowchart TD
     subgraph GPU_Canvas_Loop ["GPU Canvas Loop (< 1ms, 60-120 FPS)"]
-        Pointer[Cursor Event] --> HoverActivate["G6 Element State: hover-activate"]
-        HoverActivate --> Shader["GPU Shader: Spotlight Active & Dim Background"]
+        Pointer[Cursor Event] --> HoverIntentCheck{Pointer Dwell >= 120ms?}
+        HoverIntentCheck -->|No - High Speed Transit| KeepCalm[Maintain Global View - Zero Flashes]
+        HoverIntentCheck -->|Yes - Settle on Node| HoverActivate["G6 Element State: hover-activate"]
+        HoverActivate --> Shader["GPU Shader: Spotlight Active & Ambient Dim (alpha = 0.35)"]
         HoverActivate --> TooltipLocal["Direct DOM Tooltip Transform (GPU Translate3D)"]
     end
 
@@ -67,17 +75,23 @@ flowchart TD
     Click -->|Dispatches Once| React_State_Boundary
 ```
 
-#### Technical Guarantees:
-- **Zero React re-renders on hover**: Cursor movements update node/edge states (`active`, `selected`, `dimmed`) directly within G6's internal element state manager via `graph.setElementState(id, state, value)`.
-- **Hardware-Accelerated Tooltip Positioning**: Mouse coordinates update a lightweight floating DOM overlay via `transform: translate3d(x, y, 0)` without React triggering a component update.
+### 1.3 Hover Intent & Traversal Hysteresis (Solving the Blinking Strobe)
+
+#### The Problem: Fitts's Law Traversal Penalty
+When a user sweeps their cursor across a dense canvas to reach a button or node, the cursor physically traverses intermediate nodes. With zero dwell delay, entering and exiting 5 nodes in one second creates **10 rapid flashes between 100% brightness and 8% darkness**, generating an aggressive strobe effect.
+
+#### The Universal System:
+- **Velocity-Based Dwell Threshold**: State activation requires the cursor to dwell over an entity for $\Delta t \ge 120\text{ms}$. During high-speed sweeps across the screen, the graph remains rock-solid and calm.
+- **Ambient Contrast Floor**: The inactive dimming state uses an ambient floor of $\alpha = 0.35$ rather than near-pitch-black ($0.08$). Elements gently recede into the dark obsidian background without disappearing.
+- **Smooth Easing**: Alpha transitions interpolate over a $180\text{ms}$ cubic-bezier easing curve.
 
 ---
 
-## 2. Architectural Invariant 2: Scale-Invariant Topological Physics
+## 2. Universal Spatial Geometry: Scale-Invariant Physics & 2D Bounding Hulls
 
 ### 2.1 The Mathematics of Hub Packing
 
-In literary networks, relationship distribution is rarely uniform. Manuscripts exhibit **scale-free power-law distributions** ($P(k) \sim k^{-\gamma}$), where a few central hubs have high degree $k$ while most satellites have $k \le 2$.
+In literary networks, relationship distribution exhibits **scale-free power-law distributions** ($P(k) \sim k^{-\gamma}$), where a few central hubs have high degree $k$ while most satellites have $k \le 2$.
 
 If an engine applies a constant edge distance $d_0$ across all edges, the circumference available to a hub's satellites is:
 
@@ -87,52 +101,76 @@ If a hub has $k = 20$ connections, each satellite has an arc clearance of:
 
 $$\Delta s = \frac{2\pi d_0}{k} = \frac{2\pi (160\text{px})}{20} \approx 50.2\text{px}$$
 
-Because a character node with padding occupies $\ge 70\text{px}$, **nodes are mathematically forced to overlap**.
+Because a character node occupies $\ge 70\text{px}$, **nodes are mathematically forced to overlap**.
 
-### 2.2 The Invariant: Degree-Proportional Perimeter Allocation
+### 2.2 Degree-Proportional Perimeter Allocation
 
-To guarantee geometric clearance without hardcoding, target link distance must be a continuous monotonic function of the maximum endpoint degree:
+To guarantee geometric clearance without hardcoding, target link distance is a continuous monotonic function of the maximum endpoint degree:
 
 $$d(u, v) = d_{\min} + \beta \cdot \sqrt{\max(\deg(u), \deg(v))}$$
 
 Where:
-- $d_{\min} \approx 140\text{px}$ (base interpersonal distance for isolated pairs).
-- $\beta \approx 35\text{px}$ (orbital expansion factor).
+- $d_{\min} \approx 145\text{px}$ (base interpersonal distance for isolated pairs).
+- $\beta \approx 34\text{px}$ (orbital expansion factor).
 - $\deg(u)$ is the degree centrality of node $u$.
 
 ```
 [Isolated Pair: deg = 1]          [Mega-Hub Narrator: deg = 18]
       (A) ------- (B)                         (S1)    (S2)
-          140px                            (S3)          (S4)
+          145px                            (S3)          (S4)
                                          (S5)              (S6)
                                                (NARRATOR)
                                          (S7)              (S8)
                                            (S9)          (S10)
                                               (S11)  (S12)
-                                          <─── 288px radius ───>
+                                          <─── 289px radius ───>
 ```
 
-#### Barnes-Hut Quadtree Repulsion
-To compute repulsive forces in $O(N \log N)$ rather than $O(N^2)$, the engine utilizes Barnes-Hut spatial decomposition with an opening angle $\theta = 0.6$:
-- Distant clusters are approximated as a single point-mass at their center of mass.
-- Ensures smooth 60 FPS layout initialization whether $|V| = 9$ or $|V| = 250$.
+### 2.3 Full 2D Bounding-Hull Collision Physics
 
-#### Viewport-Normalized Gravitational Centering
-Centering pull $G$ must scale inversely with the square root of entity volume:
+#### The Problem: Circle-Only vs Full Visual Envelope
+When nodes display text below their avatar circles, a circular collision force centered on the avatar ignores the spatial envelope of the text. Two avatar circles will avoid each other, but their text blocks will collide.
 
-$$G(|V|) = G_0 \cdot \frac{1}{\sqrt{|V|}}$$
+#### The Universal System:
+The physical collision radius $R_{\text{collision}}$ encompasses the **entire 2D visual footprint (icon + text envelope)**:
 
-- For small casts ($|V| = 4$), $G$ remains firm, preventing tiny clusters from drifting apart.
-- For dense casts ($|V| \ge 25$), $G$ softens, allowing repulsive forces to push nodes outward into the empty canvas perimeter.
+$$R_{\text{collision}}(u) = \sqrt{\left(\frac{W_{\text{hull}}(u)}{2}\right)^2 + \left(\frac{H_{\text{hull}}(u)}{2}\right)^2} + \text{Padding}$$
+
+By treating the complete visual footprint as an impenetrable bounding hull in D3-force collision detection, **element-on-element overlap is mathematically eliminated**.
 
 ---
 
-## 3. Architectural Invariant 3: Semantic Level of Detail (LOD)
+## 3. Universal Typography Architecture: Spatial Envelope Line-Clamping
 
-In data visualization science, Shneiderman’s mantra dictates:  
-> *"Overview first, zoom and filter, then details-on-demand."*
+### 3.1 The Spatial Map Principle
+A 2D network graph is a **spatial orientation map**, not an inline document reader. When any database record contains a multi-sentence description (such as an event summary or long relic title), rendering it as an unconstrained single-line label will inevitably blanket the canvas.
 
-Displaying every textual relationship label simultaneously on a 52-bond graph creates extreme visual noise and text collision.
+### 3.2 Spatial Envelope Clamping Specification
+
+```
+[Raw Database String]
+"Narrator was the first to attack the incoming bloodied monster, which the wolf..." (83 chars)
+                                      │
+                                      ▼
+[Universal Canvas Typographic Clamping]
+┌──────────────────────────────┐
+│     ◆ Bloodied Monster       │  <- Line 1 (Max 18 chars)
+│       Attack...              │  <- Line 2 (Clamped with ellipsis)
+└──────────────────────────────┘
+                                      │
+                                      ▼ (On Hover / Selection)
+[Details-on-Demand: Tooltip & Dossier Inspector]
+Full 83-character sentence, citation, chapter source, and metadata displayed untruncated.
+```
+
+- **Canvas Envelope Constraint**: Node labels on the canvas are clamped to a calibrated envelope ($W_{\max} = 130\text{px}$, $\text{MaxLines} = 2$, standard word-wrap with ellipsis).
+- **Zero Information Loss**: The full, pristine database string is preserved in `node.data.name` and rendered untruncated in the Dossier Drawer and Hover HUD Card.
+
+---
+
+## 4. Semantic Level of Detail (LOD)
+
+In data visualization science (Shneiderman’s Information Seeking Mantra: *"Overview first, zoom and filter, details-on-demand"*), visual noise is controlled through progressive disclosure.
 
 ```mermaid
 stateDiagram-v2
@@ -141,15 +179,15 @@ stateDiagram-v2
     state Macro_L0 {
         desc: Resting / Constellation View
         visuals: Colored Bezier arcs (tone), stroke widths (weight)
-        labels: Text labels hidden (or top 5% primary bonds)
+        labels: Edge text suppressed. Clean breathing star map.
     }
 
-    Macro_L0 --> Meso_L1: Cursor Hovers Node / Edge
+    Macro_L0 --> Meso_L1: Cursor Dwells on Entity (>= 120ms)
     
     state Meso_L1 {
         desc: Spotlight / Focused View
-        visuals: 1-hop neighborhood illuminated, background dimmed to 12%
-        labels: Incident relationship pills render with high-contrast badges
+        visuals: 1-hop neighborhood illuminated; background dimmed to 35%
+        labels: Incident relationship badges pop up in high-contrast pills
     }
 
     Meso_L1 --> Micro_L2: User Clicks Entity
@@ -164,82 +202,29 @@ stateDiagram-v2
     Micro_L2 --> Macro_L0: Deselect / Canvas Click
 ```
 
-### LOD Tier Specification
-
 | Tier | Name | Target Cognitive Goal | Edge Rendering | Label Policy |
 | :--- | :--- | :--- | :--- | :--- |
-| **L0** | **Macro Constellation** | Global topology, faction dynamics, power balance | Curved quadratic arcs with tone-based color and thread-based thickness | Labels suppressed. Zero text collisions. Canvas breathes like a celestial star map. |
-| **L1** | **Meso Spotlight** | Neighborhood analysis of a specific character | Connected edges brighten; unrelated edges fade to $\alpha = 0.12$ | Connected edge badges pop up in high-contrast padded pills (`rgba(9, 11, 14, 0.95)`). |
+| **L0** | **Macro Constellation** | Global topology, faction dynamics, power balance | Curved quadratic arcs with tone-based color and thread-based thickness | Labels suppressed. Zero text collisions. Clean astronomical constellation. |
+| **L1** | **Meso Spotlight** | Neighborhood analysis of a specific character | Connected edges brighten; unrelated edges fade to $\alpha = 0.35$ | Connected edge badges pop up in high-contrast padded pills (`rgba(12, 15, 20, 0.98)`). |
 | **L2** | **Micro Dossier** | Deep narrative inspection | Selected edge highlighted in cyan halo | Full citation drawer with chapter citations, sentiment graphs, and state history. |
 
 ---
 
-## 4. Architectural Invariant 4: Massive Temporal Scaling (1 to 2,000+ Chapters)
+## 5. Massive Temporal Scaling (1 to 2,000+ Chapters)
 
-For long-running sagas (e.g., serial fiction spanning hundreds of thousands of words across 1,000 to 2,000 chapters), re-querying the database or re-simulating the entire physics engine on every scrubber drag causes severe thermal throttling.
+For long-running sagas spanning 1,000 to 2,000 chapters:
 
-```mermaid
-flowchart LR
-    subgraph Full_Lifespan ["2,000 Chapter Timeline"]
-        Ch1["Ch 1"] --- Ch50["Ch 50"] --- Ch250["Ch 250 (Milestone)"] --- Ch1000["Ch 1000 (Milestone)"] --- Ch2000["Ch 2000"]
-    end
-
-    subgraph Temporal_Engine ["Temporal Scrubber Engine"]
-        MilestoneIndex["Milestone Keyframe Tree: O(log C) Seeking"]
-        DeltaStream["Delta Patching: O(Δ) Position Interpolation"]
-        WarmStart["Warm-Start Physics: 15-Tick Relaxation"]
-    end
-
-    Ch250 -.-> MilestoneIndex
-    MilestoneIndex --> DeltaStream
-    DeltaStream --> WarmStart
-    WarmStart --> CanvasRender["60 FPS Smooth Constellation Morphing"]
-```
-
-### 4.1 Logarithmic Milestone Keyframing ($O(\log C)$ Seeking)
-- Rather than calculating state transition from Chapter 1 sequentially up to Chapter 1,842, the engine stores snapshot keyframes at logarithmic intervals (Chapters 1, 10, 50, 100, 250, 500, 1000...).
-- Scrubbing to Chapter 1,842 jumps to the nearest keyframe (Chapter 1,750) and evaluates only the 92 intermediate chapter deltas.
-
-### 4.2 Temporal Delta Patching ($O(\Delta)$ vs $O(V + E)$)
-- Moving from Chapter $k$ to Chapter $k+1$ rarely alters the entire graph; typically, 1 character enters, or 1 relationship transitions tone.
-- The G6 adapter receives a **diff payload** rather than a full graph reload. Existing nodes retain their cached coordinates $(x, y)$, and new entities are warm-started into the simulation without scrambling established layout muscle memory.
-
-### 4.3 Warm-Start Position Morphing
-- When the user steps through chapters, nodes do not randomly jump to new coordinates (which causes severe cognitive disorientation).
-- Existing nodes use their settled coordinates from Chapter $k$ as the starting seed for Chapter $k+1$, running a short 15-tick relaxation animation ($200\text{ms}$ smooth transition).
+1. **Logarithmic Milestone Keyframing ($O(\log C)$ Seeking)**: Snapshot keyframes at logarithmic intervals (Chapters 1, 10, 50, 100, 250, 500, 1000...) allow instant seeking without sequential state replay.
+2. **Temporal Delta Patching ($O(\Delta)$ vs $O(V + E)$)**: Scrubbing updates only the delta changes between Chapter $k$ and $k+1$.
+3. **Warm-Start Position Morphing**: Existing nodes maintain settled coordinates as seeds for the next chapter, running a gentle 15-tick relaxation animation to preserve the user's mental map.
 
 ---
 
-## 5. Curated Academic & Industry Bibliography
+## 6. Implementation Checklist
 
-For continued study and reference, the mathematical and visual techniques specified in this ADR are derived from the following foundational literature:
-
-1. **ForceAtlas2 Algorithm**:
-   - Jacomy, M., Venturini, T., Heymann, S., & Bastian, M. (2014). *ForceAtlas2, a Continuous Graph Layout Algorithm for Handy Network Visualization Designed for the Gephi Software*. PLOS ONE, 9(6), e98679.
-   - *Key takeaway*: Solves hub clumping via degree-weighted repulsion and dissuades hub attraction.
-2. **Fast Quadtree Spatial Decomposition**:
-   - Barnes, J., & Hut, P. (1986). *A hierarchical O(N log N) force-calculation algorithm*. Nature, 324(6096), 446–449.
-   - *Key takeaway*: Approximates multi-body repulsion in $O(N \log N)$ rather than $O(N^2)$.
-3. **Information Visualization Theory**:
-   - Shneiderman, B. (1996). *The eyes have it: A task by data type taxonomy for information visualizations*. IEEE Symposium on Visual Languages, 336–343.
-   - *Key takeaway*: Origin of the "Overview first, zoom and filter, details-on-demand" paradigm.
-   - Bertin, J. (1967). *Sémiologie Graphique: Les diagrammes, les réseaux, les cartes*. Gauthier-Villars.
-   - *Key takeaway*: Visual encoding hierarchy (position > size > color hue > shape > text label).
-4. **Curved Edge Routing & Edge Bundling**:
-   - Holten, D., & van Wijk, J. J. (2009). *Force-Directed Edge Bundling for Graph Visualization*. Computer Graphics Forum, 28(3), 983–990.
-   - *Key takeaway*: Replaces straight planar cuts with self-organizing spline trajectories.
-5. **Dynamic & Temporal Graph Visualization**:
-   - Beck, F., Burch, M., Diehl, S., & Weiskopf, D. (2017). *A Taxonomy and Survey of Dynamic Graph Visualization*. Computer Graphics Forum, 36(1), 133–159.
-   - *Key takeaway*: Preserves the user's "mental map" across temporal animations via delta warm-starting.
-
----
-
-## 6. Implementation Checklist for Nera
-
-- [x] **Topological Collision Hull**: Implemented native v5 `collide` sub-force with node-specific clearance padding.
+- [x] **Topological Collision Hull**: Physical collision calculated on full visual footprint.
 - [x] **Quadratic Bezier Edge Paths**: Replaced Euclidean laser beams with curved splines (`type: 'quadratic'`).
 - [x] **Parallel Edge Transform**: Integrated G6 `process-parallel-edges` transform to separate reciprocal bonds.
-- [ ] **Canvas-Native Hover State Machine**: Decouple `pointerenter` from React `setState`; drive hover spotlighting via `graph.setElementState(id, 'active')`.
-- [ ] **Semantic LOD Label Suppression**: Hide edge labels at resting state L0; reveal with high-contrast badges on L1 hover/selection.
-- [ ] **Degree-Proportional Link Expansion**: Dynamically compute `link.distance` based on $\max(\deg(u), \deg(v))$.
-- [ ] **Milestone Chapter Indexing**: Cache layout coordinates at keyframe intervals for instant logarithmic chapter scrubbing up to 2,000 chapters.
+- [x] **Hover Intent Dwell Engine**: 120ms dwell velocity threshold; zero-lag GPU scene-graph state transitions.
+- [x] **Spatial Envelope Typography**: Automatic canvas line-wrapping and clamping with full data retention.
+- [x] **Semantic LOD Progressive Disclosure**: Resting constellation (L0) $\rightarrow$ Spotlight with edge badges (L1).

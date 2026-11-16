@@ -151,11 +151,85 @@ export function getCharacterInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Universal text clamping for canvas spatial envelope.
+ * Wraps text into at most maxLines with at most maxCharsPerLine.
+ * Truncates gracefully with an ellipsis (…) if exceeded.
+ * Scale-invariant and independent of specific entity kinds or titles.
+ * Preserves full unconstrained text in node.data.name for tooltips & inspector.
+ */
+export function clampLabelToEnvelope(
+  text: string,
+  maxCharsPerLine: number = 20,
+  maxLines: number = 2
+): string {
+  if (!text) return "";
+  const words = text.trim().split(/\s+/);
+  if (words.length === 0) return "";
+
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+
+    if (candidate.length <= maxCharsPerLine) {
+      currentLine = candidate;
+    } else {
+      if (lines.length + 1 >= maxLines) {
+        // Last allowed line reached; clamp with ellipsis
+        const available = Math.max(1, maxCharsPerLine - 1);
+        if (currentLine.length > 0) {
+          lines.push(currentLine.slice(0, available) + "…");
+        } else {
+          lines.push(word.slice(0, available) + "…");
+        }
+        return lines.join("\n");
+      }
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      currentLine = word.length > maxCharsPerLine ? word.slice(0, maxCharsPerLine - 1) + "…" : word;
+    }
+  }
+
+  if (currentLine && lines.length < maxLines) {
+    lines.push(currentLine);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Calculates scale-invariant 2D Bounding-Hull Collision Radius.
+ * R_collision = sqrt((W_hull/2)^2 + (R_glyph + H_hull)^2) + padding
+ */
+export function computeBoundingHullRadius(
+  glyphRadius: number,
+  labelText: string,
+  padding: number = 16
+): number {
+  if (!labelText) return glyphRadius + padding;
+  const lines = labelText.split("\n");
+  let maxLineLen = 0;
+  for (const line of lines) {
+    if (line.length > maxLineLen) maxLineLen = line.length;
+  }
+  const labelWidth = Math.min(maxLineLen * 7.5, 150);
+  const labelHeight = lines.length * 16 + 8;
+  const halfW = Math.max(glyphRadius, labelWidth / 2);
+  const totalH = glyphRadius + labelHeight;
+  return Math.round(Math.sqrt(halfW * halfW + totalH * totalH) + padding);
+}
+
 export interface G6NodeModel {
   id: string;
   data: {
     rawNode: CharacterNetworkNode;
     name: string;
+    canvasLabel?: string;
+    collisionRadius?: number;
     status: string;
     condition: string;
     degree: number;
@@ -346,9 +420,12 @@ export function mapToG6GraphData(
     }
 
     // Node opacity: dimmed if not part of current focus cluster
-    const opacity = focusNodeId ? (isFocusNeighbor ? 1 : 0.22) : 1;
+    const opacity = focusNodeId ? (isFocusNeighbor ? 1 : 0.35) : 1;
     // Node size scales gently with degree
     const size = 58 + Math.min(degree * 3, 16);
+    const canvasLabel = clampLabelToEnvelope(node.name, 20, 2);
+    const glyphRadius = size / 2;
+    const collisionRadius = computeBoundingHullRadius(glyphRadius, canvasLabel, 16);
 
     const badges: any[] = [
       {
@@ -387,6 +464,8 @@ export function mapToG6GraphData(
       data: {
         rawNode: node,
         name: node.name,
+        canvasLabel,
+        collisionRadius,
         status: node.state.status,
         condition: node.state.condition,
         degree,
@@ -412,7 +491,7 @@ export function mapToG6GraphData(
         iconFontWeight: "700",
         iconFontFamily: "sans-serif",
         badges,
-        labelText: node.name,
+        labelText: canvasLabel,
         labelFill: isSelected ? "#ffffff" : EDITORIAL_PALETTE.text.primary,
         labelFontSize: isSelected ? 13 : 12,
         labelFontWeight: isSelected ? "700" : "600",
@@ -572,17 +651,14 @@ export function getG6GraphConfig(
       nodeSize: 80,
       center: [centerX, centerY],
       collide: {
-        radius: (d: any) => {
-          const s = d.data?.size || d.style?.size || 40;
-          return s + 36;
-        },
-        strength: 0.85,
+        radius: (d: any) => d.data?.collisionRadius || 70,
+        strength: 0.9,
         iterations: 3,
       },
       manyBody: {
         strength: (d: any) => {
           const deg = d.data?.degree || 1;
-          return -360 - Math.min(deg * 22, 450);
+          return -380 - Math.min(deg * 25, 480);
         },
         theta: 0.6,
         distanceMin: 50,
@@ -623,7 +699,7 @@ export function getG6GraphConfig(
           haloOpacity: 0.4,
         },
         inactive: {
-          opacity: 0.2,
+          opacity: 0.35,
         },
       },
     },
@@ -653,7 +729,7 @@ export function getG6GraphConfig(
           labelFontWeight: "bold" as const,
         },
         inactive: {
-          opacity: 0.08,
+          opacity: 0.25,
         },
       },
     },
@@ -661,7 +737,7 @@ export function getG6GraphConfig(
       { type: "drag-canvas" },
       { type: "zoom-canvas", maxZoom: 2.0, minZoom: 0.3 },
       { type: "drag-element" },
-      { type: "hover-activate", degree: 1, state: "active", inactiveState: "inactive" },
+      { type: "hover-activate", degree: 1, state: "active" },
       { type: "auto-adapt-label", enable: false, padding: 4 },
     ],
   };

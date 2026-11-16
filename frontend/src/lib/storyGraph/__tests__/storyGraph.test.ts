@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { transformStoryGraph, extractBareId } from "../transform.ts";
-import { mapToG6GraphData, getG6GraphConfig } from "../g6Adapter.ts";
+import {
+  mapToG6GraphData,
+  getG6GraphConfig,
+  clampLabelToEnvelope,
+  computeBoundingHullRadius,
+} from "../g6Adapter.ts";
 import type { RawCharacter, RawRelationship } from "../../characterNetwork/types.ts";
 import type { StoryGraph } from "../../types.ts";
 
@@ -236,4 +241,33 @@ test("World & Cast Network - G6 Adapter maps multi-entity nodes with correct bad
 
   const config = getG6GraphConfig("container", 1200, 800);
   assert.deepEqual(config.layout.center, [600, 400]);
+});
+
+test("World & Cast Network - Universal Line-Clamping & 2D Bounding Hull Collision", () => {
+  const longManuscriptSentence =
+    "The world becomes through a thin radiation visible to a selected few who survived the initial blast";
+  const clamped = clampLabelToEnvelope(longManuscriptSentence, 20, 2);
+
+  const lines = clamped.split("\n");
+  assert.ok(lines.length <= 2, "Must not exceed 2 lines");
+  assert.ok(clamped.includes("…"), "Must include ellipsis for clamped long text");
+  for (const line of lines) {
+    assert.ok(line.length <= 20, `Line length must not exceed 20 chars: "${line}" (${line.length})`);
+  }
+
+  // Hull radius for short label vs long label
+  const shortRadius = computeBoundingHullRadius(20, "Sophie", 16);
+  const longRadius = computeBoundingHullRadius(20, clamped, 16);
+  assert.ok(longRadius > shortRadius, "Long label must produce larger collision radius than short label");
+  assert.ok(longRadius >= 60, "Long label must have adequate physical collision clearance");
+
+  // Verify hover-activate has no inactiveState (prevents blinking strobe)
+  const config = getG6GraphConfig("container", 1000, 600);
+  const hoverBehavior = config.behaviors.find((b: any) => b.type === "hover-activate");
+  assert.ok(hoverBehavior, "hover-activate behavior must be present");
+  assert.equal(
+    hoverBehavior.inactiveState,
+    undefined,
+    "inactiveState must be undefined to avoid rapid cursor sweeping flicker"
+  );
 });

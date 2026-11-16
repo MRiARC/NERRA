@@ -134,13 +134,16 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
           return null;
         };
 
-        // Pointer event listeners — Scene-graph native event handling
+        // Pointer event listeners — Scene-graph native event handling with hover intent dwell
         graph.on("node:pointerenter", (e: any) => {
           const rawId = e.target?.id || e.targetType === "node" ? e.target?.id : null;
           const nodeId = rawId || resolveNodeId(e.target);
           if (nodeId) {
-            setLocalHoveredNodeId(nodeId);
-            setLocalHoveredEdgeId(null);
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = setTimeout(() => {
+              setLocalHoveredNodeId(nodeId);
+              setLocalHoveredEdgeId(null);
+            }, 120);
             if (e.client) updateTooltipPosition(e.client.x, e.client.y);
           }
         });
@@ -150,6 +153,10 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
         });
 
         graph.on("node:pointerleave", () => {
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
           setLocalHoveredNodeId(null);
         });
 
@@ -166,8 +173,11 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
           const rawId = e.target?.id || e.targetType === "edge" ? e.target?.id : null;
           const edgeId = rawId || resolveEdgeId(e.target);
           if (edgeId) {
-            setLocalHoveredEdgeId(edgeId);
-            setLocalHoveredNodeId(null);
+            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = setTimeout(() => {
+              setLocalHoveredEdgeId(edgeId);
+              setLocalHoveredNodeId(null);
+            }, 120);
             if (e.client) updateTooltipPosition(e.client.x, e.client.y);
           }
         });
@@ -177,6 +187,10 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
         });
 
         graph.on("edge:pointerleave", () => {
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
           setLocalHoveredEdgeId(null);
         });
 
