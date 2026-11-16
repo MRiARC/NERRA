@@ -22,7 +22,6 @@ def run_import_pipeline_guarded(
     manuscript_id,
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str | None = None,
 ) -> None:
     """Entry point scheduled by the import endpoint (BackgroundTasks).
 
@@ -32,7 +31,7 @@ def run_import_pipeline_guarded(
     """
     db: Session = SessionLocal()
     try:
-        run_import_pipeline(manuscript_id, db, api_key=api_key, base_url=base_url, model=model)
+        run_import_pipeline(manuscript_id, db, api_key=api_key, base_url=base_url)
     except Exception as exc:  # noqa: BLE001 — the guard's whole job is to catch
         logger.exception("Pipeline failed for manuscript %s", manuscript_id)
         db.rollback()
@@ -49,7 +48,6 @@ def reanalyze_manuscript_guarded(
     manuscript_id,
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str | None = None,
 ) -> None:
     """Background entry point for a full manuscript re-analysis.
 
@@ -70,7 +68,7 @@ def reanalyze_manuscript_guarded(
     finally:
         db.close()
 
-    run_import_pipeline_guarded(manuscript_id, api_key=api_key, base_url=base_url, model=model)
+    run_import_pipeline_guarded(manuscript_id, api_key=api_key, base_url=base_url)
 
 
 def _set_status(db: Session, manuscript: Manuscript, status: str, error_note: str | None = None) -> None:
@@ -160,7 +158,6 @@ def run_import_pipeline(
     db: Session,
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str | None = None,
 ) -> None:
     """Analyze a manuscript end to end with signal scanning, deep context building, multi-pass extraction, timeline, consistency, Neo4j sync, and versioning."""
     from app.services import (
@@ -189,7 +186,6 @@ def run_import_pipeline(
         project_id=manuscript.project_id,
         explicit_api_key=api_key,
         explicit_base_url=base_url,
-        explicit_model=model,
     )
     resolved_api_key = creds.get("api_key")
     resolved_base_url = creds.get("base_url")
@@ -293,33 +289,17 @@ def run_import_pipeline(
     except Exception as exc:  # noqa: BLE001
         logger.warning("Timeline chronology computation skipped: %s", exc)
     if not extract_is_mocked:
-        try:
-            for ch_item in chapters:
-                plot_threads.extract_and_update_plot_threads_llm(
-                    db,
-                    manuscript.project_id,
-                    ch_item.number,
-                    ch_item.content,
-                    use_llm=True,
-                    api_key=resolved_api_key,
-                    base_url=resolved_base_url,
-                    model=resolved_model,
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Plot thread extraction skipped/warned: %s", exc)
-    try:
-        try:
-            consistency.run_consistency_pass(
+        for ch_item in chapters:
+            plot_threads.extract_and_update_plot_threads_llm(
                 db,
                 manuscript.project_id,
+                ch_item.number,
+                ch_item.content,
+                use_llm=True,
                 api_key=resolved_api_key,
                 base_url=resolved_base_url,
-                model=resolved_model,
             )
-        except TypeError:
-            consistency.run_consistency_pass(db, manuscript.project_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Consistency pass skipped/warned: %s", exc)
+    consistency.run_consistency_pass(db, manuscript.project_id)
     try:
         graph.sync_project_graph(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
@@ -430,7 +410,6 @@ def reanalyze_chapter(
     chapter_number: int,
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str | None = None,
 ) -> None:
     """Re-extract a single chapter (backs POST /manuscripts/{id}/reanalyze).
 
@@ -464,7 +443,6 @@ def reanalyze_chapter(
         project_id=manuscript.project_id,
         explicit_api_key=api_key,
         explicit_base_url=base_url,
-        explicit_model=model,
     )
     resolved_api_key = creds.get("api_key")
     resolved_base_url = creds.get("base_url")
@@ -500,7 +478,3 @@ def reanalyze_chapter(
         graph.sync_project_graph(db, manuscript.project_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Graph sync skipped on reanalyze: %s", exc)
-
-    manuscript.status = "ready"
-    manuscript.error_note = None
-    db.commit()

@@ -158,12 +158,27 @@ export interface CharacterNetworkEdge {
 }
 
 /** Visual tone classification for connection line rendering */
-export type VisualTone = "friction" | "warmth" | "neutral";
+export type VisualTone = "friction" | "warmth" | "neutral" | "narrative_thread";
+
+/** Shared plot thread linking characters */
+export interface NarrativeThreadLink {
+  id: string;
+  characterAId: string;
+  characterBId: string;
+  characterAName: string;
+  characterBName: string;
+  threadId: string;
+  threadTitle: string;
+  status: string;
+  setupChapter: number;
+  payoffChapter: number | null;
+}
 
 /**
  * Bundled visual connection between two characters.
  * Groups multiple directional relationship records (e.g. concurrent reciprocal perspectives)
- * into a single cohesive visual link without losing individual record IDs, sentiments, or evidence.
+ * and/or shared narrative plot threads into a single cohesive visual link without losing
+ * individual record IDs, sentiments, or evidence.
  */
 export interface VisualConnection {
   /** Deterministic connection identifier: "conn:<minUUID>--<maxUUID>" */
@@ -176,7 +191,7 @@ export interface VisualConnection {
   characterAName: string;
   /** Display name of character B */
   characterBName: string;
-  /** Aggregated visual tone for line coloring (friction / warmth / neutral) */
+  /** Aggregated visual tone for line coloring (friction / warmth / neutral / narrative_thread) */
   visualTone: VisualTone;
   /** Set of distinct underlying sentiments present across all bundled records */
   sentimentDistribution: string[];
@@ -184,6 +199,10 @@ export interface VisualConnection {
   isReciprocal: boolean;
   /** All underlying active relationship records comprising this visual connection */
   records: CharacterNetworkEdge[];
+  /** All active narrative plot threads connecting these two characters */
+  narrativeThreads: NarrativeThreadLink[];
+  /** Types of bonds comprising this connection */
+  connectionTypes: Array<"interpersonal" | "narrative_thread">;
 }
 
 /**
@@ -233,6 +252,7 @@ export interface CharacterNetworkMetadata {
   totalRelationshipsInStory: number;
   activeRelationshipsCount: number;
   activeConnectionsCount: number;
+  activeNarrativeThreadsCount: number;
   excludedSelfLoopsCount: number;
   dataQualityIssuesCount: number;
   minChapter: number;
@@ -248,6 +268,7 @@ export interface CharacterNetworkGraph {
   nodes: CharacterNetworkNode[];
   edges: CharacterNetworkEdge[];
   connections: VisualConnection[];
+  narrativeThreads: NarrativeThreadLink[];
   dataQualityIssues: DataQualityIssue[];
 }
 
@@ -256,5 +277,6 @@ export interface TransformOptions {
   projectId: string;
   characters: readonly RawCharacter[];
   relationships: readonly RawRelationship[];
+  narrativeThreads?: readonly NarrativeThreadLink[];
   chapter: number;
 }

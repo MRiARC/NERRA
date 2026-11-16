@@ -84,6 +84,19 @@ export interface GraphNode {
   metadata?: Record<string, unknown>;
 }
 
+export interface NarrativeThreadLinkOut {
+  id: string;
+  character_a_id: string;
+  character_b_id: string;
+  character_a_name: string;
+  character_b_name: string;
+  thread_id: string;
+  thread_title: string;
+  status: string;
+  setup_chapter: number;
+  payoff_chapter: number | null;
+}
+
 export interface GraphEdge {
   id: string;
   source: string;
@@ -93,11 +106,13 @@ export interface GraphEdge {
   since_chapter?: number | null;
   until_chapter?: number | null;
   description?: string | null;
+  evidence_quote?: string | null;
 }
 
 export interface StoryGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  narrative_threads?: NarrativeThreadLinkOut[];
   neo4j_connected: boolean;
   max_chapter: number;
 }
@@ -399,32 +414,6 @@ export interface AiConnectionTestResult {
 
 
 
-export interface ChangeDetectionOut {
-  event_type: string;
-  changed_chapters: number[];
-  unchanged_chapters: number[];
-  stale_claim_chapters: number[];
-  paragraph_diffs: Record<string, unknown>;
-}
-
-export interface ObjectCustodyOut {
-  id: string;
-  object_id: string;
-  chapter: number;
-  holder_type: string;
-  holder_name: string;
-  action: string;
-  evidence_quote?: string | null;
-}
-
-export interface FeedbackActionOut {
-  updated_id: string;
-  correction_rule?: CorrectionRule | null;
-  re_audit_chapters: number[];
-  issues_created: number;
-  impact_notes: string[];
-}
-
 export interface StoryEvent {
   id: string;
   project_id: string;
@@ -441,32 +430,6 @@ export interface PipelineProgress {
   total_chapters?: number;
   step?: string;
   error?: string | null;
-}
-
-export interface ChangeDetectionOut {
-  event_type: string;
-  changed_chapters: number[];
-  unchanged_chapters: number[];
-  stale_claim_chapters: number[];
-  paragraph_diffs: Record<string, unknown>;
-}
-
-export interface ObjectCustodyOut {
-  id: string;
-  object_id: string;
-  chapter: number;
-  holder_type: string;
-  holder_name: string;
-  action: string;
-  evidence_quote?: string | null;
-}
-
-export interface FeedbackActionOut {
-  updated_id: string;
-  correction_rule?: CorrectionRule | null;
-  re_audit_chapters: number[];
-  issues_created: number;
-  impact_notes: string[];
 }
 
 export interface StoryEvent {

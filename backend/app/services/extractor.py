@@ -5,6 +5,7 @@ import re
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.services.tool_base import LenientToolModel
 
 # ---------------------------------------------------------------------------
 # The extraction contract — defined for you. The LLM must produce JSON that
@@ -12,14 +13,14 @@ from app.config import settings
 # ---------------------------------------------------------------------------
 
 
-class ExtractedCharacter(BaseModel):
+class ExtractedCharacter(LenientToolModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
     description: str | None = None
     status: str = "unknown"  # alive | dead | unknown
 
 
-class ExtractedRelationship(BaseModel):
+class ExtractedRelationship(LenientToolModel):
     character_a: str
     character_b: str
     type: str = "unknown"  # family | friend | enemy | romantic | professional | mentor | unknown
@@ -28,17 +29,17 @@ class ExtractedRelationship(BaseModel):
     evidence_quote: str | None = None
 
 
-class ExtractedLocation(BaseModel):
+class ExtractedLocation(LenientToolModel):
     name: str
     description: str | None = None
 
 
-class ExtractedObject(BaseModel):
+class ExtractedObject(LenientToolModel):
     name: str
     description: str | None = None
 
 
-class ExtractedEvent(BaseModel):
+class ExtractedEvent(LenientToolModel):
     summary: str
     participants: list[str] = Field(default_factory=list)
     location: str | None = None
@@ -47,7 +48,7 @@ class ExtractedEvent(BaseModel):
     is_flashforward: bool = False
 
 
-class ExtractedClaim(BaseModel):
+class ExtractedClaim(LenientToolModel):
     """One factual assertion, e.g. subject='Sarah', attribute='eye_color',
     value='green'. Quotes MUST be verbatim from the chapter text."""
 
@@ -57,7 +58,7 @@ class ExtractedClaim(BaseModel):
     evidence_quote: str
 
 
-class ExtractedKnowledge(BaseModel):
+class ExtractedKnowledge(LenientToolModel):
     """'Character learned fact in this chapter' — feeds the knowledge tracker."""
 
     character: str
@@ -66,7 +67,7 @@ class ExtractedKnowledge(BaseModel):
     source_character: str | None = None
 
 
-class ExtractedCustodyEvent(BaseModel):
+class ExtractedCustodyEvent(LenientToolModel):
     """Object possession / custody transfer event."""
 
     object_name: str
@@ -76,14 +77,14 @@ class ExtractedCustodyEvent(BaseModel):
     evidence_quote: str | None = None
 
 
-class ExtractedWorldRule(BaseModel):
+class ExtractedWorldRule(LenientToolModel):
     """Magic, physics, society, or setting rule stated in prose."""
 
     category: str = "setting"  # magic | physics | society | setting
     rule_text: str
 
 
-class ExtractionPayload(BaseModel):
+class ExtractionPayload(LenientToolModel):
     characters: list[ExtractedCharacter] = Field(default_factory=list)
     relationships: list[ExtractedRelationship] = Field(default_factory=list)
     locations: list[ExtractedLocation] = Field(default_factory=list)
@@ -220,83 +221,45 @@ def resolve_ai_credentials(
     base_url = explicit_base_url.strip() if explicit_base_url and explicit_base_url.strip() else None
     model = explicit_model.strip() if explicit_model and explicit_model.strip() else None
 
-    # Handle local DB session if caller did not provide one
-    local_db = None
-    active_db = db
-    if active_db is None and (project_id or user_id or (not api_key or not base_url)):
+    # 2. Check project customization if DB session and project_id are provided
+    if db and project_id:
         try:
-            from app.database import SessionLocal
-            local_db = SessionLocal()
-            active_db = local_db
-        except Exception:
-            active_db = None
+            from app.models import Project, ProjectCustomization
+            import uuid
+            pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
+            cust = db.query(ProjectCustomization).filter(ProjectCustomization.project_id == pid).first()
+            if cust and cust.custom_ui_config:
+                cfg = cust.custom_ui_config
+                if not api_key and cfg.get("api_key_override"):
+                    api_key = str(cfg["api_key_override"]).strip()
+                if not base_url and cfg.get("custom_base_url"):
+                    base_url = str(cfg["custom_base_url"]).strip()
+                if not model and cfg.get("primary_model"):
+                    model = str(cfg["primary_model"]).strip()
 
-    try:
-        # 2. Check project customization if DB session and project_id are provided
-        if active_db and project_id:
-            try:
-                from app.models import Project, ProjectCustomization
-                import uuid
-                pid = uuid.UUID(str(project_id)) if not isinstance(project_id, uuid.UUID) else project_id
-                cust = active_db.query(ProjectCustomization).filter(ProjectCustomization.project_id == pid).first()
-                if cust and cust.custom_ui_config:
-                    cfg = cust.custom_ui_config
-                    if not api_key and cfg.get("api_key_override"):
-                        api_key = str(cfg["api_key_override"]).strip()
-                    if not base_url and cfg.get("custom_base_url"):
-                        base_url = str(cfg["custom_base_url"]).strip()
-                    if not model and cfg.get("primary_model"):
-                        model = str(cfg["primary_model"]).strip()
+            if not user_id:
+                proj = db.get(Project, pid)
+                if proj:
+                    user_id = proj.owner_id
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Project AI credential resolution skipped: %s", exc)
 
-                if not user_id:
-                    proj = active_db.get(Project, pid)
-                    if proj:
-                        user_id = proj.owner_id
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Project AI credential resolution skipped: %s", exc)
-
-        # 3. Check user sovereign settings in DB
-        if active_db and user_id:
-            try:
-                from app.models import UserSettings
-                import uuid
-                uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
-                u_settings = active_db.query(UserSettings).filter(UserSettings.user_id == uid).first()
-                if u_settings:
-                    if not api_key and u_settings.anthropic_api_key:
-                        api_key = u_settings.anthropic_api_key.strip()
-                    if not base_url and u_settings.anthropic_base_url:
-                        base_url = u_settings.anthropic_base_url.strip()
-                    if not model and u_settings.primary_model:
-                        model = u_settings.primary_model.strip()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("User sovereign credential resolution skipped: %s", exc)
-
-        # 3b. Fallback: if user_id was unknown and credentials still missing, check latest UserSettings
-        if active_db and (not api_key or not base_url):
-            try:
-                from app.models import UserSettings
-                latest_u = (
-                    active_db.query(UserSettings)
-                    .filter(UserSettings.anthropic_api_key.isnot(None))
-                    .order_by(UserSettings.updated_at.desc())
-                    .first()
-                )
-                if latest_u:
-                    if not api_key and latest_u.anthropic_api_key:
-                        api_key = latest_u.anthropic_api_key.strip()
-                    if not base_url and latest_u.anthropic_base_url:
-                        base_url = latest_u.anthropic_base_url.strip()
-                    if not model and latest_u.primary_model:
-                        model = latest_u.primary_model.strip()
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Fallback UserSettings resolution skipped: %s", exc)
-    finally:
-        if local_db is not None:
-            try:
-                local_db.close()
-            except Exception:
-                pass
+    # 3. Check user sovereign settings in DB
+    if db and user_id:
+        try:
+            from app.models import UserSettings
+            import uuid
+            uid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+            u_settings = db.query(UserSettings).filter(UserSettings.user_id == uid).first()
+            if u_settings:
+                if not api_key and u_settings.anthropic_api_key:
+                    api_key = u_settings.anthropic_api_key.strip()
+                if not base_url and u_settings.anthropic_base_url:
+                    base_url = u_settings.anthropic_base_url.strip()
+                if not model and u_settings.primary_model:
+                    model = u_settings.primary_model.strip()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("User sovereign credential resolution skipped: %s", exc)
 
     final_key = api_key or getattr(settings, "anthropic_api_key", "")
     final_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
@@ -318,18 +281,7 @@ def get_anthropic_client(api_key: str | None = None, base_url: str | None = None
 
     from app.services import llm_budget
 
-    active_key = api_key.strip() if api_key and api_key.strip() else None
-    active_base_url = base_url.strip() if base_url and base_url.strip() else None
-
-    # If key or base_url are omitted, resolve from sovereign store
-    if not active_key or active_base_url is None:
-        creds = resolve_ai_credentials(explicit_api_key=active_key, explicit_base_url=active_base_url)
-        if not active_key:
-            active_key = creds.get("api_key")
-        if active_base_url is None:
-            active_base_url = creds.get("base_url")
-
-    active_key = active_key or settings.anthropic_api_key
+    active_key = (api_key.strip() if api_key else "") or settings.anthropic_api_key
     if not active_key:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not configured. Please add your Sovereign Key in Global Settings or backend/.env"
@@ -340,11 +292,10 @@ def get_anthropic_client(api_key: str | None = None, base_url: str | None = None
         "timeout": float(explicit_timeout) if explicit_timeout else 300.0,
         "max_retries": 1,
     }
-    active_base_url = active_base_url if active_base_url is not None else getattr(settings, "anthropic_base_url", None)
+    active_base_url = base_url if base_url is not None else getattr(settings, "anthropic_base_url", None)
     if active_base_url:
         kwargs["base_url"] = active_base_url
     raw_client = anthropic.Anthropic(**kwargs)
-
 
     class _ResilientMessages:
         def __init__(self, inner):
@@ -449,7 +400,10 @@ def extract_chapter(
     )
     tool_block = next((b for b in response.content if getattr(b, "type", None) == "tool_use"), None)
     if tool_block is not None:
-        return ExtractionPayload.model_validate(tool_block.input)
+        try:
+            return ExtractionPayload.model_validate(tool_block.input)
+        except Exception:
+            pass
     for b in response.content:
         txt = getattr(b, "text", "")
         if "{" in txt:
@@ -476,18 +430,18 @@ def extract_chapter_multipass(
     """Run 3 focused parallel Claude Sonnet passes for high-recall chapter extraction."""
     from concurrent.futures import ThreadPoolExecutor
 
-    class EntitiesPassPayload(BaseModel):
+    class EntitiesPassPayload(LenientToolModel):
         characters: list[ExtractedCharacter] = Field(default_factory=list)
         relationships: list[ExtractedRelationship] = Field(default_factory=list)
         locations: list[ExtractedLocation] = Field(default_factory=list)
         objects: list[ExtractedObject] = Field(default_factory=list)
 
-    class TimelineCustodyPassPayload(BaseModel):
+    class TimelineCustodyPassPayload(LenientToolModel):
         events: list[ExtractedEvent] = Field(default_factory=list)
         knowledge: list[ExtractedKnowledge] = Field(default_factory=list)
         custody_events: list[ExtractedCustodyEvent] = Field(default_factory=list)
 
-    class ClaimsRulesPassPayload(BaseModel):
+    class ClaimsRulesPassPayload(LenientToolModel):
         claims: list[ExtractedClaim] = Field(default_factory=list)
         world_rules: list[ExtractedWorldRule] = Field(default_factory=list)
 
@@ -513,7 +467,7 @@ def extract_chapter_multipass(
             max_tokens=settings.extraction_max_tokens,
             tools=[{
                 "name": tool_name,
-                "description": f"Save structured output for {tool_name}",
+                "description": f"Save structured output for {tool_name}. Return all list properties as native JSON arrays, never as escaped strings.",
                 "input_schema": schema_cls.model_json_schema(),
             }],
             tool_choice={"type": "tool", "name": tool_name},
@@ -521,15 +475,10 @@ def extract_chapter_multipass(
         )
         tool_block = next((block for block in res.content if getattr(block, "type", None) == "tool_use"), None)
         if tool_block is not None:
-            raw = tool_block.input
-            if isinstance(raw, dict):
-                return schema_cls.model_validate(raw)
-            if isinstance(raw, str):
-                import json
-                try:
-                    return schema_cls.model_validate(json.loads(raw))
-                except Exception:
-                    pass
+            try:
+                return schema_cls.model_validate(tool_block.input)
+            except Exception:
+                pass
         for block in res.content:
             txt = getattr(block, "text", "")
             if "{" in txt:

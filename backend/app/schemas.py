@@ -89,14 +89,38 @@ class ProjectOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Manuscripts (import / pipeline status)
+# Manuscripts (import / inspection / pipeline status)
 # ---------------------------------------------------------------------------
+
+
+class ChapterInspectionItem(BaseModel):
+    index: int
+    filename: str
+    title: str
+    word_count: int
+    char_count: int
+    preview: str
+    sequence_confirmed: bool = True
+
+
+class InspectionOut(BaseModel):
+    source_mode: str
+    total_files: int
+    total_chapters: int
+    total_words: int
+    total_characters: int
+    chapters: list[ChapterInspectionItem]
+    ignored_files: list[str] = []
+    warning: str | None = None
 
 
 class ImportOut(BaseModel):
     manuscript_id: uuid.UUID
     project_id: uuid.UUID
     status: str
+    chapters_total: int | None = None
+    total_words: int | None = None
+    source_mode: str | None = None
 
 
 class StatusOut(BaseModel):
@@ -168,10 +192,23 @@ class RelationshipOut(BaseModel):
     until_chapter: int | None = None
 
 
+class NarrativeThreadLinkOut(BaseModel):
+    id: str
+    character_a_id: str
+    character_b_id: str
+    character_a_name: str
+    character_b_name: str
+    thread_id: str
+    thread_title: str
+    status: str = "active"
+    setup_chapter: int = 1
+    payoff_chapter: int | None = None
+
+
 class GraphNodeOut(BaseModel):
     id: str
     label: str
-    kind: str  # character | location | object | event
+    kind: str  # character | location | object | event | plot_thread
     chapter: int | None = None
     metadata: dict = Field(default_factory=dict)
 
@@ -185,11 +222,13 @@ class GraphEdgeOut(BaseModel):
     since_chapter: int | None = None
     until_chapter: int | None = None
     description: str | None = None
+    evidence_quote: str | None = None
 
 
 class StoryGraphOut(BaseModel):
     nodes: list[GraphNodeOut]
     edges: list[GraphEdgeOut]
+    narrative_threads: list[NarrativeThreadLinkOut] = Field(default_factory=list)
     neo4j_connected: bool
     max_chapter: int = 1
 

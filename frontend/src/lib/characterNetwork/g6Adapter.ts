@@ -71,6 +71,11 @@ export const EDITORIAL_PALETTE = {
       glow: "rgba(100, 116, 139, 0.2)",
       contrastText: "#cbd5e1",
     },
+    narrative_thread: {
+      stroke: "#06b6d4", // Glowing Cyan Plot Thread
+      glow: "rgba(6, 182, 212, 0.35)",
+      contrastText: "#a5f3fc",
+    },
   },
   text: {
     primary: "#f8fafc",
@@ -89,55 +94,61 @@ export interface G6AdapterOptions {
 }
 
 /**
- * Transforms verbose database relationship strings into clean, concise editorial tags.
+ * Transforms relationship strings into clean, concise editorial tags purely algorithmically.
+ * Works dynamically for any novel or relationship naming scheme without hardcoded dictionaries.
  */
 export function formatRelationLabel(relation: string): string {
-  const PRETTY_MAP: Record<string, string> = {
-    "adversarial-final confrontation": "Final Battle",
-    "collaborative-sacrificial": "Sacrifice",
-    "adversarial-combat": "Combat",
-    "adversarial-sabotage": "Sabotage",
-    "allied-companionship": "Allies",
-    "ceremonial-formal": "Ceremony",
-    "mentor-student": "Mentorship",
-    "hierarchical": "Inquisition",
-    "familial": "Family",
-    "identity-revelation": "Revelation",
-    "protector-protected": "Protector",
-    "adversarial-mutiny": "Mutiny",
-  };
-  if (PRETTY_MAP[relation]) return PRETTY_MAP[relation];
-  return relation
-    .replace(/^([a-z]+)-/i, "")
-    .split(/[-_ ]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
+  if (!relation) return "";
+  const parts = relation.split(/[-_/]+/).filter(Boolean);
+  if (parts.length === 0) return relation;
+
+  const formatted = parts.map(
+    (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+  );
+
+  if (parts.length > 1) {
+    const category = parts[0].toLowerCase();
+    const rest = formatted.slice(1).join(" ");
+    if (
+      [
+        "adversarial",
+        "collaborative",
+        "allied",
+        "ceremonial",
+        "familial",
+        "identity",
+      ].includes(category) &&
+      rest.length > 0
+    ) {
+      return rest;
+    }
+    return formatted.join(" / ");
+  }
+
+  return formatted[0];
 }
 
 /**
- * Resolves character initials for center node icon display.
+ * Resolves character initials dynamically for center node icon display.
+ * Works for any character in any novel by stripping honorifics/titles and extracting initials.
  */
 export function getCharacterInitials(name: string): string {
-  const INITIALS_MAP: Record<string, string> = {
-    "Corin Vance": "CV",
-    "Lady Vespera Thorne": "VT",
-    "High Inquisitor Malakor": "M",
-    "Silas Vance": "SV",
-    "Master Artificer Voss": "KV",
-    "Kaelen Voss": "KV",
-    "Elowen": "E",
-    "Blind Astrologer Elyon": "EL",
-    "Lord Julian": "LJ",
-  };
-  if (INITIALS_MAP[name]) return INITIALS_MAP[name];
+  if (!name) return "";
   const clean = name
-    .replace(/^(Lady|Lord|High Inquisitor|Master|Artificer|Blind Astrologer)\s+/i, "")
+    .replace(
+      /^(Lord|Lady|Sir|Dame|Madam|Monsieur|Master|Artificer|Inquisitor|High Inquisitor|Grand|Blind|Astrologer|Archmage|Captain|Doctor|Dr|King|Queen|Prince|Princess|Warden|Brother|Father|Sister)\s+/gi,
+      ""
+    )
     .trim();
-  const parts = clean.split(/\s+/);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
   }
-  return clean.slice(0, 2).toUpperCase();
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 }
 
 export interface G6NodeModel {
@@ -438,20 +449,38 @@ export function mapToG6GraphData(
     const isEndpointFocused =
       focusNodeId === conn.characterAId || focusNodeId === conn.characterBId;
 
-    const toneConfig = EDITORIAL_PALETTE.tone[conn.visualTone];
+    const toneConfig =
+      EDITORIAL_PALETTE.tone[conn.visualTone] || EDITORIAL_PALETTE.tone.neutral;
     const edgeOpacity = focusNodeId ? (isEndpointFocused ? 1 : 0.12) : 0.85;
 
-    // Stroke width reflects volume of bundled directional records
-    const lineWidth = Math.max(2, Math.min(1 + conn.records.length, 5));
+    const isPureThread =
+      conn.connectionTypes.includes("narrative_thread") &&
+      !conn.connectionTypes.includes("interpersonal");
+    const threadCount = conn.narrativeThreads ? conn.narrativeThreads.length : 0;
+
+    // Stroke width reflects volume of bundled directional records / threads
+    const volume = Math.max(conn.records.length, Math.min(threadCount, 5));
+    const lineWidth = Math.max(2, Math.min(1 + volume, 5));
     const relationsSummary = Array.from(new Set(conn.records.map((r) => r.relation))).join(
       " / "
     );
 
     // Format clean, concise editorial label tag to eliminate text collisions
-    const primaryRelation = conn.records[0]?.relation || relationsSummary;
-    const formattedTag = formatRelationLabel(primaryRelation);
-    const prettyLabel =
-      conn.records.length > 1 ? `${formattedTag} +${conn.records.length - 1}` : formattedTag;
+    let prettyLabel = "";
+    if (isPureThread) {
+      const topTitle = conn.narrativeThreads[0]?.threadTitle || "Plot Thread";
+      const shortTitle = topTitle.length > 22 ? topTitle.slice(0, 20) + "..." : topTitle;
+      prettyLabel = threadCount > 1 ? `${shortTitle} +${threadCount - 1}` : shortTitle;
+    } else {
+      const primaryRelation = conn.records[0]?.relation || relationsSummary;
+      const formattedTag = formatRelationLabel(primaryRelation);
+      if (threadCount > 0) {
+        prettyLabel = `${formattedTag} (${threadCount} Th)`;
+      } else {
+        prettyLabel =
+          conn.records.length > 1 ? `${formattedTag} +${conn.records.length - 1}` : formattedTag;
+      }
+    }
 
     // Alternate curve offsets to avoid overlapping splines between nearby nodes
     const baseOffset = conn.isReciprocal ? 32 : 24;
@@ -473,7 +502,7 @@ export function mapToG6GraphData(
       style: {
         stroke: isConnSelected ? "#ffffff" : toneConfig.stroke,
         lineWidth: isConnSelected ? lineWidth + 2 : lineWidth,
-        lineDash: conn.isReciprocal ? [5, 4] : undefined,
+        lineDash: isPureThread ? [3, 3] : conn.isReciprocal ? [5, 4] : undefined,
         opacity: edgeOpacity,
         cursor: "pointer",
         labelText: prettyLabel,
@@ -486,7 +515,7 @@ export function mapToG6GraphData(
         labelBackgroundLineWidth: 1,
         labelBackgroundPadding: [2, 5],
         labelBackgroundRadius: 4,
-        endArrow: !conn.isReciprocal,
+        endArrow: !conn.isReciprocal && !isPureThread,
         type: "quadratic",
         curveOffset,
         curvePosition: 0.5,
@@ -505,7 +534,9 @@ export function getG6GraphConfig(
   width: number,
   height: number
 ) {
+  const effectiveWidth = Math.max(600, width);
   const effectiveHeight = Math.max(400, height);
+  const centerX = effectiveWidth / 2;
   const centerY = effectiveHeight / 2;
 
   return {
@@ -520,22 +551,28 @@ export function getG6GraphConfig(
       },
     },
     padding: [40, 60, 40, 60],
-    animation: true,
+    animation: false,
     zoomRange: [0.3, 2.0] as [number, number],
     layout: {
       type: "d3-force",
       preventOverlap: true,
-      nodeSize: 85,
-      linkDistance: 270,
-      nodeStrength: -750,
-      edgeStrength: 0.25,
-      collideStrength: 1,
-      alphaMin: 0.001,
+      nodeSize: 80,
+      linkDistance: 240,
+      nodeStrength: -280,
+      edgeStrength: 0.35,
+      collideStrength: 0.7,
+      alphaMin: 0.015,
+      alphaDecay: 0.04,
+      centerX,
       centerY,
-      centerStrength: 0.03,
+      centerStrength: 0.06,
+      x: {
+        x: centerX,
+        strength: 0.05,
+      },
       y: {
         y: centerY,
-        strength: 0.04,
+        strength: 0.05,
       },
     },
     node: {
@@ -594,7 +631,7 @@ export function getG6GraphConfig(
       { type: "zoom-canvas", maxZoom: 2.0, minZoom: 0.3 },
       { type: "drag-element" },
       { type: "hover-activate", degree: 0 },
-      { type: "auto-adapt-label", padding: 4 },
+      { type: "auto-adapt-label", enable: false, padding: 4 },
     ],
   };
 }

@@ -18,12 +18,14 @@ import { cn } from "@/lib/utils";
 import type {
   CharacterNetworkNode,
   DataQualityIssue,
+  NarrativeThreadLink,
   VisualConnection,
 } from "@/lib/characterNetwork/types";
 
 export interface CharacterInspectorProps {
   node: CharacterNetworkNode | null;
   connections: VisualConnection[];
+  narrativeThreads?: NarrativeThreadLink[];
   dataQualityIssues?: DataQualityIssue[];
   currentChapter: number;
   onClose: () => void;
@@ -34,6 +36,7 @@ export interface CharacterInspectorProps {
 export function CharacterInspector({
   node,
   connections,
+  narrativeThreads = [],
   dataQualityIssues = [],
   currentChapter,
   onClose,
@@ -45,6 +48,11 @@ export function CharacterInspector({
   // Filter connections involving this character
   const characterConnections = connections.filter(
     (c) => c.characterAId === node.id || c.characterBId === node.id
+  );
+
+  // Filter narrative threads involving this character
+  const characterNarrativeThreads = narrativeThreads.filter(
+    (th) => th.characterAId === node.id || th.characterBId === node.id
   );
 
   // Filter active self-referential relationship claims for this character
@@ -294,6 +302,46 @@ export function CharacterInspector({
             </div>
           )}
         </div>
+        {/* Active Narrative Plot Threads at Chapter N */}
+        {narrativeThreads && narrativeThreads.length > 0 && (
+          <div className="space-y-2 pt-2 border-t border-border-quiet">
+            <h3 className="text-xs font-mono uppercase text-ink-faint tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              Active Narrative Threads ({characterNarrativeThreads.length})
+            </h3>
+
+            {characterNarrativeThreads.length === 0 ? (
+              <p className="text-xs text-ink-faint italic">
+                No active plot threads entangling this character at Chapter {currentChapter}.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {characterNarrativeThreads.map((th, idx) => {
+                  const otherName =
+                    th.characterAId === node.id ? th.characterBName : th.characterAName;
+                  return (
+                    <div
+                      key={`${th.id}-${idx}`}
+                      className="p-2.5 rounded-md bg-surface-card border border-cyan-500/20 space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-cyan-300">
+                          {th.threadTitle}
+                        </span>
+                        <span className="text-[10px] font-mono text-cyan-400">
+                          Ch {th.setupChapter}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-ink-ash font-mono">
+                        Shared with <span className="text-ink-parchment">{otherName}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   );

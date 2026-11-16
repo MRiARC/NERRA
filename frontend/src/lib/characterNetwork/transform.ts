@@ -13,7 +13,6 @@
  * 6. Visual connection grouping bundles directional records into cohesive visual links.
  */
 
-export const AETHELGARD_PROJECT_ID = "cabf8f78-9488-4e6c-b9e3-74d390e6eb45";
 import type {
   CharacterNetworkEdge,
   CharacterNetworkGraph,
@@ -24,6 +23,7 @@ import type {
   DataQualityIssue,
   EvidenceProvenance,
   HistoricalRelationshipStage,
+  NarrativeThreadLink,
   RawCharacter,
   RawRelationship,
   StateTransitionEvidence,
@@ -33,441 +33,353 @@ import type {
 } from "./types.ts";
 
 /**
- * All verified story revelations from PostgreSQL claims and relationships.
- * Each revelation has an exact source UUID, chapter anchor, and verbatim citation.
- */
-const VERIFIED_REVELATIONS: Record<string, CharacterRevelation[]> = {
-  // Lady Vespera Thorne
-  "6f1bcccc-39c1-456a-95e8-532c88fc1b8a": [
-    {
-      id: "claim:941cb020-c148-4afd-8fde-a6d4a94ccb0d",
-      category: "identity",
-      revealedAtChapter: 16,
-      label: "True Identity: Princess Aurelia",
-      description:
-        "Lady Vespera Thorne is secretly Princess Aurelia, royal heir to Aethelgard spirited away during the Deluge.",
-      evidenceQuote:
-        "revealing he knew Vespera was Princess Aurelia all along and intended to sacrifice her to unbind the entity beneath Lake Mor-Vaelen.",
-    },
-  ],
-  // Silas Vance
-  "b38566c3-1aef-44e5-9eb3-c65402472d47": [
-    {
-      id: "rel:3c6e20b1-8e00-4ffb-858b-b05600d03709",
-      category: "historical_truth",
-      revealedAtChapter: 15,
-      label: "Deluge Sluice Command Truth",
-      description:
-        "Silas did not die by enemy blade; mortally wounded, he commanded young Corin to pull the sluice lever to drown the city, which caused Corin's traumatic amnesia.",
-      evidenceQuote:
-        "on the night of the flood, Silas did not die by enemy blade; Silas was mortally wounded and commanded young Corin to pull the sluice lever to seal the breach. Corin realizes his memory amnesia was a psychological defense against the trauma of drowning his mentor's city.",
-    },
-  ],
-  // High Inquisitor Malakor
-  "463a6505-a969-4076-891b-292b6b192355": [
-    {
-      id: "rel:99f2c9fb-7b08-4d02-834d-028ecdf48a9f",
-      category: "fate",
-      revealedAtChapter: 16,
-      label: "Black Mercury Void Transformation",
-      description:
-        "Body transformed by drinking black mercury: eyes turned to pitch-black void wells radiating shadowy vapor.",
-      evidenceQuote:
-        "High Inquisitor Malakor breaches the inner sanctum. His body has been transformed by drinking black mercury: his steel-gray eyes have turned to pitch-black void wells radiating shadowy vapor.",
-    },
-    {
-      id: "claim:00a3abdf-4c20-4c54-9e22-0863e72dded5",
-      category: "fate",
-      revealedAtChapter: 19,
-      label: "Temporal Stasis Loop Imprisonment",
-      description:
-        "Corin Vance refracted Malakor's shadow sorcery through the Brass Astrolabe lens, locking him into a 5-second recurring temporal loop.",
-      evidenceQuote:
-        "He refracts Malakor's shadow sorcery through the astrolabe lens, locking High Inquisitor Malakor into an inescapable recurring five-second temporal stasis loop.",
-    },
-  ],
-  // Kaelen Voss
-  "faf3b450-18bb-49f0-94a0-6ac3521482d3": [
-    {
-      id: "rel:d7243d1a-5c7e-41c1-b5d4-0b79b27f4d20",
-      category: "betrayal",
-      revealedAtChapter: 14,
-      label: "Belladonna Key Poisoning Discovered",
-      description:
-        "Discovered that Vespera coated the silver cipher key with belladonna venom to induce slumber at the Bell Tower.",
-      evidenceQuote:
-        "Lady Vespera Thorne formally confesses: 'I coated the silver cipher key with weeping belladonna venom so that Voss would succumb to slumber without lasting harm.'",
-    },
-    {
-      id: "rel:6b3dfdf3-55eb-4c92-bbd8-084d96447289",
-      category: "fate",
-      revealedAtChapter: 17,
-      label: "Seventh Sluice Sacrificial Stand",
-      description:
-        "Jammed his mechanical arm into the gear teeth to hold the blast door open for Corin and Vespera, plunging into the whirlpool.",
-      evidenceQuote:
-        "He jams his mechanical arm into the gear teeth to hold the blast door open for Corin and Vespera. Voss bids Corin to finish the journey as the collapsing gantry plunges into the whirlpool.",
-    },
-  ],
-  // Lord Julian
-  "a3841ca4-db51-407d-b2be-24c0cbec7008": [
-    {
-      id: "claim:a9bc00bd-8e4b-4a99-bce5-9ba33fa5e171",
-      category: "identity",
-      revealedAtChapter: 2,
-      label: "Contested Fate: Deceased vs Alive in Vault of Bells",
-      description:
-        "Officially declared deceased by the Obsidian Order; Vespera insists he survived in the Vault of Bells.",
-      evidenceQuote:
-        "Corin warns her that Julian was officially declared deceased by the Obsidian Order. Vespera insists Julian is alive in the Vault of Bells.",
-    },
-  ],
-  // Elowen
-  "8e22de06-5f30-44a7-bfad-a43c1dbaa52d": [
-    {
-      id: "claim:04ee4249-c6d4-4c67-bca0-5a8d5048ac74",
-      category: "lore",
-      revealedAtChapter: 6,
-      label: "Epistemic Truth of Black Mercury",
-      description:
-        "Revealed that black mercury in Lake Mor-Vaelen is not poison, but distilled memory of the ancient Sunken Council.",
-      evidenceQuote:
-        "Elowen reveals an epistemic truth: 'The black mercury in Lake Mor-Vaelen is not industrial poison; it is the distilled memory of the ancient Sunken Council'",
-    },
-  ],
-};
-
-/**
- * Derives structured character state: separating physical status, condition,
- * and narrative revelations known on or before chapter N.
+ * Derives structured character state dynamically from entity records and relationship events:
+ * cleanly separating physical vitality status, narrative condition, and revelations known on or before chapter N.
  *
  * Guarantees:
+ * - 100% data-driven: operates on any novel / manuscript records without hardcoded character dictionaries.
  * - Every state transition includes verbatim database evidence and source record ID.
  * - Narrative discoveries are decoupled from physical vitality.
  */
 export function deriveCharacterState(
   character: RawCharacter,
   selectedChapter: number,
-  isAethelgard: boolean = false
+  allRelationships: readonly RawRelationship[] = []
 ): CharacterState {
-  const normName = character.name.trim().toLowerCase();
-  const shouldApplyAethelgard =
-    isAethelgard || Boolean(VERIFIED_REVELATIONS[character.id]);
-  const allRevelations = shouldApplyAethelgard
-    ? VERIFIED_REVELATIONS[character.id] || []
-    : [];
-  const knownRevelations = allRevelations.filter(
-    (rev) => rev.revealedAtChapter <= selectedChapter
+  // Relationships involving this character on or before selectedChapter
+  const charRelsUpToChapter = allRelationships
+    .filter(
+      (r) =>
+        (r.character_a_id === character.id || r.character_b_id === character.id) &&
+        r.chapter <= selectedChapter
+    )
+    .sort((a, b) => a.chapter - b.chapter);
+
+  // Active relationships at selectedChapter
+  const activeRels = charRelsUpToChapter.filter(
+    (r) => r.until_chapter === null || selectedChapter < r.until_chapter
   );
 
-  if (shouldApplyAethelgard) {
-    // Silas Vance: physical status is always "deceased" across all chapters
-    if (normName.includes("silas vance")) {
-    const isTruthRevealed = selectedChapter >= 15;
-    const condition = isTruthRevealed
-      ? "deluge casualty (sluice breach command revealed)"
-      : "deluge casualty (believed lost to flood)";
+  // Derive known revelations dynamically:
+  // A revelation is either:
+  // 1. A self-referential relationship (r.character_a_id === r.character_b_id)
+  // 2. A relationship whose type or description indicates identity, secret, truth, betrayal, confession, sacrifice, or stasis
+  // 3. A relationship with sentiment 'traumatic-obedience' or similar profound turn
+  const knownRevelations: CharacterRevelation[] = [];
+  const seenRevIds = new Set<string>();
 
-    const statusTransition: StateTransitionEvidence = isTruthRevealed
-      ? {
-          sourceId: "rel:3c6e20b1-8e00-4ffb-858b-b05600d03709",
-          sourceType: "relationship",
-          chapter: 15,
-          description:
-            "Silas was mortally wounded during the Deluge and commanded young Corin to pull the sluice lever to seal the breach",
-          evidenceQuote:
-            "on the night of the flood, Silas did not die by enemy blade; Silas was mortally wounded and commanded young Corin to pull the sluice lever to seal the breach. Corin realizes his memory amnesia was a psychological defense against the trauma of drowning his mentor's city.",
-        }
-      : {
-          sourceId: "claim:1e3807db-88e2-4112-8ed8-da1fe54d9fee",
-          sourceType: "claim",
-          chapter: 1,
-          description: "Perished twenty years ago during the Great Deluge",
-          evidenceQuote:
-            "Silas Vance was his mentor who perished twenty years ago during the Great Deluge.",
-        };
+  for (const r of charRelsUpToChapter) {
+    const isSelfLoop = r.character_a_id === r.character_b_id;
+    const typeLower = (r.type || "").toLowerCase();
+    const descLower = (r.description || "").toLowerCase();
+    const sentLower = (r.sentiment || "").toLowerCase();
 
-    return {
-      status: "deceased",
-      condition,
-      statusTransition,
-      knownRevelations,
-    };
-  }
+    const isRevelationType =
+      isSelfLoop ||
+      typeLower.includes("revelation") ||
+      typeLower.includes("truth") ||
+      typeLower.includes("confession") ||
+      typeLower.includes("betray") ||
+      typeLower.includes("identity") ||
+      typeLower.includes("secret") ||
+      typeLower.includes("sacrific") ||
+      typeLower.includes("stasis") ||
+      typeLower.includes("mutiny") ||
+      typeLower.includes("transform") ||
+      sentLower.includes("traumatic") ||
+      sentLower.includes("betrayed") ||
+      sentLower.includes("guilty") ||
+      descLower.includes("revealed") ||
+      descLower.includes("secret") ||
+      descLower.includes("confess") ||
+      descLower.includes("stasis loop") ||
+      descLower.includes("transform");
 
-  // High Inquisitor Malakor: physical life vs environmental state
-  if (normName.includes("malakor")) {
-    if (selectedChapter >= 19) {
-      return {
-        status: "incapacitated",
-        condition: "trapped in 5-second temporal stasis loop",
-        statusTransition: {
-          sourceId: "claim:00a3abdf-4c20-4c54-9e22-0863e72dded5",
-          sourceType: "claim",
-          chapter: 19,
-          description:
-            "Corin Vance refracted Malakor's shadow sorcery through the Brass Astrolabe lens, locking High Inquisitor Malakor into an inescapable recurring five-second temporal stasis loop",
-          evidenceQuote:
-            "He refracts Malakor's shadow sorcery through the astrolabe lens, locking High Inquisitor Malakor into an inescapable recurring five-second temporal stasis loop.",
-        },
-        knownRevelations,
-      };
+    if (isRevelationType && !seenRevIds.has(r.id)) {
+      seenRevIds.add(r.id);
+
+      // Determine clean category
+      let category: "identity" | "historical_truth" | "betrayal" | "fate" | "lore" =
+        "lore";
+      if (
+        typeLower.includes("identity") ||
+        descLower.includes("identity") ||
+        descLower.includes("princess") ||
+        descLower.includes("royal")
+      ) {
+        category = "identity";
+      } else if (
+        typeLower.includes("betray") ||
+        descLower.includes("betray") ||
+        descLower.includes("poison") ||
+        descLower.includes("confess")
+      ) {
+        category = "betrayal";
+      } else if (
+        typeLower.includes("sacrific") ||
+        typeLower.includes("stasis") ||
+        typeLower.includes("transform") ||
+        descLower.includes("sacrifice") ||
+        descLower.includes("stasis") ||
+        descLower.includes("whirlpool") ||
+        descLower.includes("transform")
+      ) {
+        category = "fate";
+      } else if (
+        typeLower.includes("truth") ||
+        descLower.includes("truth") ||
+        sentLower.includes("traumatic") ||
+        descLower.includes("amnesia") ||
+        typeLower.includes("mutiny")
+      ) {
+        category = "historical_truth";
+      }
+
+      // Generate a clean concise label
+      let label = r.description
+        ? r.description.split(/[.;:]/)[0].trim()
+        : r.type;
+      if (label.length > 50) {
+        label = label.slice(0, 47) + "...";
+      }
+
+      knownRevelations.push({
+        id: `rel:${r.id}`,
+        category,
+        revealedAtChapter: r.chapter,
+        label,
+        description: r.description || "",
+        evidenceQuote:
+          r.evidence_quote ||
+          r.description ||
+          `${character.name} narrative revelation in Chapter ${r.chapter}.`,
+      });
     }
-    if (selectedChapter >= 16) {
-      return {
-        status: "alive",
-        condition: "transformed by black mercury void",
-        statusTransition: {
-          sourceId: "rel:99f2c9fb-7b08-4d02-834d-028ecdf48a9f",
-          sourceType: "relationship",
-          chapter: 16,
-          description:
-            "Body transformed by drinking black mercury: steel-gray eyes turned to pitch-black void wells radiating shadowy vapor",
-          evidenceQuote:
-            "High Inquisitor Malakor breaches the inner sanctum. His body has been transformed by drinking black mercury: his steel-gray eyes have turned to pitch-black void wells radiating shadowy vapor.",
-        },
-        knownRevelations,
-      };
+  }
+
+  // Determine physical status dynamically:
+  const baseStatus = (character.status || "alive").toLowerCase();
+  let physicalStatus = baseStatus;
+  let condition = "";
+
+  if (baseStatus === "deceased") {
+    physicalStatus = "deceased";
+    // Check if a truth/revelation about the death occurred
+    const latestDeathRel = [...charRelsUpToChapter]
+      .reverse()
+      .find(
+        (r) =>
+          (r.type || "").toLowerCase().includes("truth") ||
+          (r.description || "").toLowerCase().includes("truth") ||
+          (r.sentiment || "").toLowerCase().includes("traumatic")
+      );
+    if (latestDeathRel && latestDeathRel.description) {
+      condition = latestDeathRel.description.split(/[.;]/)[0].trim().toLowerCase();
+    } else {
+      condition = character.description
+        ? character.description.split(/[.;]/)[0].trim().toLowerCase()
+        : "deceased";
     }
-    return {
-      status: "alive",
-      condition: "active high inquisitor of the obsidian order",
-      statusTransition: {
-        sourceId: "char:463a6505-a969-4076-891b-292b6b192355",
-        sourceType: "character_genesis",
-        chapter: 3,
-        description: "Arrived with six armored penitents brandishing the Iron Censer",
-        evidenceQuote:
-          "High Inquisitor Malakor arrives with six armored penitents brandishing the Iron Censer.",
-      },
-      knownRevelations,
-    };
-  }
+  } else if (baseStatus === "unknown") {
+    physicalStatus = "unknown";
+    condition = character.description
+      ? character.description.split(/[.;]/)[0].trim().toLowerCase()
+      : "whereabouts unknown";
+  } else if (character.last_chapter !== null && selectedChapter >= character.last_chapter) {
+    // Character has reached or passed their concluding chapter
+    const terminalRels = charRelsUpToChapter.filter(
+      (r) => r.chapter >= character.last_chapter! - 1
+    );
+    const sacrificeRel = terminalRels.find(
+      (r) =>
+        (r.type || "").toLowerCase().includes("sacrific") ||
+        (r.description || "").toLowerCase().includes("sacrific") ||
+        (r.description || "").toLowerCase().includes("plung") ||
+        (r.description || "").toLowerCase().includes("died") ||
+        (r.description || "").toLowerCase().includes("kill")
+    );
+    const stasisRel = terminalRels.find(
+      (r) =>
+        (r.type || "").toLowerCase().includes("stasis") ||
+        (r.description || "").toLowerCase().includes("stasis") ||
+        (r.description || "").toLowerCase().includes("loop") ||
+        (r.description || "").toLowerCase().includes("trap")
+    );
 
-  // Kaelen Voss: physical status changes from alive to sacrificed at Ch. 17
-  if (normName.includes("kaelen voss") || normName === "voss") {
-    if (selectedChapter >= 17) {
-      return {
-        status: "deceased",
-        condition: "sacrificed in gear housing; plunged into whirlpool",
-        statusTransition: {
-          sourceId: "rel:6b3dfdf3-55eb-4c92-bbd8-084d96447289",
-          sourceType: "relationship",
-          chapter: 17,
-          description:
-            "Jammed mechanical arm into Seventh Sluice blast door gear teeth to hold it open, plunging into the whirlpool",
-          evidenceQuote:
-            "He jams his mechanical arm into the gear teeth to hold the blast door open for Corin and Vespera. Voss bids Corin to finish the journey as the collapsing gantry plunges into the whirlpool.",
-        },
-        knownRevelations,
-      };
+    if (sacrificeRel) {
+      physicalStatus = "deceased";
+      condition = sacrificeRel.description
+        ? sacrificeRel.description.split(/[.;]/)[0].trim().toLowerCase()
+        : "sacrificed";
+    } else if (stasisRel) {
+      physicalStatus = "incapacitated";
+      condition = stasisRel.description
+        ? stasisRel.description.split(/[.;]/)[0].trim().toLowerCase()
+        : "trapped in stasis loop";
+    } else if (selectedChapter > character.last_chapter) {
+      physicalStatus = "inactive";
+      condition = `concluded in Chapter ${character.last_chapter}`;
+    } else {
+      physicalStatus = "alive";
+      condition = character.description
+        ? character.description.split(/[.;]/)[0].trim().toLowerCase()
+        : "active";
     }
-    return {
-      status: "alive",
-      condition: "active renegade shadowsmith",
-      statusTransition: {
-        sourceId: "char:faf3b450-18bb-49f0-94a0-6ac3521482d3",
-        sourceType: "character_genesis",
-        chapter: 4,
-        description:
-          "Renegade Shadowsmith and exiled artificer working among clockwork automata with brass clockwork eyepatch",
-        evidenceQuote:
-          "Kaelen Voss, a renegade Shadowsmith and exiled artificer, works among clockwork automata with scarred hands and wears a brass clockwork eyepatch.",
-      },
-      knownRevelations,
+  } else {
+    // Character is alive / active in current chapter
+    const activeStasisRel = activeRels.find(
+      (r) =>
+        (r.type || "").toLowerCase().includes("stasis") ||
+        (r.description || "").toLowerCase().includes("stasis loop")
+    );
+    if (activeStasisRel) {
+      physicalStatus = "incapacitated";
+      condition = activeStasisRel.description
+        ? activeStasisRel.description.split(/[.;]/)[0].trim().toLowerCase()
+        : "incapacitated";
+    } else {
+      physicalStatus = "alive";
+      // Dynamic condition from active relationships or genesis
+      const latestActive = activeRels[activeRels.length - 1];
+      if (latestActive && latestActive.description) {
+        condition = latestActive.description.split(/[.;]/)[0].trim().toLowerCase();
+      } else {
+        condition = character.description
+          ? character.description.split(/[.;]/)[0].trim().toLowerCase()
+          : "active in story";
+      }
+    }
+  }
+
+  // Derive status transition dynamically:
+  // Find the latest significant relationship event up to selectedChapter
+  const latestRelEvent = [...charRelsUpToChapter]
+    .reverse()
+    .find((r) => r.evidence_quote || r.description);
+
+  let statusTransition: StateTransitionEvidence;
+  if (latestRelEvent && latestRelEvent.chapter > (character.first_chapter || 1)) {
+    statusTransition = {
+      sourceId: `rel:${latestRelEvent.id}`,
+      sourceType: "relationship",
+      chapter: latestRelEvent.chapter,
+      description: latestRelEvent.description || `Story event in Chapter ${latestRelEvent.chapter}`,
+      evidenceQuote:
+        latestRelEvent.evidence_quote ||
+        latestRelEvent.description ||
+        `Story event in Chapter ${latestRelEvent.chapter}.`,
     };
-  }
-
-  // Lord Julian: status unknown
-  if (normName.includes("julian")) {
-    return {
-      status: "unknown",
-      condition: "missing in submerged catacombs",
-      statusTransition: {
-        sourceId: "claim:a9bc00bd-8e4b-4a99-bce5-9ba33fa5e171",
-        sourceType: "claim",
-        chapter: 2,
-        description:
-          "Officially declared deceased by the Obsidian Order; Vespera insists he survived in the Vault of Bells",
-        evidenceQuote:
-          "Corin warns her that Julian was officially declared deceased by the Obsidian Order. Vespera insists Julian is alive in the Vault of Bells.",
-      },
-      knownRevelations,
-    };
-  }
-
-  // Lady Vespera Thorne: alive throughout
-  if (normName.includes("vespera")) {
-    const isIdentityRevealed = selectedChapter >= 16;
-    const condition = isIdentityRevealed
-      ? "royal heir (revealed as princess aurelia)"
-      : "noble of the northern silver court";
-    const statusTransition: StateTransitionEvidence = isIdentityRevealed
-      ? {
-          sourceId: "claim:941cb020-c148-4afd-8fde-a6d4a94ccb0d",
-          sourceType: "claim",
-          chapter: 16,
-          description:
-            "True identity revealed as Princess Aurelia of the Royal House of Aethelgard",
-          evidenceQuote:
-            "revealing he knew Vespera was Princess Aurelia all along and intended to sacrifice her to unbind the entity beneath Lake Mor-Vaelen.",
-        }
-      : {
-          sourceId: "char:6f1bcccc-39c1-456a-95e8-532c88fc1b8a",
-          sourceType: "character_genesis",
-          chapter: 2,
-          description:
-            "Arrived from northern Silver Court seeking lost brother Julian",
-          evidenceQuote:
-            "Lady Vespera Thorne arrives from the northern Silver Court, seeking her lost brother Lord Julian.",
-        };
-
-    return {
-      status: "alive",
-      condition,
-      statusTransition,
-      knownRevelations,
-    };
-  }
-
-  // Corin Vance: alive throughout
-  if (normName.includes("corin vance")) {
-    return {
-      status: "alive",
-      condition: "archivist of the seventh tier",
-      statusTransition: {
-        sourceId: "char:082fa8a3-47e6-4436-82c1-8197f0f71381",
-        sourceType: "character_genesis",
-        chapter: 1,
-        description:
-          "Archivist of the Seventh Tier in the drowned scriptorium beneath Lake Mor-Vaelen",
-        evidenceQuote:
-          "Corin Vance, an archivist of the Seventh Tier, works in the drowned scriptorium beneath Lake Mor-Vaelen.",
-      },
-      knownRevelations,
-    };
-  }
-
-  // Elowen: alive throughout
-  if (normName.includes("elowen")) {
-    return {
-      status: "alive",
-      condition: "blind astrologer of the catacombs",
-      statusTransition: {
-        sourceId: "char:8e22de06-5f30-44a7-bfad-a43c1dbaa52d",
-        sourceType: "character_genesis",
-        chapter: 6,
-        description:
-          "Blind astrologer in drainage catacombs surrounded by clockwork ravens",
-        evidenceQuote:
-          "Corin navigates the dripping sewer conduits to consult Elowen, the Blind Astrologer. Elowen sits surrounded by clockwork ravens that transmit sound and optical echoes into her mind.",
-      },
-      knownRevelations,
-    };
-  }
-  }
-
-  const isDeceased =
-    character.status?.toLowerCase() === "deceased" ||
-    (character.last_chapter !== null && selectedChapter > character.last_chapter);
-
-  return {
-    status: isDeceased ? "deceased" : character.status || "alive",
-    condition: isDeceased ? "inactive" : "active",
-    statusTransition: {
+  } else {
+    // Falls back to character genesis
+    statusTransition = {
       sourceId: `char:${character.id}`,
       sourceType: "character_genesis",
       chapter: character.first_chapter || 1,
       description: `Introduced in Chapter ${character.first_chapter || 1}`,
-      evidenceQuote: character.description || `${character.name} appears in the story.`,
-    },
+      evidenceQuote: character.description || `${character.name} appears in Chapter ${character.first_chapter || 1}.`,
+    };
+  }
+
+  return {
+    status: physicalStatus,
+    condition,
+    statusTransition,
     knownRevelations,
   };
 }
 
 /**
- * Returns revealed aliases grounded strictly in claims available at chapter N.
- * Conceals "Princess Aurelia" prior to Chapter 16 for Aethelgard story fixture.
+ * Returns revealed aliases grounded dynamically in records available at chapter N.
+ * Withholds aliases that only appear in future chapter relationship records.
  */
 export function deriveChapterScopedAliases(
   character: RawCharacter,
   selectedChapter: number,
-  isAethelgard: boolean = false
+  allRelationships: readonly RawRelationship[] = []
 ): string[] {
-  const normName = character.name.trim().toLowerCase();
   const allAliases = character.aliases || [];
+  if (allAliases.length === 0) return [];
 
-  if (isAethelgard || Boolean(VERIFIED_REVELATIONS[character.id])) {
-    if (normName.includes("vespera")) {
-      if (selectedChapter < 16) {
-        return allAliases.filter(
-          (alias) => !alias.toLowerCase().includes("aurelia")
-        );
-      }
-      return [...allAliases];
+  const pastRels = allRelationships.filter(
+    (r) =>
+      (r.character_a_id === character.id || r.character_b_id === character.id) &&
+      r.chapter <= selectedChapter
+  );
+  const futureRels = allRelationships.filter(
+    (r) =>
+      (r.character_a_id === character.id || r.character_b_id === character.id) &&
+      r.chapter > selectedChapter
+  );
+
+  const pastCorpus = [
+    character.name,
+    character.description || "",
+    ...pastRels.map((r) => `${r.type} ${r.description || ""} ${r.evidence_quote || ""}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const futureCorpus = futureRels
+    .map((r) => `${r.type} ${r.description || ""} ${r.evidence_quote || ""}`)
+    .join(" ")
+    .toLowerCase();
+
+  return allAliases.filter((alias) => {
+    const norm = alias.trim().toLowerCase();
+    if (pastCorpus.includes(norm) || character.name.toLowerCase().includes(norm)) {
+      return true;
     }
-  }
-
-  return [...allAliases];
+    if (futureCorpus.includes(norm)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
- * Constructs a chapter-scoped character description built strictly from claims
- * established on or before chapter N.
+ * Constructs a chapter-scoped character description built dynamically from
+ * character introduction and relationship milestones established on or before chapter N.
  */
 export function deriveChapterScopedDescription(
   character: RawCharacter,
   selectedChapter: number,
-  isAethelgard: boolean = false
+  allRelationships: readonly RawRelationship[] = []
 ): string {
-  if (isAethelgard || Boolean(VERIFIED_REVELATIONS[character.id])) {
-    const normName = character.name.trim().toLowerCase();
+  const baseDesc = character.description || "";
+  if (selectedChapter < character.first_chapter) {
+    return "";
+  }
 
-    if (normName.includes("corin vance")) {
-      return "The archivist of the Seventh Tier who works in the drowned scriptorium beneath Lake Mor-Vaelen. Wears a charcoal wool coat. Discovers a parchment scroll written in his own ciphered handwriting dated ten years in the future. Carries the Brass Astrolabe and writes in the Scriptorium Ledger.";
-    }
+  const charRelsUpToChapter = allRelationships.filter(
+    (r) =>
+      (r.character_a_id === character.id || r.character_b_id === character.id) &&
+      r.chapter <= selectedChapter &&
+      r.chapter > character.first_chapter
+  );
 
-    if (normName.includes("silas vance")) {
-      if (selectedChapter >= 15) {
-        return "Corin Vance's former mentor. Long believed to have drowned as a casualty of the Great Deluge twenty years ago; Chapter 15 uncovers the repressed truth that Silas mortally commanded young Corin to pull the sluice gate lever to drown the city.";
-      }
-      return "Corin Vance's mentor who perished twenty years ago during the Great Deluge.";
-    }
+  const majorEvents = charRelsUpToChapter.filter((r) => {
+    const t = (r.type || "").toLowerCase();
+    const d = (r.description || "").toLowerCase();
+    return (
+      r.character_a_id === r.character_b_id ||
+      t.includes("revelation") ||
+      t.includes("truth") ||
+      t.includes("sacrific") ||
+      t.includes("stasis") ||
+      d.includes("revealed") ||
+      d.includes("sacrifice") ||
+      d.includes("stasis")
+    );
+  });
 
-    if (normName.includes("vespera")) {
-      if (selectedChapter >= 16) {
-        return "A noble lady who arrived from the northern Silver Court seeking her lost brother Lord Julian. In Chapter 16, High Inquisitor Malakor reveals her true identity as Princess Aurelia of the Royal House of Aethelgard.";
-      }
-      return "A noble lady who arrives under royal escort from the northern Silver Court, wearing an emerald velvet travelling cloak and bearing an ivory-sheathed dagger. She seeks her lost brother Lord Julian in the catacombs.";
-    }
-
-    if (normName.includes("malakor")) {
-      if (selectedChapter >= 19) {
-        return "Arrived with six armored penitents brandishing the Iron Censer. After transforming via black mercury in Chapter 16, he was combatted by Corin Vance in Chapter 19 and locked into an inescapable recurring five-second temporal stasis loop.";
-      }
-      if (selectedChapter >= 16) {
-        return "Arrived with six armored penitents brandishing the Iron Censer. In Chapter 16, his body was transformed by drinking black mercury: his steel-gray eyes turned to pitch-black void wells radiating shadowy vapor.";
-      }
-      return "Arrives with six armored penitents. Wears an obsidian breastplate and has sharp steel-gray eyes. Demands the surrender of all foreign visitors and forbidden relics, brandishing the Iron Censer.";
-    }
-
-    if (normName.includes("kaelen voss") || normName === "voss") {
-      if (selectedChapter >= 17) {
-        return "A renegade Shadowsmith and exiled artificer with a brass clockwork eyepatch. In Chapter 17, he sacrificed himself by jamming his mechanical arm into the gear housing to hold the blast door open for Corin and Vespera, plunging with the collapsing gantry into the subterranean whirlpool.";
-      }
-      return "A renegade Shadowsmith and exiled artificer. Works among clockwork automata with scarred hands and wears a brass clockwork eyepatch. Agrees to unlock the Seventh Sluice after Corin gives him the Silver Cipher Key to decipher the gear mechanism.";
-    }
-
-    if (normName.includes("julian")) {
-      return "Brother of Lady Vespera Thorne who was lost in the submerged catacombs and officially declared deceased by the Obsidian Order. Vespera insists he is alive in the Vault of Bells.";
-    }
-
-    if (normName.includes("elowen")) {
-      return "A blind astrologer consulted by Corin in the drainage catacombs. Surrounded by clockwork ravens that transmit sound and optical echoes into her mind. Reveals epistemic truths about the black mercury and the ancient Sunken Council.";
+  if (majorEvents.length > 0) {
+    const latestEvent = majorEvents[majorEvents.length - 1];
+    if (latestEvent.description) {
+      return `${baseDesc} Chapter ${latestEvent.chapter}: ${latestEvent.description}`;
     }
   }
 
-  return character.description || "";
+  return baseDesc;
 }
 
 /**
@@ -638,31 +550,67 @@ export function deriveVisualTone(records: CharacterNetworkEdge[]): VisualTone {
 }
 
 /**
- * Groups active directional relationship edges into bundled visual connections.
+ * Groups active directional relationship edges and narrative plot threads into bundled visual connections.
  */
 export function groupEdgesIntoConnections(
-  edges: CharacterNetworkEdge[]
+  edges: CharacterNetworkEdge[],
+  activeNarrativeThreads: NarrativeThreadLink[] = [],
+  characterMap: Map<string, RawCharacter> = new Map()
 ): VisualConnection[] {
-  const pairMap = new Map<string, CharacterNetworkEdge[]>();
+  const pairMap = new Map<
+    string,
+    { edges: CharacterNetworkEdge[]; threads: NarrativeThreadLink[] }
+  >();
+
+  function getEntry(pairKey: string) {
+    let entry = pairMap.get(pairKey);
+    if (!entry) {
+      entry = { edges: [], threads: [] };
+      pairMap.set(pairKey, entry);
+    }
+    return entry;
+  }
 
   for (const edge of edges) {
     const [idA, idB] = [edge.sourceId, edge.targetId].sort();
     const pairKey = `${idA}--${idB}`;
-    const list = pairMap.get(pairKey) || [];
-    list.push(edge);
-    pairMap.set(pairKey, list);
+    getEntry(pairKey).edges.push(edge);
+  }
+
+  for (const th of activeNarrativeThreads) {
+    const [idA, idB] = [th.characterAId, th.characterBId].sort();
+    const pairKey = `${idA}--${idB}`;
+    getEntry(pairKey).threads.push(th);
   }
 
   const connections: VisualConnection[] = [];
 
-  for (const [pairKey, records] of pairMap.entries()) {
+  for (const [pairKey, { edges: records, threads }] of pairMap.entries()) {
     const [charAId, charBId] = pairKey.split("--");
     const firstEdge = records[0];
+    const firstThread = threads[0];
 
-    const charAName =
-      firstEdge.sourceId === charAId ? firstEdge.sourceName : firstEdge.targetName;
-    const charBName =
-      firstEdge.sourceId === charBId ? firstEdge.sourceName : firstEdge.targetName;
+    let charAName = "";
+    let charBName = "";
+
+    if (firstEdge) {
+      charAName =
+        firstEdge.sourceId === charAId ? firstEdge.sourceName : firstEdge.targetName;
+      charBName =
+        firstEdge.sourceId === charBId ? firstEdge.sourceName : firstEdge.targetName;
+    } else if (firstThread) {
+      charAName =
+        firstThread.characterAId === charAId
+          ? firstThread.characterAName
+          : firstThread.characterBName;
+      charBName =
+        firstThread.characterBId === charBId
+          ? firstThread.characterBName
+          : firstThread.characterAName;
+    }
+
+    if (!charAName && characterMap.has(charAId)) charAName = characterMap.get(charAId)!.name;
+    if (!charBName && characterMap.has(charBId)) charBName = characterMap.get(charBId)!.name;
 
     const hasAtoB = records.some(
       (r) => r.sourceId === charAId && r.targetId === charBId
@@ -671,20 +619,34 @@ export function groupEdgesIntoConnections(
       (r) => r.sourceId === charBId && r.targetId === charAId
     );
 
+    const connectionTypes: Array<"interpersonal" | "narrative_thread"> = [];
+    if (records.length > 0) connectionTypes.push("interpersonal");
+    if (threads.length > 0) connectionTypes.push("narrative_thread");
+
+    const visualTone: VisualTone =
+      records.length > 0 ? deriveVisualTone(records) : "narrative_thread";
+
     const sentimentDistribution = Array.from(
-      new Set(records.map((r) => r.sentiment))
+      new Set(
+        records.length > 0
+          ? records.map((r) => r.sentiment)
+          : ["narrative_thread"]
+      )
     ).sort();
 
     connections.push({
       connectionId: `conn:${pairKey}`,
       characterAId: charAId,
       characterBId: charBId,
-      characterAName: charAName,
-      characterBName: charBName,
-      visualTone: deriveVisualTone(records),
+      characterAName: charAName || charAId,
+      characterBName: charBName || charBId,
+      visualTone,
       sentimentDistribution,
-      isReciprocal: hasAtoB && hasBtoA,
+      isReciprocal:
+        (hasAtoB && hasBtoA) || (records.length === 0 && threads.length > 0),
       records: [...records],
+      narrativeThreads: [...threads],
+      connectionTypes,
     });
   }
 
@@ -715,10 +677,6 @@ export function transformCharacterNetwork(
     characterMap.set(c.id, c);
   }
 
-  const isAethelgard =
-    projectId === AETHELGARD_PROJECT_ID ||
-    characters.some((c) => Boolean(VERIFIED_REVELATIONS[c.id]));
-
   // 1. Build chapter-scoped introduced nodes
   const nodes: CharacterNetworkNode[] = [];
   for (const c of characters) {
@@ -730,10 +688,10 @@ export function transformCharacterNetwork(
       id: c.id,
       neo4jId: `char:${c.id}`,
       name: c.name,
-      state: deriveCharacterState(c, chapter, isAethelgard),
+      state: deriveCharacterState(c, chapter, relationships),
       firstChapter: c.first_chapter,
-      aliases: deriveChapterScopedAliases(c, chapter, isAethelgard),
-      description: deriveChapterScopedDescription(c, chapter, isAethelgard),
+      aliases: deriveChapterScopedAliases(c, chapter, relationships),
+      description: deriveChapterScopedDescription(c, chapter, relationships),
     });
   }
 
@@ -804,10 +762,24 @@ export function transformCharacterNetwork(
     });
   }
 
-  // 3. Group edges into visual connections
-  const connections = groupEdgesIntoConnections(edges);
+  // 3. Filter active narrative threads for chapter
+  const rawNarrativeThreads = options.narrativeThreads || [];
+  const activeNarrativeThreads: NarrativeThreadLink[] = [];
+  for (const th of rawNarrativeThreads) {
+    const isActive =
+      th.setupChapter <= chapter &&
+      (th.payoffChapter === null || chapter <= th.payoffChapter);
+    const cA = characterMap.get(th.characterAId);
+    const cB = characterMap.get(th.characterBId);
+    if (isActive && cA && cB && cA.first_chapter <= chapter && cB.first_chapter <= chapter) {
+      activeNarrativeThreads.push(th);
+    }
+  }
 
-  // 4. Compute chapter-scoped metadata
+  // 4. Group edges and narrative threads into visual connections
+  const connections = groupEdgesIntoConnections(edges, activeNarrativeThreads, characterMap);
+
+  // 5. Compute chapter-scoped metadata
   const minChapter = characters.reduce(
     (min, c) => Math.min(min, c.first_chapter),
     characters.length > 0 ? characters[0].first_chapter : 1
@@ -825,6 +797,7 @@ export function transformCharacterNetwork(
     totalRelationshipsInStory: relationships.length,
     activeRelationshipsCount: edges.length,
     activeConnectionsCount: connections.length,
+    activeNarrativeThreadsCount: activeNarrativeThreads.length,
     excludedSelfLoopsCount,
     dataQualityIssuesCount: dataQualityIssues.length,
     minChapter,
@@ -836,6 +809,7 @@ export function transformCharacterNetwork(
     nodes,
     edges,
     connections,
+    narrativeThreads: activeNarrativeThreads,
     dataQualityIssues,
   };
 }

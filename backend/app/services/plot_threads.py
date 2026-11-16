@@ -7,10 +7,13 @@ from typing import Any
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.services.tool_base import LenientToolModel
+
 logger = logging.getLogger(__name__)
 
 
-from app.utils import _as_uuid
+def _as_uuid(value) -> uuid.UUID:
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +150,7 @@ def extract_and_update_plot_threads_llm(
     if not use_llm or not active_key or not (chapter_text or "").strip():
         return db.query(PlotThread).filter(PlotThread.project_id == pid).order_by(PlotThread.setup_chapter.asc()).all()
 
-    class ThreadUpdateItem(BaseModel):
+    class ThreadUpdateItem(LenientToolModel):
         title: str
         description: str
         setup_chapter: int = Field(default=chapter_number)
@@ -156,7 +159,7 @@ def extract_and_update_plot_threads_llm(
         related_entities: list[str] = Field(default_factory=list)
         evidence_quote: str | None = None
 
-    class PlotThreadBatch(BaseModel):
+    class PlotThreadBatch(LenientToolModel):
         threads: list[ThreadUpdateItem] = Field(default_factory=list)
 
     active_model = model or settings.chat_model
@@ -227,26 +230,12 @@ def extract_and_update_plot_threads_llm(
     )
 
 
-def synthesize_all_plot_threads_llm(
-    db: Session,
-    project_id,
-    use_llm: bool = True,
-    api_key: str | None = None,
-    base_url: str | None = None,
-    model: str | None = None,
-) -> list:
+def synthesize_all_plot_threads_llm(db: Session, project_id, use_llm: bool = True) -> list:
     """Synthesize plot threads across all stored chapter chunks for a project."""
     from app.models import Chunk, Manuscript
-    from app.services import extractor, graph
+    from app.services import graph
 
     pid = _as_uuid(project_id)
-    creds = extractor.resolve_ai_credentials(
-        db=db,
-        project_id=pid,
-        explicit_api_key=api_key,
-        explicit_base_url=base_url,
-        explicit_model=model,
-    )
     chunks = (
         db.query(Chunk)
         .join(Manuscript, Chunk.manuscript_id == Manuscript.id)
@@ -257,14 +246,7 @@ def synthesize_all_plot_threads_llm(
     rows = []
     for ch in chunks:
         rows = extract_and_update_plot_threads_llm(
-            db,
-            pid,
-            ch.chapter_number,
-            ch.content,
-            use_llm=use_llm,
-            api_key=creds["api_key"],
-            base_url=creds["base_url"],
-            model=creds["model"],
+            db, pid, ch.chapter_number, ch.content, use_llm=use_llm
         )
     try:
         graph.sync_project_graph(db, pid)

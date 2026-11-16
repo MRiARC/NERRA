@@ -12,21 +12,18 @@ import {
   Sparkles,
   X,
   Network,
+  ChevronDown,
 } from "lucide-react";
-import { useCharacters, useRelationships, useProject } from "@/hooks/useStoryData";
+import { useCharacters, useRelationships, useStoryGraph, useProject } from "@/hooks/useStoryData";
 import { cn } from "@/lib/utils";
 import type {
   CharacterNetworkGraph,
+  NarrativeThreadLink,
   RawCharacter,
   RawRelationship,
 } from "@/lib/characterNetwork/types";
 import { transformCharacterNetwork } from "@/lib/characterNetwork/transform";
-import {
-  AETHELGARD_CHARACTERS,
-  AETHELGARD_PROJECT_ID,
-  AETHELGARD_RELATIONSHIPS,
-} from "@/lib/characterNetwork/sampleData";
-import { ChapterScrubber } from "./ChapterScrubber";
+import { ChapterScrubber, type ChapterMilestone } from "./ChapterScrubber";
 import { CharacterInspector } from "./CharacterInspector";
 import { RelationshipInspector } from "./RelationshipInspector";
 import { CharacterNetworkCanvas } from "./CharacterNetworkCanvas";
@@ -53,6 +50,7 @@ export function CharacterNetworkView({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [toneFilter, setToneFilter] = useState("all");
+  const [connectionLayer, setConnectionLayer] = useState<"all" | "bonds" | "threads">("all");
   const [showSelfLoopsModal, setShowSelfLoopsModal] = useState(false);
 
   // Project metadata for dynamic titles
@@ -71,45 +69,106 @@ export function CharacterNetworkView({
     isError: isErrorRels,
   } = useRelationships(projectId);
 
-  // Normalize entities with fallback to verified Aethelgard test fixtures ONLY for Aethelgard
+  // Fetch Story Knowledge Graph from Neo4j (via FastAPI)
+  const {
+    data: storyGraph,
+    isLoading: isLoadingGraph,
+    isError: isErrorGraph,
+  } = useStoryGraph(projectId);
+
+  // Normalize live entities purely dynamically without hardcoded fallbacks
   const rawCharacters: RawCharacter[] = useMemo(() => {
-    if (liveCharacters && liveCharacters.length > 0) {
-      return liveCharacters.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        status: c.status || "alive",
-        first_chapter: c.first_chapter || 1,
-        last_chapter: c.last_chapter ?? null,
-        aliases: c.aliases || [],
-        physical_traits: (c.physical_traits as Record<string, unknown>) || {},
-        description: c.description || "",
-      }));
-    }
-    if (projectId === AETHELGARD_PROJECT_ID) {
-      return AETHELGARD_CHARACTERS;
-    }
-    return [];
-  }, [liveCharacters, projectId]);
+    if (!liveCharacters || liveCharacters.length === 0) return [];
+    return liveCharacters.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status || "alive",
+      first_chapter: c.first_chapter || 1,
+      last_chapter: c.last_chapter ?? null,
+      aliases: c.aliases || [],
+      physical_traits: (c.physical_traits as Record<string, unknown>) || {},
+      description: c.description || "",
+    }));
+  }, [liveCharacters]);
 
   const rawRelationships: RawRelationship[] = useMemo(() => {
-    if (liveRelationships && liveRelationships.length > 0) {
-      return liveRelationships.map((r: any) => ({
-        id: r.id,
-        character_a_id: r.character_a_id,
-        character_b_id: r.character_b_id,
-        type: r.type,
-        sentiment: r.sentiment || "neutral",
-        chapter: r.chapter || 1,
-        until_chapter: r.until_chapter ?? null,
-        evidence_quote: r.evidence_quote ?? null,
-        description: r.description ?? null,
-      }));
+    if (!liveRelationships || liveRelationships.length === 0) return [];
+    return liveRelationships.map((r: any) => ({
+      id: r.id,
+      character_a_id: r.character_a_id,
+      character_b_id: r.character_b_id,
+      type: r.type,
+      sentiment: r.sentiment || "neutral",
+      chapter: r.chapter || 1,
+      until_chapter: r.until_chapter ?? null,
+      evidence_quote: r.evidence_quote ?? null,
+      description: r.description ?? null,
+    }));
+  }, [liveRelationships]);
+
+  // Normalize live narrative threads from Neo4j
+  const rawNarrativeThreads: NarrativeThreadLink[] = useMemo(() => {
+    if (!storyGraph?.narrative_threads || storyGraph.narrative_threads.length === 0) return [];
+    return storyGraph.narrative_threads.map((t: any) => ({
+      id: t.id,
+      characterAId: t.character_a_id,
+      characterBId: t.character_b_id,
+      characterAName: t.character_a_name,
+      characterBName: t.character_b_name,
+      threadId: t.thread_id,
+      threadTitle: t.thread_title,
+      status: t.status || "active",
+      setupChapter: t.setup_chapter || 1,
+      payoffChapter: t.payoff_chapter ?? null,
+    }));
+  }, [storyGraph]);
+
+  // Compute story milestones dynamically from characters and relationship milestones
+  const dynamicMilestones = useMemo<ChapterMilestone[]>(() => {
+    const milestoneMap = new Map<number, ChapterMilestone>();
+
+    for (const c of rawCharacters) {
+      const ch = c.first_chapter || 1;
+      if (!milestoneMap.has(ch)) {
+        milestoneMap.set(ch, {
+          chapter: ch,
+          label: `${c.name} Enters`,
+          shortTag: `Ch ${ch}`,
+          description: `${c.name} appears in Chapter ${ch}.`,
+        });
+      }
     }
-    if (projectId === AETHELGARD_PROJECT_ID) {
-      return AETHELGARD_RELATIONSHIPS;
+
+    for (const r of rawRelationships) {
+      const ch = r.chapter;
+      const typeLower = (r.type || "").toLowerCase();
+      const descLower = (r.description || "").toLowerCase();
+
+      const isMajor =
+        r.character_a_id === r.character_b_id ||
+        typeLower.includes("revelation") ||
+        typeLower.includes("truth") ||
+        typeLower.includes("sacrific") ||
+        typeLower.includes("stasis") ||
+        descLower.includes("revealed") ||
+        descLower.includes("sacrifice") ||
+        descLower.includes("stasis");
+
+      if (isMajor) {
+        const summary = r.description
+          ? r.description.split(/[.;:]/)[0].trim()
+          : r.type;
+        milestoneMap.set(ch, {
+          chapter: ch,
+          label: summary.length > 32 ? summary.slice(0, 29) + "..." : summary,
+          shortTag: `Ch ${ch}`,
+          description: r.description || summary,
+        });
+      }
     }
-    return [];
-  }, [liveRelationships, projectId]);
+
+    return Array.from(milestoneMap.values()).sort((a, b) => a.chapter - b.chapter);
+  }, [rawCharacters, rawRelationships]);
 
   // Compute chapter-scoped network graph
   const networkGraph: CharacterNetworkGraph = useMemo(() => {
@@ -117,9 +176,28 @@ export function CharacterNetworkView({
       projectId,
       characters: rawCharacters,
       relationships: rawRelationships,
+      narrativeThreads: rawNarrativeThreads,
       chapter: currentChapter,
     });
-  }, [projectId, rawCharacters, rawRelationships, currentChapter]);
+  }, [projectId, rawCharacters, rawRelationships, rawNarrativeThreads, currentChapter]);
+
+  // Filter connections by active connectionLayer ("all" | "bonds" | "threads")
+  const displayedGraph = useMemo<CharacterNetworkGraph>(() => {
+    if (connectionLayer === "all") return networkGraph;
+    const filteredConnections = networkGraph.connections.filter((c) => {
+      if (connectionLayer === "bonds") {
+        return c.connectionTypes.includes("interpersonal");
+      }
+      if (connectionLayer === "threads") {
+        return c.connectionTypes.includes("narrative_thread");
+      }
+      return true;
+    });
+    return {
+      ...networkGraph,
+      connections: filteredConnections,
+    };
+  }, [networkGraph, connectionLayer]);
 
   // Currently inspected node
   const activeNode = useMemo(() => {
@@ -155,38 +233,120 @@ export function CharacterNetworkView({
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] w-full bg-surface-void text-ink-parchment overflow-hidden select-none">
-      {/* Header Bar */}
-      <header className="h-14 px-6 border-b border-border-quiet bg-surface-subtle/90 backdrop-blur-md flex items-center justify-between gap-4 z-10 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-wine-accent/10 border border-wine-accent/30 text-wine-accent">
-            <BookOpen className="w-4 h-4" />
+      {/* Editorial Masthead (Tier 1) */}
+      <header className="border-b border-border-quiet bg-surface-subtle/90 backdrop-blur-md px-4 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 z-10 shrink-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 font-mono text-[9px] sm:text-[9.5px] uppercase tracking-[0.22em] text-ink-ash">
+            <span className="w-1.5 h-1.5 rounded-full bg-wine-crimson shadow-[0_0_8px_rgba(153,27,27,0.5)] shrink-0" />
+            <span className="truncate">Story World · Character Network</span>
+            {project?.title && (
+              <>
+                <span className="text-border-subtle hidden xs:inline">/</span>
+                <span className="text-ink-faint truncate max-w-[140px] sm:max-w-xs hidden xs:inline">{project.title}</span>
+              </>
+            )}
           </div>
-          <div>
-            <h1 className="text-sm font-serif font-bold text-ink-parchment tracking-wide">
-              Character Network Explorer
-            </h1>
-            <p className="text-[11px] font-mono text-ink-faint">
-              {project?.title || "Story World"} • Ch {currentChapter}
-            </p>
-          </div>
+          <h1 className="mt-0.5 font-serif text-base sm:text-xl font-medium tracking-tight text-ink-parchment flex items-baseline gap-2.5 flex-wrap">
+            <span>Character Constellation</span>
+            <span className="font-serif text-xs italic font-normal text-ink-ash truncate">
+              Ch {currentChapter} of {networkGraph.metadata.maxChapter}
+            </span>
+          </h1>
         </div>
 
-        {/* Search & Filter Controls */}
-        <div className="flex items-center gap-3">
+        {/* Dossier Record & Actions */}
+        <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+          {/* Dossier Record Ledger Tile */}
+          <div className="flex items-center divide-x divide-border-quiet/80 rounded-xl border border-border-quiet/80 bg-surface-card/60 px-3 py-1 shadow-xs">
+            <div className="pr-2.5 sm:pr-3 flex flex-col items-center">
+              <span className="font-serif text-sm sm:text-base tabular-nums font-medium text-ink-parchment leading-tight">
+                {networkGraph.metadata.introducedCharactersCount}
+              </span>
+              <span className="font-mono text-[8px] sm:text-[8.5px] uppercase tracking-[0.16em] text-ink-faint">
+                Cast
+              </span>
+            </div>
+            <div className="px-2.5 sm:px-3 flex flex-col items-center">
+              <span className="font-serif text-sm sm:text-base tabular-nums font-medium text-sky-400 leading-tight">
+                {networkGraph.metadata.activeRelationshipsCount}
+              </span>
+              <span className="font-mono text-[8px] sm:text-[8.5px] uppercase tracking-[0.16em] text-ink-faint">
+                Bonds
+              </span>
+            </div>
+            <div className="pl-2.5 sm:pl-3 flex flex-col items-center">
+              <span className="font-serif text-sm sm:text-base tabular-nums font-medium text-cyan-400 leading-tight">
+                {networkGraph.metadata.activeNarrativeThreadsCount}
+              </span>
+              <span className="font-mono text-[8px] sm:text-[8.5px] uppercase tracking-[0.16em] text-ink-faint">
+                Threads
+              </span>
+            </div>
+          </div>
+
+          {/* Self-Loops Audit Pill */}
+          {networkGraph.metadata.excludedSelfLoopsCount > 0 && (
+            <button
+              onClick={() => setShowSelfLoopsModal(true)}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors text-xs font-mono"
+              title="Click to view self-referential records audited for this chapter"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Self-Loops:</span>
+              <span>{networkGraph.metadata.excludedSelfLoopsCount}</span>
+            </button>
+          )}
+
+          {/* Integrated View Switcher */}
+          {onToggleViewMode && (
+            <div className="flex items-center p-0.5 rounded-lg border border-border-quiet bg-surface-field text-[11px] font-mono">
+              <button
+                onClick={() => viewMode !== "network" && onToggleViewMode()}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-md transition-all",
+                  viewMode === "network"
+                    ? "bg-surface-elevated text-ink-parchment font-medium shadow-xs border border-border-subtle"
+                    : "text-ink-ash hover:text-ink-parchment"
+                )}
+              >
+                <Network className="w-3.5 h-3.5 text-wine-accent" />
+                <span className="hidden sm:inline">Network</span>
+              </button>
+              <button
+                onClick={() => viewMode !== "cast" && onToggleViewMode()}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-md transition-all",
+                  viewMode === "cast"
+                    ? "bg-surface-elevated text-ink-parchment font-medium shadow-xs border border-border-subtle"
+                    : "text-ink-ash hover:text-ink-parchment"
+                )}
+              >
+                <Users className="w-3.5 h-3.5 text-ink-ash" />
+                <span className="hidden sm:inline">Cast</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Contextual Filter & Query Ribbon (Tier 2) */}
+      <div className="px-4 sm:px-6 py-1.5 min-h-10 border-b border-border-quiet/80 bg-surface-void/90 backdrop-blur-md flex flex-wrap items-center justify-between gap-x-3 gap-y-2 shrink-0 z-10">
+        {/* Left: Filters and Controls */}
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           {/* Search Input */}
-          <div className="relative w-48 sm:w-64">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+          <div className="relative w-36 sm:w-52 shrink">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
             <input
               type="text"
-              placeholder="Search characters or aliases..."
+              placeholder="Search characters…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-8 pl-8 pr-3 text-xs rounded-md bg-surface-field border border-border-quiet text-ink-parchment placeholder-ink-faint focus:outline-none focus:border-wine-accent/60"
+              className="w-full h-7 pl-8 pr-6 text-xs rounded-lg bg-surface-field border border-border-quiet/80 text-ink-parchment placeholder-ink-faint focus:outline-none focus:border-border-prominent font-sans transition-colors"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-faint hover:text-ink-parchment"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-faint hover:text-ink-parchment"
               >
                 ✕
               </button>
@@ -194,91 +354,94 @@ export function CharacterNetworkView({
           </div>
 
           {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="h-8 px-2.5 text-xs rounded-md bg-surface-field border border-border-quiet text-ink-bone focus:outline-none focus:border-wine-accent/60 font-mono"
-          >
-            <option value="all">Status: All</option>
-            <option value="alive">Status: Alive</option>
-            <option value="deceased">Status: Deceased</option>
-            <option value="incapacitated">Status: Incapacitated</option>
-            <option value="unknown">Status: Unknown</option>
-          </select>
+          <div className="relative shrink-0">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="appearance-none h-7 pl-2.5 pr-6 text-[11px] rounded-lg bg-surface-field border border-border-quiet/80 text-ink-bone hover:border-border-prominent focus:outline-none focus:border-border-prominent font-mono cursor-pointer transition-colors"
+            >
+              <option value="all">Status: All</option>
+              <option value="alive">Alive</option>
+              <option value="deceased">Deceased</option>
+              <option value="incapacitated">Incapacitated</option>
+              <option value="unknown">Unknown</option>
+            </select>
+            <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+          </div>
 
           {/* Tone Filter */}
-          <select
-            value={toneFilter}
-            onChange={(e) => setToneFilter(e.target.value)}
-            className="h-8 px-2.5 text-xs rounded-md bg-surface-field border border-border-quiet text-ink-bone focus:outline-none focus:border-wine-accent/60 font-mono"
-          >
-            <option value="all">Tone: All</option>
-            <option value="friction">Tone: Friction</option>
-            <option value="warmth">Tone: Warmth</option>
-            <option value="neutral">Tone: Neutral</option>
-          </select>
-        </div>
-
-        {/* Header Stats */}
-        <div className="hidden lg:flex items-center gap-4 text-xs font-mono text-ink-ash">
-          <div className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-wine-accent" />
-            <span>Cast:</span>
-            <span className="text-ink-parchment font-semibold">
-              {networkGraph.metadata.introducedCharactersCount}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <Link2 className="w-3.5 h-3.5 text-sky-400" />
-            <span>Active Bonds:</span>
-            <span className="text-ink-parchment font-semibold">
-              {networkGraph.metadata.activeConnectionsCount}
-            </span>
-          </div>
-
-          {networkGraph.metadata.excludedSelfLoopsCount > 0 && (
-            <button
-              onClick={() => setShowSelfLoopsModal(true)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 transition-colors text-xs font-mono"
-              title="Click to view self-referential records audited for this chapter"
+          <div className="relative shrink-0">
+            <select
+              value={toneFilter}
+              onChange={(e) => setToneFilter(e.target.value)}
+              className="appearance-none h-7 pl-2.5 pr-6 text-[11px] rounded-lg bg-surface-field border border-border-quiet/80 text-ink-bone hover:border-border-prominent focus:outline-none focus:border-border-prominent font-mono cursor-pointer transition-colors"
             >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-              <span>Self-Loops: {networkGraph.metadata.excludedSelfLoopsCount}</span>
-            </button>
-          )}
+              <option value="all">Tone: All</option>
+              <option value="friction">Friction</option>
+              <option value="warmth">Warmth</option>
+              <option value="neutral">Neutral</option>
+            </select>
+            <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+          </div>
 
-          {/* Integrated Header View Switcher */}
-          {onToggleViewMode && (
-            <div className="flex items-center gap-1 p-0.5 rounded-lg bg-surface-field border border-border-quiet text-xs font-mono shrink-0 ml-1">
-              <button
-                onClick={() => viewMode !== "network" && onToggleViewMode()}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors",
-                  viewMode === "network"
-                    ? "bg-wine-accent/20 text-wine-accent font-semibold border border-wine-accent/40"
-                    : "text-ink-ash hover:text-ink-parchment"
-                )}
-              >
-                <Network className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Network</span>
-              </button>
-              <button
-                onClick={() => viewMode !== "cast" && onToggleViewMode()}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors",
-                  viewMode === "cast"
-                    ? "bg-wine-accent/20 text-wine-accent font-semibold border border-wine-accent/40"
-                    : "text-ink-ash hover:text-ink-parchment"
-                )}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Cast</span>
-              </button>
-            </div>
-          )}
+          {/* Connection Layer (All / Bonds / Threads) */}
+          <div className="flex items-center rounded-lg bg-surface-field border border-border-quiet/80 p-0.5 text-[11px] font-mono shrink-0">
+            <button
+              onClick={() => setConnectionLayer("all")}
+              className={cn(
+                "px-2 sm:px-2.5 py-0.5 rounded-md transition-all text-[11px]",
+                connectionLayer === "all"
+                  ? "bg-surface-card text-ink-parchment font-medium shadow-xs border border-border-subtle"
+                  : "text-ink-ash hover:text-ink-parchment"
+              )}
+              title="Show all connections"
+            >
+              All
+            </button>
+            <button
+              onClick={() => setConnectionLayer("bonds")}
+              className={cn(
+                "px-2 sm:px-2.5 py-0.5 rounded-md transition-all text-[11px]",
+                connectionLayer === "bonds"
+                  ? "bg-sky-950/40 text-sky-300 font-medium shadow-xs border border-sky-500/30"
+                  : "text-ink-ash hover:text-ink-parchment"
+              )}
+              title="Show direct interpersonal relationship bonds"
+            >
+              Bonds
+            </button>
+            <button
+              onClick={() => setConnectionLayer("threads")}
+              className={cn(
+                "px-2 sm:px-2.5 py-0.5 rounded-md transition-all text-[11px]",
+                connectionLayer === "threads"
+                  ? "bg-cyan-950/40 text-cyan-300 font-medium shadow-xs border border-cyan-500/30"
+                  : "text-ink-ash hover:text-ink-parchment"
+              )}
+              title="Show narrative plot thread connections"
+            >
+              Threads
+            </button>
+          </div>
         </div>
-      </header>
+
+        {/* Right: Discrete Visual Guide */}
+        <div className="hidden lg:flex items-center gap-3 text-[10px] font-mono text-ink-ash shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-ink-faint uppercase tracking-wider text-[9px]">Status:</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Alive</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-zinc-400" /> Deceased</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500" /> Stasis</span>
+          </div>
+          <div className="h-3 w-px bg-border-quiet" />
+          <div className="flex items-center gap-2">
+            <span className="text-ink-faint uppercase tracking-wider text-[9px]">Tones:</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Friction</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Warmth</span>
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-slate-400" /> Neutral</span>
+          </div>
+        </div>
+      </div>
 
       {/* Main Workspace Body */}
       <div className="relative flex-1 flex overflow-hidden">
@@ -322,7 +485,7 @@ export function CharacterNetworkView({
             </div>
           ) : (
             <CharacterNetworkCanvas
-              graphData={networkGraph}
+              graphData={displayedGraph}
               selectedNodeId={selectedNodeId}
               selectedConnectionId={selectedConnectionId}
               hoveredNodeId={hoveredNodeId}
@@ -347,6 +510,7 @@ export function CharacterNetworkView({
           <CharacterInspector
             node={activeNode}
             connections={networkGraph.connections}
+            narrativeThreads={networkGraph.narrativeThreads}
             dataQualityIssues={networkGraph.dataQualityIssues}
             currentChapter={currentChapter}
             onClose={() => setSelectedNodeId(null)}
@@ -486,8 +650,9 @@ export function CharacterNetworkView({
           maxChapter={networkGraph.metadata.maxChapter}
           introducedCount={networkGraph.metadata.introducedCharactersCount}
           activeRelsCount={networkGraph.metadata.activeRelationshipsCount}
+          activeThreadsCount={networkGraph.metadata.activeNarrativeThreadsCount}
           totalCharacters={rawCharacters.length}
-          milestones={projectId === AETHELGARD_PROJECT_ID ? undefined : []}
+          milestones={dynamicMilestones}
         />
       </footer>
     </div>

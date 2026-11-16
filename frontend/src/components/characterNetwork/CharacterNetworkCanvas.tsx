@@ -29,7 +29,7 @@ export interface CharacterNetworkCanvasProps {
   onHoverNode: (nodeId: string | null) => void;
 }
 
-export function CharacterNetworkCanvas({
+export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas({
   graphData,
   selectedNodeId,
   selectedConnectionId,
@@ -42,12 +42,42 @@ export function CharacterNetworkCanvas({
   onHoverNode,
 }: CharacterNetworkCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const graphInstanceRef = useRef<any>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isRendered, setIsRendered] = useState(false);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
+  const previousEdgeIdsRef = useRef<Set<string>>(new Set());
   const updateSeqRef = useRef<number>(0);
+  const isUpdatingRef = useRef(false);
+  const nextUpdateParamsRef = useRef<any>(null);
+
+  // Fast GPU tooltip positioning without triggering React component re-renders
+  const updateTooltipPosition = (clientX: number, clientY: number) => {
+    if (tooltipRef.current && containerRef.current) {
+      const maxX = (containerRef.current.clientWidth || 800) - 290;
+      const maxY = (containerRef.current.clientHeight || 600) - 150;
+      const clampedX = Math.max(16, Math.min(clientX + 16, maxX));
+      const clampedY = Math.max(16, Math.min(clientY + 16, maxY));
+      tooltipRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+    }
+  };
+
+  // Debounced hover state dispatcher: micro-batches rapid pointer traversals
+  const debouncedHoverNode = (id: string | null) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    if (!id) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        onHoverNode(null);
+      }, 40);
+    } else {
+      onHoverNode(id);
+    }
+  };
 
   // Active hover targets for floating HUD tooltips
   const hoveredNode = useMemo(() => {
@@ -91,6 +121,7 @@ export function CharacterNetworkCanvas({
 
       graph.setData(g6Data);
       previousNodeIdsRef.current = new Set(g6Data.nodes.map((n) => n.id));
+      previousEdgeIdsRef.current = new Set(g6Data.edges.map((e) => e.id));
       graph.render();
 
       // Automatically center graph when force layout settles
@@ -109,9 +140,36 @@ export function CharacterNetworkCanvas({
         }
       };
 
+      // Helper to accurately resolve graph node/edge IDs across @antv/g DisplayObject hierarchies
+      const resolveNodeId = (e: any): string | null => {
+        let curr = e?.target;
+        while (curr) {
+          if (curr.id) {
+            try {
+              if (graph.getNodeData(curr.id)) return String(curr.id);
+            } catch {}
+          }
+          curr = curr.parentNode || curr.parentElement;
+        }
+        return e?.target?.id || e?.targetId || null;
+      };
+
+      const resolveEdgeId = (e: any): string | null => {
+        let curr = e?.target;
+        while (curr) {
+          if (curr.id) {
+            try {
+              if (graph.getEdgeData(curr.id)) return String(curr.id);
+            } catch {}
+          }
+          curr = curr.parentNode || curr.parentElement;
+        }
+        return e?.target?.id || e?.targetId || null;
+      };
+
       // Register Interactive Events
       graph.on(NodeEvent.CLICK, (e: any) => {
-        const id = e.target?.id || e.targetId;
+        const id = resolveNodeId(e);
         if (id) {
           onSelectNode(id);
           onSelectConnection(null);
@@ -119,28 +177,31 @@ export function CharacterNetworkCanvas({
       });
 
       graph.on(EdgeEvent.CLICK, (e: any) => {
-        const id = e.target?.id || e.targetId;
+        const id = resolveEdgeId(e);
         if (id) {
           onSelectConnection(id);
           onSelectNode(null);
         }
       });
 
-      graph.on(CanvasEvent.CLICK, () => {
-        onSelectNode(null);
-        onSelectConnection(null);
+      graph.on(CanvasEvent.CLICK, (e: any) => {
+        // Only clear selection if click hit the background canvas directly
+        if (!e.targetType || e.targetType === "canvas") {
+          onSelectNode(null);
+          onSelectConnection(null);
+        }
       });
 
       // Hover feedback and cursor states
       graph.on(NodeEvent.POINTER_ENTER, (e: any) => {
-        const id = e.target?.id || e.targetId;
+        const id = resolveNodeId(e);
         updateCursor("grab");
         if (id) {
-          onHoverNode(id);
+          debouncedHoverNode(id);
           const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
           const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
           if (clientX != null && clientY != null) {
-            setMousePos({ x: clientX, y: clientY });
+            updateTooltipPosition(clientX, clientY);
           }
         }
       });
@@ -149,13 +210,13 @@ export function CharacterNetworkCanvas({
         const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
         const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
         if (clientX != null && clientY != null) {
-          setMousePos({ x: clientX, y: clientY });
+          updateTooltipPosition(clientX, clientY);
         }
       });
 
       graph.on(NodeEvent.POINTER_LEAVE, () => {
         updateCursor("default");
-        onHoverNode(null);
+        debouncedHoverNode(null);
       });
 
       graph.on(NodeEvent.DRAG_START, () => {
@@ -167,14 +228,14 @@ export function CharacterNetworkCanvas({
       });
 
       graph.on(EdgeEvent.POINTER_ENTER, (e: any) => {
-        const id = e.target?.id || e.targetId;
+        const id = resolveEdgeId(e);
         updateCursor("pointer");
         if (id) {
           setHoveredEdgeId(id);
           const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
           const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
           if (clientX != null && clientY != null) {
-            setMousePos({ x: clientX, y: clientY });
+            updateTooltipPosition(clientX, clientY);
           }
         }
       });
@@ -183,7 +244,7 @@ export function CharacterNetworkCanvas({
         const clientX = e.clientX ?? e.client?.x ?? e.canvas?.x;
         const clientY = e.clientY ?? e.client?.y ?? e.canvas?.y;
         if (clientX != null && clientY != null) {
-          setMousePos({ x: clientX, y: clientY });
+          updateTooltipPosition(clientX, clientY);
         }
       });
 
@@ -209,50 +270,101 @@ export function CharacterNetworkCanvas({
     };
   }, []); // Mounts once
 
-  // Update G6 graph when data, selection, or filters change
+  // Update G6 graph sequentially when data, selection, or filters change
   useEffect(() => {
     const graph = graphInstanceRef.current;
     if (!graph || !isRendered) return;
 
-    const seq = ++updateSeqRef.current;
+    nextUpdateParamsRef.current = {
+      graphData,
+      selectedNodeId,
+      selectedConnectionId,
+      hoveredNodeId,
+      searchQuery,
+      statusFilter,
+      toneFilter,
+    };
 
-    async function applyUpdate() {
-      const g6Data = mapToG6GraphData(graphData, {
-        selectedNodeId,
-        selectedConnectionId,
-        hoveredNodeId,
-        searchQuery,
-        statusFilter,
-        toneFilter,
-      });
-
-      const currentNodeIds = new Set(g6Data.nodes.map((n) => n.id));
-      const hasStructureChanged =
-        previousNodeIdsRef.current.size !== currentNodeIds.size ||
-        [...currentNodeIds].some((id) => !previousNodeIdsRef.current.has(id));
-
-      try {
-        if (hasStructureChanged) {
-          try {
-            graph.stopLayout();
-          } catch {}
-          await graph.clear();
-          if (seq !== updateSeqRef.current) return;
-          graph.setData(g6Data);
-          await graph.render();
-        } else {
-          graph.setData(g6Data);
-          await graph.draw();
-        }
-        if (seq === updateSeqRef.current) {
-          previousNodeIdsRef.current = currentNodeIds;
-        }
-      } catch (err) {
-        console.warn("G6 re-render warning:", err);
-      }
+    if (isUpdatingRef.current) {
+      return;
     }
 
-    applyUpdate();
+    async function processQueue() {
+      if (!graph || isUpdatingRef.current) return;
+      isUpdatingRef.current = true;
+
+      while (nextUpdateParamsRef.current) {
+        const params = nextUpdateParamsRef.current;
+        nextUpdateParamsRef.current = null;
+
+        const g6Data = mapToG6GraphData(params.graphData, {
+          selectedNodeId: params.selectedNodeId,
+          selectedConnectionId: params.selectedConnectionId,
+          hoveredNodeId: params.hoveredNodeId,
+          searchQuery: params.searchQuery,
+          statusFilter: params.statusFilter,
+          toneFilter: params.toneFilter,
+        });
+
+        const currentNodeIds = new Set(g6Data.nodes.map((n) => n.id));
+        const currentEdgeIds = new Set(g6Data.edges.map((e) => e.id));
+        const hasStructureChanged =
+          previousNodeIdsRef.current.size !== currentNodeIds.size ||
+          [...currentNodeIds].some((id) => !previousNodeIdsRef.current.has(id)) ||
+          previousEdgeIdsRef.current.size !== currentEdgeIds.size ||
+          [...currentEdgeIds].some((id) => !previousEdgeIdsRef.current.has(id));
+
+        // Capture currently simulated coordinates from the live G6 graph.
+        // This prevents node positions from being wiped or resetting to undefined/NaN
+        // during style-only updates (such as hover highlight, click selection, or dimming).
+        try {
+          const currentNodes = graph.getNodeData();
+          if (Array.isArray(currentNodes)) {
+            const posMap = new Map<string, { x: number; y: number }>();
+            for (const n of currentNodes) {
+              if (
+                n &&
+                n.id &&
+                n.style &&
+                typeof n.style.x === "number" &&
+                !isNaN(n.style.x) &&
+                typeof n.style.y === "number" &&
+                !isNaN(n.style.y)
+              ) {
+                posMap.set(String(n.id), { x: n.style.x, y: n.style.y });
+              }
+            }
+            for (const node of g6Data.nodes) {
+              const pos = posMap.get(String(node.id));
+              if (pos) {
+                (node.style as any).x = pos.x;
+                (node.style as any).y = pos.y;
+              }
+            }
+          }
+        } catch (posErr) {
+          console.warn("Could not capture node coordinates:", posErr);
+        }
+
+        try {
+          if (hasStructureChanged) {
+            graph.setData(g6Data);
+            await graph.render();
+          } else {
+            graph.updateData(g6Data);
+            await graph.draw({ animation: false });
+          }
+          previousNodeIdsRef.current = currentNodeIds;
+          previousEdgeIdsRef.current = currentEdgeIds;
+        } catch (err) {
+          console.warn("G6 re-render warning:", err);
+        }
+      }
+
+      isUpdatingRef.current = false;
+    }
+
+    processQueue();
   }, [
     graphData,
     selectedNodeId,
@@ -308,104 +420,114 @@ export function CharacterNetworkCanvas({
   };
 
   return (
-    <div
-      className="relative w-full h-full min-h-[500px] overflow-hidden bg-surface-void select-none"
-      onMouseMove={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-      }}
-    >
+    <div className="relative w-full h-full min-h-[500px] overflow-hidden bg-surface-void select-none">
       {/* G6 Graph Container */}
       <div
         ref={containerRef}
         className="w-full h-full"
       />
 
-      {/* Floating Interactive Tooltip for Hovered Node */}
-      {hoveredNode && (
-        <div
-          className="pointer-events-none absolute z-30 px-3.5 py-2.5 rounded-lg bg-surface-card/95 backdrop-blur-md border border-border-quiet shadow-2xl text-xs max-w-xs transition-opacity duration-150 animate-in fade-in"
-          style={{
-            left: Math.max(20, Math.min(mousePos.x + 16, (containerRef.current?.clientWidth || 800) - 280)),
-            top: Math.max(20, Math.min(mousePos.y + 16, (containerRef.current?.clientHeight || 600) - 140)),
-          }}
-        >
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="font-serif font-bold text-ink-parchment text-sm">
-              {hoveredNode.name}
-            </span>
-            <span
-              className={cn(
-                "px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-semibold",
-                hoveredNode.state.status.toLowerCase() === "alive" &&
-                  "bg-emerald-950/80 text-emerald-300 border border-emerald-500/30",
-                hoveredNode.state.status.toLowerCase() === "deceased" &&
-                  "bg-surface-void text-ink-ash border border-border-subtle",
-                hoveredNode.state.status.toLowerCase() === "incapacitated" &&
-                  "bg-purple-950/80 text-purple-300 border border-purple-500/30",
-                hoveredNode.state.status.toLowerCase() === "unknown" &&
-                  "bg-amber-950/80 text-amber-300 border border-amber-500/30"
-              )}
-            >
-              {hoveredNode.state.status}
-            </span>
+      {/* Floating Interactive Tooltip using GPU translate3d (Zero React re-render overhead) */}
+      <div
+        ref={tooltipRef}
+        className={cn(
+          "pointer-events-none absolute z-30 top-0 left-0 transition-opacity duration-150 will-change-transform",
+          hoveredNode || hoveredConn ? "opacity-100" : "opacity-0"
+        )}
+        style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
+      >
+        {hoveredNode && (
+          <div className="px-3.5 py-2.5 rounded-lg bg-surface-card/95 backdrop-blur-md border border-border-quiet shadow-2xl text-xs max-w-xs animate-in fade-in">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="font-serif font-bold text-ink-parchment text-sm">
+                {hoveredNode.name}
+              </span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-semibold",
+                  hoveredNode.state.status.toLowerCase() === "alive" &&
+                    "bg-emerald-950/80 text-emerald-300 border border-emerald-500/30",
+                  hoveredNode.state.status.toLowerCase() === "deceased" &&
+                    "bg-surface-void text-ink-ash border border-border-subtle",
+                  hoveredNode.state.status.toLowerCase() === "incapacitated" &&
+                    "bg-purple-950/80 text-purple-300 border border-purple-500/30",
+                  hoveredNode.state.status.toLowerCase() === "unknown" &&
+                    "bg-amber-950/80 text-amber-300 border border-amber-500/30"
+                )}
+              >
+                {hoveredNode.state.status}
+              </span>
+            </div>
+            <div className="text-[11px] text-ink-ash mb-1.5 leading-snug">
+              {hoveredNode.state.condition}
+            </div>
+            <div className="flex items-center justify-between pt-1.5 border-t border-border-quiet text-[10px] font-mono text-ink-faint">
+              <span>Intro Ch {hoveredNode.firstChapter}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNode(hoveredNode.id);
+                  onSelectConnection(null);
+                }}
+                className="text-sky-400 hover:text-sky-300 pointer-events-auto cursor-pointer underline-offset-2 hover:underline"
+              >
+                Click to view dossier →
+              </button>
+            </div>
           </div>
-          <div className="text-[11px] text-ink-ash mb-1.5 leading-snug">
-            {hoveredNode.state.condition}
-          </div>
-          <div className="flex items-center justify-between pt-1.5 border-t border-border-quiet text-[10px] font-mono text-ink-faint">
-            <span>Intro Ch {hoveredNode.firstChapter}</span>
-            <span className="text-sky-400">Click to view dossier →</span>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Floating Interactive Tooltip for Hovered Edge */}
-      {hoveredConn && (
-        <div
-          className="pointer-events-none absolute z-30 px-3.5 py-2.5 rounded-lg bg-surface-card/95 backdrop-blur-md border border-border-quiet shadow-2xl text-xs max-w-xs transition-opacity duration-150 animate-in fade-in"
-          style={{
-            left: Math.max(20, Math.min(mousePos.x + 16, (containerRef.current?.clientWidth || 800) - 280)),
-            top: Math.max(20, Math.min(mousePos.y + 16, (containerRef.current?.clientHeight || 600) - 140)),
-          }}
-        >
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="font-serif font-bold text-ink-parchment text-xs">
-              {hoveredConn.characterAName} ↔ {hoveredConn.characterBName}
-            </span>
-            <span
-              className={cn(
-                "px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-semibold",
-                hoveredConn.visualTone === "friction" &&
-                  "bg-rose-950/80 text-rose-300 border border-rose-500/30",
-                hoveredConn.visualTone === "warmth" &&
-                  "bg-amber-950/80 text-amber-300 border border-amber-500/30",
-                hoveredConn.visualTone === "neutral" &&
-                  "bg-surface-elevated text-ink-ash border border-border-quiet"
-              )}
-            >
-              {hoveredConn.visualTone}
-            </span>
+        {hoveredConn && !hoveredNode && (
+          <div className="px-3.5 py-2.5 rounded-lg bg-surface-card/95 backdrop-blur-md border border-border-quiet shadow-2xl text-xs max-w-xs animate-in fade-in">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="font-serif font-bold text-ink-parchment text-xs">
+                {hoveredConn.characterAName} ↔ {hoveredConn.characterBName}
+              </span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-semibold",
+                  hoveredConn.visualTone === "friction" &&
+                    "bg-rose-950/80 text-rose-300 border border-rose-500/30",
+                  hoveredConn.visualTone === "warmth" &&
+                    "bg-amber-950/80 text-amber-300 border border-amber-500/30",
+                  hoveredConn.visualTone === "neutral" &&
+                    "bg-surface-elevated text-ink-ash border border-border-quiet"
+                )}
+              >
+                {hoveredConn.visualTone}
+              </span>
+            </div>
+            <div className="text-[11px] text-ink-bone mb-1 font-sans">
+              {hoveredConn.records.map((r) => r.relation).join(" / ")}
+            </div>
+            <div className="flex items-center justify-between pt-1.5 border-t border-border-quiet text-[10px] font-mono text-ink-faint">
+              <span>
+                {hoveredConn.records.length} record
+                {hoveredConn.records.length > 1 ? "s" : ""}{" "}
+                {hoveredConn.isReciprocal ? "(reciprocal)" : ""}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectConnection(hoveredConn.connectionId);
+                  onSelectNode(null);
+                }}
+                className="text-sky-400 hover:text-sky-300 pointer-events-auto cursor-pointer underline-offset-2 hover:underline"
+              >
+                Click to inspect →
+              </button>
+            </div>
           </div>
-          <div className="text-[11px] text-ink-bone mb-1 font-sans">
-            {hoveredConn.records.map((r) => r.relation).join(" / ")}
-          </div>
-          <div className="flex items-center justify-between pt-1.5 border-t border-border-quiet text-[10px] font-mono text-ink-faint">
-            <span>
-              {hoveredConn.records.length} record
-              {hoveredConn.records.length > 1 ? "s" : ""}{" "}
-              {hoveredConn.isReciprocal ? "(reciprocal)" : ""}
-            </span>
-            <span className="text-sky-400">Click to inspect →</span>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Floating Canvas Controls */}
-      <div className="absolute top-4 left-4 z-10 flex flex-col gap-1.5 p-1.5 bg-surface-card/90 backdrop-blur-md rounded-lg border border-border-quiet shadow-xl text-ink-ash">
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-1.5 p-1.5 bg-surface-elevated/80 backdrop-blur-md rounded-xl border border-border-quiet/80 shadow-xl text-ink-ash">
         <button
           onClick={handleZoomIn}
-          className="p-2 rounded hover:bg-surface-elevated hover:text-ink-parchment transition-colors"
+          className="p-1.5 rounded-lg hover:bg-surface-card hover:text-ink-parchment transition-colors"
           title="Zoom In"
         >
           <ZoomIn className="w-4 h-4" />
@@ -413,17 +535,17 @@ export function CharacterNetworkCanvas({
 
         <button
           onClick={handleZoomOut}
-          className="p-2 rounded hover:bg-surface-elevated hover:text-ink-parchment transition-colors"
+          className="p-1.5 rounded-lg hover:bg-surface-card hover:text-ink-parchment transition-colors"
           title="Zoom Out"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
 
-        <div className="w-full h-px bg-border-quiet my-0.5" />
+        <div className="w-full h-px bg-border-quiet/60 my-0.5" />
 
         <button
           onClick={handleFitView}
-          className="p-2 rounded hover:bg-surface-elevated hover:text-ink-parchment transition-colors"
+          className="p-1.5 rounded-lg hover:bg-surface-card hover:text-ink-parchment transition-colors"
           title="Fit Graph to Viewport"
         >
           <Maximize2 className="w-4 h-4" />
@@ -431,54 +553,12 @@ export function CharacterNetworkCanvas({
 
         <button
           onClick={handleFitCenter}
-          className="p-2 rounded hover:bg-surface-elevated hover:text-ink-parchment transition-colors"
+          className="p-1.5 rounded-lg hover:bg-surface-card hover:text-ink-parchment transition-colors"
           title="Center Network"
         >
           <Compass className="w-4 h-4" />
         </button>
       </div>
-
-      {/* Legend & Visual Tone Guide */}
-      <div className="absolute bottom-4 left-4 z-10 hidden sm:flex flex-wrap items-center gap-3.5 px-3.5 py-2 bg-surface-card/90 backdrop-blur-md rounded-lg border border-border-quiet text-xs font-mono text-ink-ash">
-        {/* Status indicator colors */}
-        <span className="text-ink-faint">Status:</span>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span className="text-emerald-300 text-[11px]">Alive</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-zinc-400" />
-          <span className="text-zinc-300 text-[11px]">Deceased</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-purple-500" />
-          <span className="text-purple-300 text-[11px]">Stasis</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-amber-500" />
-          <span className="text-amber-300 text-[11px]">Unknown</span>
-        </div>
-
-        <div className="w-px h-3.5 bg-border-quiet" />
-
-        {/* Tone indicator colors */}
-        <span className="text-ink-faint">Tones:</span>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-          <span className="text-rose-300 text-[11px]">Friction</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-          <span className="text-amber-300 text-[11px]">Warmth</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
-          <span className="text-slate-300 text-[11px]">Neutral</span>
-        </div>
-        <div className="border-l border-border-quiet pl-2.5 flex items-center gap-1.5 text-[11px] text-ink-faint">
-          <span>Drag node • Scroll zoom</span>
-        </div>
-      </div>
     </div>
   );
-}
+});

@@ -247,6 +247,38 @@ export function RelationshipInspector({
             </div>
           )}
         </div>
+        {/* Shared Narrative Plot Threads (from Graph DB) */}
+        {connection.narrativeThreads && connection.narrativeThreads.length > 0 && (
+          <div className="space-y-3 pt-2 border-t border-border-quiet">
+            <h3 className="text-xs font-mono uppercase text-ink-faint tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              Shared Narrative Plot Threads ({connection.narrativeThreads.length})
+            </h3>
+
+            <div className="space-y-2">
+              {connection.narrativeThreads.map((th, idx) => (
+                <div
+                  key={`${th.id}-${idx}`}
+                  className="p-3 rounded-lg bg-surface-card border border-cyan-500/20 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-xs text-cyan-300">
+                      {th.threadTitle}
+                    </span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-950/60 text-cyan-400 border border-cyan-500/30">
+                      Ch {th.setupChapter} → {th.payoffChapter ? `Ch ${th.payoffChapter}` : "Active"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-ink-ash">
+                    <span className="capitalize text-ink-bone">{th.status}</span>
+                    <span>•</span>
+                    <span>Entangles {th.characterAName} & {th.characterBName}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

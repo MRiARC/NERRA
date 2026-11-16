@@ -223,6 +223,7 @@ def _build_projection_from_sql(
                 "since_chapter": rel.chapter,
                 "until_chapter": getattr(rel, "until_chapter", None),
                 "description": rel.description,
+                "evidence_quote": getattr(rel, "evidence_quote", None),
             }
         )
 
@@ -402,7 +403,8 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
                     sentiment: row.sentiment,
                     since_chapter: row.since_chapter,
                     until_chapter: row.until_chapter,
-                    description: row.description
+                    description: row.description,
+                    evidence_quote: row.evidence_quote
                 }]->(b)
                 """,
                 rows=rel_edges,
@@ -450,6 +452,7 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
                 CREATE (a)-[:THREAD_INVOLVES {
                     id: row.id,
                     since_chapter: row.since_chapter,
+                    until_chapter: row.until_chapter,
                     status: row.description
                 }]->(b)
                 """,
@@ -464,6 +467,50 @@ def sync_project_graph(db: Session, project_id) -> dict[str, Any]:
         "edges": len(edges),
         "max_chapter": highest_chapter,
     }
+
+
+def _build_narrative_threads_from_sql(
+    db: Session, project_id: uuid.UUID, max_chapter: int | None = None
+) -> list[dict[str, Any]]:
+    """Derive pairwise character narrative threads from Postgres PlotThread table."""
+    from app.models import Character, PlotThread
+
+    chars = db.query(Character).filter(Character.project_id == project_id).all()
+    threads = db.query(PlotThread).filter(PlotThread.project_id == project_id).all()
+    char_by_name: dict[str, Character] = {}
+    for c in chars:
+        char_by_name[c.name.strip().lower()] = c
+        for alias in c.aliases or []:
+            char_by_name[alias.strip().lower()] = c
+
+    narrative_threads: list[dict[str, Any]] = []
+    for th in threads:
+        if max_chapter is not None and th.setup_chapter is not None and th.setup_chapter > max_chapter:
+            continue
+        involved_chars: dict[str, str] = {}
+        for ent in th.related_entities or []:
+            c = char_by_name.get(ent.strip().lower())
+            if c:
+                involved_chars[str(c.id)] = c.name
+
+        inv_ids = sorted(list(involved_chars.keys()))
+        for i in range(len(inv_ids)):
+            for j in range(i + 1, len(inv_ids)):
+                c1_id = inv_ids[i]
+                c2_id = inv_ids[j]
+                narrative_threads.append({
+                    "id": f"nth:{th.id}:{c1_id}:{c2_id}",
+                    "character_a_id": c1_id,
+                    "character_b_id": c2_id,
+                    "character_a_name": involved_chars[c1_id],
+                    "character_b_name": involved_chars[c2_id],
+                    "thread_id": str(th.id),
+                    "thread_title": th.title,
+                    "status": th.status or "active",
+                    "setup_chapter": th.setup_chapter or 1,
+                    "payoff_chapter": th.payoff_chapter,
+                })
+    return narrative_threads
 
 
 def get_project_graph(
@@ -506,6 +553,10 @@ def get_project_graph(
                     kind = "object"
                 elif "Event" in lbls:
                     kind = "event"
+                elif "PlotThread" in lbls:
+                    kind = "plot_thread"
+                elif "Character" in lbls:
+                    kind = "character"
                 props = dict(row["props"] or {})
                 for drop_k in ("id", "project_id", "name", "chapter"):
                     props.pop(drop_k, None)
@@ -530,12 +581,23 @@ def get_project_graph(
                 pid=pid_str,
                 max_ch=max_chapter,
             )
+            # Hybrid PostgreSQL enrichment for verbatim evidence quotes
+            from app.models import Relationship
+            pg_rels = {
+                str(r.id): r.evidence_quote
+                for r in db.query(Relationship).filter(Relationship.project_id == pid).all()
+                if r.evidence_quote
+            }
+
             edges: list[dict[str, Any]] = []
             for row in edge_rows:
                 props = dict(row["props"] or {})
+                edge_id = props.get("id", f"{row['source']}->{row['target']}")
+                clean_id = edge_id.replace("rel:", "")
+                ev_quote = props.get("evidence_quote") or pg_rels.get(clean_id)
                 edges.append(
                     {
-                        "id": props.get("id", f"{row['source']}->{row['target']}"),
+                        "id": edge_id,
                         "source": row["source"],
                         "target": row["target"],
                         "relation": props.get("relation", row["rel_type"]),
@@ -543,8 +605,46 @@ def get_project_graph(
                         "since_chapter": props.get("since_chapter"),
                         "until_chapter": props.get("until_chapter"),
                         "description": props.get("description"),
+                        "evidence_quote": ev_quote,
                     }
                 )
+
+            # Query pairwise narrative threads from Neo4j
+            narrative_threads: list[dict[str, Any]] = []
+            try:
+                nth_rows = session.run(
+                    """
+                    MATCH (c1:Character {project_id: $pid})<-[:THREAD_INVOLVES]-(t:PlotThread {project_id: $pid})-[:THREAD_INVOLVES]->(c2:Character {project_id: $pid})
+                    WHERE c1.id < c2.id
+                      AND ($max_ch IS NULL OR t.chapter IS NULL OR t.chapter <= $max_ch)
+                    RETURN DISTINCT c1.id AS c1_id, c1.name AS c1_name,
+                           c2.id AS c2_id, c2.name AS c2_name,
+                           t.id AS t_id, t.name AS t_title,
+                           t.status AS t_status,
+                           t.chapter AS setup_ch,
+                           t.payoff_chapter AS payoff_ch
+                    """,
+                    pid=pid_str,
+                    max_ch=max_chapter,
+                )
+                for r in nth_rows:
+                    c1_clean = r["c1_id"].replace("char:", "")
+                    c2_clean = r["c2_id"].replace("char:", "")
+                    t_clean = r["t_id"].replace("thread:", "")
+                    narrative_threads.append({
+                        "id": f"nth:{t_clean}:{c1_clean}:{c2_clean}",
+                        "character_a_id": c1_clean,
+                        "character_b_id": c2_clean,
+                        "character_a_name": r["c1_name"],
+                        "character_b_name": r["c2_name"],
+                        "thread_id": t_clean,
+                        "thread_title": r["t_title"],
+                        "status": r["t_status"] or "active",
+                        "setup_chapter": r["setup_ch"] or 1,
+                        "payoff_chapter": r["payoff_ch"],
+                    })
+            except Exception as exc:
+                logger.warning("Failed to query narrative threads from Neo4j: %s", exc)
 
             max_ch_row = session.run(
                 "MATCH (n:StoryEntity {project_id: $pid}) RETURN coalesce(max(n.chapter), 1) AS m",
@@ -555,15 +655,18 @@ def get_project_graph(
             return {
                 "nodes": nodes,
                 "edges": edges,
+                "narrative_threads": narrative_threads,
                 "neo4j_connected": True,
                 "max_chapter": max(highest_chapter, 1),
             }
 
     # SQL Projection Fallback (when Neo4j is disabled or unreachable)
     nodes, edges, highest_chapter = _build_projection_from_sql(db, pid, max_chapter=max_chapter)
+    narrative_threads = _build_narrative_threads_from_sql(db, pid, max_chapter=max_chapter)
     return {
         "nodes": nodes,
         "edges": edges,
+        "narrative_threads": narrative_threads,
         "neo4j_connected": False,
         "max_chapter": highest_chapter,
     }
