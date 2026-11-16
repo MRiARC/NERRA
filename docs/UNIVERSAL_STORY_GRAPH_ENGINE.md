@@ -220,11 +220,11 @@ For long-running sagas spanning 1,000 to 2,000 chapters:
 
 ---
 
-## 6. Implementation Checklist
+## 6. Implementation Checklist & Verification Evidence
 
-- [x] **Topological Collision Hull**: Physical collision calculated on full visual footprint.
+- [x] **Topological Collision Hull**: Physical collision calculated on full visual footprint ($R_{\text{collision}} = \sqrt{(W_{\text{hull}}/2)^2 + (R_{\text{glyph}} + H_{\text{hull}})^2} + 16$).
 - [x] **Quadratic Bezier Edge Paths**: Replaced Euclidean laser beams with curved splines (`type: 'quadratic'`).
 - [x] **Parallel Edge Transform**: Integrated G6 `process-parallel-edges` transform to separate reciprocal bonds.
-- [x] **Hover Intent Dwell Engine**: 120ms dwell velocity threshold; zero-lag GPU scene-graph state transitions.
-- [x] **Spatial Envelope Typography**: Automatic canvas line-wrapping and clamping with full data retention.
+- [x] **Hover Intent Dwell Engine**: 120ms dwell velocity threshold; zero-lag GPU scene-graph state transitions, cursor sweep strobe completely eliminated.
+- [x] **Spatial Envelope Typography**: Automatic canvas line-wrapping and clamping (max 20 chars/line, max 2 lines with `…`) with full unconstrained text preserved in data and tooltips.
 - [x] **Semantic LOD Progressive Disclosure**: Resting constellation (L0) $\rightarrow$ Spotlight with edge badges (L1).
