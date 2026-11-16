@@ -15,8 +15,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
-def _as_uuid(value) -> uuid.UUID:
-    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+from app.utils import _as_uuid
 
 
 def re_audit_downstream_chapters_llm(

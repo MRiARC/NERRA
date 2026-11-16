@@ -110,7 +110,7 @@ export default function DashboardPage() {
         onOpenSessions={() => setSessionsDrawerOpen(true)}
       />
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-12 sm:py-16">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-8 sm:py-10">
         {isAuthenticated ? (
           <>
             {/* Nameplate */}
@@ -125,15 +125,15 @@ export default function DashboardPage() {
                 <span suppressHydrationWarning>{today()}</span>
               </div>
 
-              <h1 className="mt-6 font-serif text-[clamp(2.25rem,5vw,3.5rem)] font-medium leading-[1.05] tracking-tight text-ink-parchment">
+              <h1 className="mt-4 font-serif text-[clamp(2.25rem,5vw,3.5rem)] font-medium leading-[1.05] tracking-tight text-ink-parchment">
                 <span suppressHydrationWarning>{greeting()}</span>, {firstName}.
               </h1>
 
-              <p className="mt-4 max-w-xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
+              <p className="mt-3 max-w-xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
                 {stateLine}
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-4">
+              <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
                 <Button
                   variant="primary"
                   size="md"
@@ -207,16 +207,16 @@ export default function DashboardPage() {
               initial={reduceMotion ? false : { opacity: 0 }}
               animate={reduceMotion ? undefined : { opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.12 }}
-              className="mt-14 border-y border-border-quiet py-6"
+              className="mt-8 border-y border-border-quiet py-5"
             >
-              <dl className="grid grid-cols-2 gap-y-6 sm:flex sm:items-baseline sm:gap-0">
+              <dl className="grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border-quiet">
                 {ledger.map((entry, i) => (
                   <div
                     key={entry.label}
                     className={
                       i === 0
-                        ? "sm:pr-9"
-                        : "sm:border-l sm:border-border-quiet sm:px-9 last:sm:pr-0"
+                        ? "sm:pr-6"
+                        : "sm:px-6 last:sm:pr-0"
                     }
                   >
                     <dd
@@ -235,7 +235,7 @@ export default function DashboardPage() {
             </motion.section>
 
             {/* Shelf */}
-            <section className="mt-12">
+            <section className="mt-8">
               <header className="flex items-baseline justify-between gap-4">
                 <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
                   Your shelf

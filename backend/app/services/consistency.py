@@ -471,7 +471,13 @@ def detect_world_rule_violations(claims: list, rules: list) -> list[IssueDraft]:
 
 
 def detect_world_rule_violations_llm(
-    rules: list, claims: list, events: list, use_llm: bool = True
+    rules: list,
+    claims: list,
+    events: list,
+    use_llm: bool = True,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> list[IssueDraft]:
     """Semantically audit ALL active world rules (positive + negative) against events & claims."""
     active_rules = [r for r in rules if (getattr(r, "status", None) or "active") == "active"]
@@ -484,7 +490,8 @@ def detect_world_rule_violations_llm(
         from app.config import settings
         from app.services.extractor import get_anthropic_client
 
-        if not settings.anthropic_api_key:
+        active_key = api_key or settings.anthropic_api_key
+        if not active_key:
             return []
 
         class RuleViolationItem(BaseModel):
@@ -521,9 +528,13 @@ CLAIMS:
 
 Return ONLY real, concrete violations supported by the evidence. If none violate the rules, return an empty list."""
 
-        client = get_anthropic_client()
+        try:
+            client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        except TypeError:
+            client = get_anthropic_client()
+        active_model = model or settings.chat_model
         response = client.messages.create(
-            model=settings.chat_model,
+            model=active_model,
             max_tokens=2048,
             tools=[
                 {
@@ -555,7 +566,13 @@ Return ONLY real, concrete violations supported by the evidence. If none violate
 
 
 def detect_semantic_inconsistencies_llm(
-    claims: list, events: list, knowledge_matrix: dict | None = None, use_llm: bool = True
+    claims: list,
+    events: list,
+    knowledge_matrix: dict | None = None,
+    use_llm: bool = True,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
 ) -> list[IssueDraft]:
     """Detect paraphrased contradictions and story-chronological epistemic leaks via Claude."""
     if not use_llm or (not claims and not events):
@@ -567,7 +584,8 @@ def detect_semantic_inconsistencies_llm(
         from app.config import settings
         from app.services.extractor import get_anthropic_client
 
-        if not settings.anthropic_api_key:
+        active_key = api_key or settings.anthropic_api_key
+        if not active_key:
             return []
 
         class SemanticIssueItem(BaseModel):
@@ -613,9 +631,13 @@ EPISTEMIC KNOWLEDGE MATRIX:
 
 Return ONLY high-confidence genuine contradictions or knowledge violations."""
 
-        client = get_anthropic_client()
+        try:
+            client = get_anthropic_client(api_key=api_key, base_url=base_url)
+        except TypeError:
+            client = get_anthropic_client()
+        active_model = model or settings.chat_model
         response = client.messages.create(
-            model=settings.chat_model,
+            model=active_model,
             max_tokens=2048,
             tools=[
                 {
@@ -651,12 +673,29 @@ Return ONLY high-confidence genuine contradictions or knowledge violations."""
     return []
 
 
-def run_consistency_pass(db, project_id) -> int:
+def run_consistency_pass(
+    db,
+    project_id,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> int:
     """Load this project's story data, run deterministic + LLM semantic detectors, and persist issues."""
     from app.agents import contradiction_reasoner
     from app.config import settings
     from app.models import Claim, Issue, KnowledgeUpdate, ObjectCustodyEvent, StoryEvent, StoryObject, WorldRule
-    from app.services import knowledge as knowledge_svc
+    from app.services import extractor, knowledge as knowledge_svc
+
+    creds = extractor.resolve_ai_credentials(
+        db=db,
+        project_id=project_id,
+        explicit_api_key=api_key,
+        explicit_base_url=base_url,
+        explicit_model=model,
+    )
+    resolved_key = creds.get("api_key")
+    resolved_base_url = creds.get("base_url")
+    resolved_model = creds.get("model")
 
     claims = (
         db.query(Claim)
@@ -673,7 +712,7 @@ def run_consistency_pass(db, project_id) -> int:
     )
     rules = db.query(WorldRule).filter(WorldRule.project_id == project_id, WorldRule.status == "active").all()
     objects_by_id = {str(o.id): o for o in objects}
-    llm_enabled = bool(getattr(settings, "use_llm_consistency", True) and settings.anthropic_api_key)
+    llm_enabled = bool(getattr(settings, "use_llm_consistency", True) and resolved_key)
 
     drafts = (
         detect_contradictions(claims)
@@ -685,8 +724,28 @@ def run_consistency_pass(db, project_id) -> int:
     )
     if llm_enabled:
         km = knowledge_svc.build_knowledge_matrix(db, project_id)
-        drafts.extend(detect_world_rule_violations_llm(rules, claims, events, use_llm=True))
-        drafts.extend(detect_semantic_inconsistencies_llm(claims, events, km, use_llm=True))
+        drafts.extend(
+            detect_world_rule_violations_llm(
+                rules,
+                claims,
+                events,
+                use_llm=True,
+                api_key=resolved_key,
+                base_url=resolved_base_url,
+                model=resolved_model,
+            )
+        )
+        drafts.extend(
+            detect_semantic_inconsistencies_llm(
+                claims,
+                events,
+                km,
+                use_llm=True,
+                api_key=resolved_key,
+                base_url=resolved_base_url,
+                model=resolved_model,
+            )
+        )
     else:
         drafts.extend(detect_world_rule_violations(claims, rules))
 

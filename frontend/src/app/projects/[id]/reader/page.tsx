@@ -123,16 +123,6 @@ export default function ReaderPage({ params }: ReaderPageProps) {
       ? sortedChapters[currentIndex + 1]
       : null;
 
-  const handleResolveIssue = async (issueId: string, resolution: "resolved" | "ignored") => {
-    try {
-      await api.story.patchIssue(projectId, issueId, resolution);
-      toast.success(resolution === "resolved" ? "Marked as resolved." : "Dismissed for this draft.");
-      await queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
-    } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Could not update that issue."));
-    }
-  };
-
   const handleReasonIssue = async (issueId: string) => {
     setIsReasoning(true);
     try {
@@ -454,20 +444,12 @@ export default function ReaderPage({ params }: ReaderPageProps) {
                           >
                             {isReasoning ? "reading…" : "explain it"}
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleResolveIssue(activeIssue.id, "resolved")}
+                          <Link
+                            href={`/projects/${projectId}/editor?chapter=${selectedChapterNumber}&issue=${activeIssue.id}`}
                             className="text-ink-faint transition-colors hover:text-ink-parchment"
                           >
-                            resolved
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleResolveIssue(activeIssue.id, "ignored")}
-                            className="text-ink-faint transition-colors hover:text-ink-parchment"
-                          >
-                            dismiss
-                          </button>
+                            decide in the editor →
+                          </Link>
                         </div>
                       </div>
                     )}

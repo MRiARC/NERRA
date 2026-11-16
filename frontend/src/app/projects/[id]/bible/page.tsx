@@ -13,6 +13,7 @@ import {
   Plus,
   Trash2,
   Download,
+  Loader2,
   MapPin,
   Box,
   Filter,
@@ -49,6 +50,7 @@ export default function BiblePage({ params }: BiblePageProps) {
   const [newRuleText, setNewRuleText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
   // Filtered rules
   const filteredRules = useMemo(() => {
@@ -85,12 +87,15 @@ export default function BiblePage({ params }: BiblePageProps) {
 
   // Handle delete rule
   const handleDeleteRule = async (ruleId: string) => {
+    setDeletingRuleId(ruleId);
     try {
       await api.story.deleteWorldRule(projectId, ruleId);
       await queryClient.invalidateQueries({ queryKey: ["world-rules", projectId] });
       toast.success("Rule excised from canon.");
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, "Failed to delete rule."));
+    } finally {
+      setDeletingRuleId(null);
     }
   };
 
@@ -365,10 +370,15 @@ export default function BiblePage({ params }: BiblePageProps) {
 
                     <button
                       onClick={() => handleDeleteRule(rule.id)}
-                      className="text-ink-ash hover:text-wine-crimson p-1 rounded transition-colors"
+                      disabled={deletingRuleId === rule.id}
+                      className="text-ink-ash hover:text-wine-crimson p-1 rounded transition-colors disabled:opacity-50"
                       title="Delete Rule"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      {deletingRuleId === rule.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-wine-accent" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
                     </button>
                   </div>
                 </Surface>
