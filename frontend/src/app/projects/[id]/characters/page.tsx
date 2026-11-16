@@ -1,7 +1,7 @@
 "use client";
 
 import React, { use, useState } from "react";
-import { CharacterNetworkView } from "@/components/characterNetwork/CharacterNetworkView";
+import { StoryGraphView } from "@/components/storyGraph/StoryGraphView";
 import { useCharacters, useStoryGraph } from "@/hooks/useStoryData";
 import { PageHeader, SectionHeading } from "@/components/ui/PageHeader";
 import { cn } from "@/lib/utils";
@@ -37,8 +37,9 @@ export default function CharactersPage({ params }: CharactersPageProps) {
   if (viewMode === "network") {
     return (
       <div className="w-full h-full flex flex-col overflow-hidden bg-surface-void">
-        <CharacterNetworkView
+        <StoryGraphView
           projectId={projectId}
+          initialLens="cast"
           viewMode={viewMode}
           onToggleViewMode={() => setViewMode("cast")}
         />

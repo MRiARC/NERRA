@@ -21,6 +21,7 @@ import {
   Compass,
   Share2,
   GitPullRequest,
+  Network,
   Scroll,
   ShieldAlert,
   History,
@@ -128,7 +129,7 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
     if (pathname.endsWith("/characters")) return "Characters";
     if (pathname.endsWith("/timeline")) return "Timeline";
     if (pathname.endsWith("/knowledge")) return "Who Knows What";
-    if (pathname.endsWith("/graph")) return "Items & Relationships";
+    if (pathname.endsWith("/graph")) return "World & Cast Network";
     if (pathname.endsWith("/plot-threads")) return "Plot Threads";
     if (pathname.endsWith("/ingestion")) return "Import Radar";
     if (pathname.endsWith("/bible")) return "World Rules";
@@ -199,9 +200,9 @@ export default function WorkspaceLayout({ children, params }: WorkspaceLayoutPro
     },
     {
       id: "graph",
-      name: "Items & Relationships",
+      name: "World & Cast Network",
       href: `/projects/${projectId}/graph`,
-      icon: Share2,
+      icon: Network,
       meta: null,
     },
     {

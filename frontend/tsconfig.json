@@ -34,6 +34,7 @@
     "node_modules",
     "src/components/legacy",
     "src/components/characterNetwork",
-    "src/lib/characterNetwork"
+    "src/lib/characterNetwork",
+    "**/__tests__/**"
   ]
 }
