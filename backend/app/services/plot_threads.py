@@ -7,6 +7,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.services.tool_base import LenientToolModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -148,7 +150,7 @@ def extract_and_update_plot_threads_llm(
     if not use_llm or not active_key or not (chapter_text or "").strip():
         return db.query(PlotThread).filter(PlotThread.project_id == pid).order_by(PlotThread.setup_chapter.asc()).all()
 
-    class ThreadUpdateItem(BaseModel):
+    class ThreadUpdateItem(LenientToolModel):
         title: str
         description: str
         setup_chapter: int = Field(default=chapter_number)
@@ -157,7 +159,7 @@ def extract_and_update_plot_threads_llm(
         related_entities: list[str] = Field(default_factory=list)
         evidence_quote: str | None = None
 
-    class PlotThreadBatch(BaseModel):
+    class PlotThreadBatch(LenientToolModel):
         threads: list[ThreadUpdateItem] = Field(default_factory=list)
 
     active_model = model or settings.chat_model

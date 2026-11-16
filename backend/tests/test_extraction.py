@@ -214,3 +214,62 @@ def test_persist_extraction_dedupes_and_accumulates(db_session, project):
 
     rel_count = db_session.query(Relationship).filter_by(project_id=project.id).count()
     assert rel_count == 1, f"[{TASK}] duplicate relationship (same pair + type) must be skipped"
+
+
+def test_lenient_tool_model_unpacks_stringified_nested_lists():
+    """Verify LenientToolModel transparently parses stringified JSON emitted by proxies/LLMs."""
+    import json
+    from app.services.extractor import ExtractionPayload
+
+    # 1. Nested stringified claims list (exact production bug trace)
+    raw = {
+        "characters": [{"name": "Cassian"}],
+        "claims": json.dumps([
+            {"subject": "second sun", "attribute": "size", "value": "smaller", "evidence_quote": "smaller and more orange"}
+        ]),
+    }
+    payload = ExtractionPayload.model_validate(raw)
+    assert len(payload.characters) == 1
+    assert len(payload.claims) == 1
+    assert payload.claims[0].subject == "second sun"
+    assert payload.claims[0].value == "smaller"
+
+    # 2. Entire payload passed as JSON string
+    raw_str = json.dumps(raw)
+    payload_from_str = ExtractionPayload.model_validate(raw_str)
+    assert len(payload_from_str.claims) == 1
+
+
+def test_multipass_extraction_resilient_to_stringified_claims_pass(monkeypatch):
+    """Verify extract_chapter_multipass survives proxy stringifying claims array."""
+    import json
+    import types
+
+    def _mock_client(*args, **kwargs):
+        class _Msgs:
+            @staticmethod
+            def create(**call_kw):
+                tool = call_kw["tool_choice"]["name"]
+                if tool == "save_entities":
+                    data = {"characters": [{"name": "Nathaniel"}], "locations": []}
+                elif tool == "save_timeline_custody":
+                    data = {"events": [{"summary": "Nathaniel wakes on the bus", "participants": ["Nathaniel"]}]}
+                else:
+                    # save_claims_rules with STRINGIFIED claims array (the exact production bug)
+                    data = {
+                        "claims": json.dumps([
+                            {"subject": "corgi", "attribute": "location", "value": "in woman arms", "evidence_quote": "corgi"}
+                        ]),
+                        "world_rules": [],
+                    }
+                return types.SimpleNamespace(content=[types.SimpleNamespace(type="tool_use", name=tool, input=data)])
+
+        return types.SimpleNamespace(messages=_Msgs())
+
+    monkeypatch.setattr(extractor, "get_anthropic_client", _mock_client)
+    res = extractor.extract_chapter_multipass(1, "A corgi sat in woman arms.", "Story context")
+    assert len(res.characters) == 1
+    assert res.characters[0].name == "Nathaniel"
+    assert len(res.claims) == 1
+    assert res.claims[0].subject == "corgi"
+
