@@ -141,6 +141,33 @@
   --pine-deep: #0f2e22;
 }
 
+[data-theme] {
+  --color-surface-void: var(--surface-void);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-card: var(--surface-card);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-field: var(--surface-field);
+  --color-surface-glass: var(--surface-glass);
+
+  --color-border-quiet: var(--border-quiet);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-prominent: var(--border-prominent);
+  --color-border-focus: var(--border-focus);
+
+  --color-ink-parchment: var(--ink-parchment);
+  --color-ink-bone: var(--ink-bone);
+  --color-ink-ash: var(--ink-ash);
+  --color-ink-faint: var(--ink-faint);
+
+  --color-wine-accent: var(--wine-accent);
+  --color-wine-crimson: var(--wine-crimson);
+  --color-wine-dark: var(--wine-dark);
+
+  --color-pine-accent: var(--pine-accent);
+  --color-pine-moss: var(--pine-moss);
+  --color-pine-deep: var(--pine-deep);
+}
+
 /* ==========================================================================
    TAILWIND V4 THEME MAPPINGS
    ========================================================================== */

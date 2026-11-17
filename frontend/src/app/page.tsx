@@ -10,18 +10,10 @@ import { NewProjectModal } from "@/components/dashboard/NewProjectModal";
 import { ImportManuscriptModal } from "@/components/dashboard/ImportManuscriptModal";
 import { SessionsDrawer } from "@/components/dashboard/SessionsDrawer";
 import { Button } from "@/components/ui/Button";
-import { Surface } from "@/components/ui/Surface";
-import { Badge } from "@/components/ui/Badge";
 import type { Project } from "@/lib/types";
-import {
-  BookPlus,
-  Compass,
-  Clock,
-  GitBranch,
-  ArrowRight,
-} from "lucide-react";
-import Link from "next/link";
+import { BookPlus } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { UnauthenticatedLandingView } from "@/components/landing";
 
 /** Time-aware greeting. Rendered on the server too, hence the hydration guard. */
 function greeting(): string {
@@ -72,6 +64,10 @@ export default function DashboardPage() {
     enabled: isAuthenticated,
   });
 
+  if (!isAuthenticated) {
+    return <UnauthenticatedLandingView />;
+  }
+
   const totalWords = projects.reduce((acc, p) => acc + (p.word_count || 0), 0);
   const totalChapters = projects.reduce((acc, p) => acc + (p.chapter_count || 0), 0);
   const totalIssues = projects.reduce((acc, p) => acc + (p.open_issue_count || 0), 0);
@@ -111,268 +107,186 @@ export default function DashboardPage() {
       />
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-6 sm:px-8 lg:px-10 py-8 sm:py-10">
-        {isAuthenticated ? (
-          <>
-            {/* Nameplate */}
-            <motion.section
-              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
-              animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
+        {/* Nameplate */}
+        <motion.section
+          initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+          animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
+          <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+            <span>Study</span>
+            <span aria-hidden className="h-px w-8 bg-border-subtle" />
+            <span suppressHydrationWarning>{today()}</span>
+          </div>
+
+          <h1 className="mt-4 font-serif text-[clamp(2.25rem,5vw,3.5rem)] font-medium leading-[1.05] tracking-tight text-ink-parchment">
+            <span suppressHydrationWarning>{greeting()}</span>, {firstName}.
+          </h1>
+
+          <p className="mt-3 max-w-xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
+            {stateLine}
+          </p>
+
+          <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setNewProjectOpen(true)}
+              className="gap-2"
             >
-              <div className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
-                <span>Study</span>
-                <span aria-hidden className="h-px w-8 bg-border-subtle" />
-                <span suppressHydrationWarning>{today()}</span>
-              </div>
+              <BookPlus className="w-4 h-4" />
+              <span>New story</span>
+            </Button>
 
-              <h1 className="mt-4 font-serif text-[clamp(2.25rem,5vw,3.5rem)] font-medium leading-[1.05] tracking-tight text-ink-parchment">
-                <span suppressHydrationWarning>{greeting()}</span>, {firstName}.
-              </h1>
-
-              <p className="mt-3 max-w-xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
-                {stateLine}
-              </p>
-
-              <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
-                <Button
-                  variant="primary"
-                  size="md"
-                  onClick={() => setNewProjectOpen(true)}
-                  className="gap-2"
-                >
-                  <BookPlus className="w-4 h-4" />
-                  <span>New story</span>
-                </Button>
-
-                <div ref={importMenuRef} className="relative">
-                  <button
-                    type="button"
-                    aria-haspopup={projects.length > 1 ? "menu" : undefined}
-                    aria-expanded={projects.length > 1 ? importMenuOpen : undefined}
-                    onClick={() => {
-                      if (projects.length === 0) return;
-                      if (projects.length === 1) {
-                        setUploadProject(projects[0]);
-                        return;
-                      }
-                      setImportMenuOpen((open) => !open);
-                    }}
-                    disabled={projects.length === 0}
-                    className="group inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-ash"
-                  >
-                    <span>
-                      {projects.length > 1 ? "Import manuscript into…" : "Import manuscript"}
-                    </span>
-                    <span
-                      aria-hidden
-                      className="h-px w-6 bg-current transition-all duration-300 group-enabled:group-hover:w-9"
-                    />
-                  </button>
-
-                  {importMenuOpen && projects.length > 1 && (
-                    <div
-                      role="menu"
-                      className="absolute left-0 z-30 mt-2 w-72 rounded-xl border border-border-subtle bg-surface-elevated p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.6)]"
-                    >
-                      <p className="px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
-                        Choose the manuscript to extend
-                      </p>
-                      {projects.map((project) => (
-                        <button
-                          key={project.id}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setImportMenuOpen(false);
-                            setUploadProject(project);
-                          }}
-                          className="flex w-full items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card"
-                        >
-                          <span className="truncate font-serif text-sm text-ink-bone">
-                            {project.title}
-                          </span>
-                          <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
-                            {project.chapter_count ?? 0} ch
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.section>
-
-            {/* Ledger */}
-            <motion.section
-              initial={reduceMotion ? false : { opacity: 0 }}
-              animate={reduceMotion ? undefined : { opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.12 }}
-              className="mt-8 border-y border-border-quiet py-5"
-            >
-              <dl className="grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border-quiet">
-                {ledger.map((entry, i) => (
-                  <div
-                    key={entry.label}
-                    className={
-                      i === 0
-                        ? "sm:pr-6"
-                        : "sm:px-6 last:sm:pr-0"
-                    }
-                  >
-                    <dd
-                      className={`font-serif text-2xl tabular-nums ${
-                        entry.alert ? "text-severity-contradiction" : "text-ink-parchment"
-                      }`}
-                    >
-                      {entry.value}
-                    </dd>
-                    <dt className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
-                      {entry.label}
-                    </dt>
-                  </div>
-                ))}
-              </dl>
-            </motion.section>
-
-            {/* Shelf */}
-            <section className="mt-8">
-              <header className="flex items-baseline justify-between gap-4">
-                <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
-                  Your shelf
-                </h2>
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
-                  {projects.length} {projects.length === 1 ? "manuscript" : "manuscripts"}
+            <div ref={importMenuRef} className="relative">
+              <button
+                type="button"
+                aria-haspopup={projects.length > 1 ? "menu" : undefined}
+                aria-expanded={projects.length > 1 ? importMenuOpen : undefined}
+                onClick={() => {
+                  if (projects.length === 0) return;
+                  if (projects.length === 1) {
+                    setUploadProject(projects[0]);
+                    return;
+                  }
+                  setImportMenuOpen((open) => !open);
+                }}
+                disabled={projects.length === 0}
+                className="group inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash transition-colors hover:text-ink-parchment disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-ash"
+              >
+                <span>
+                  {projects.length > 1 ? "Import manuscript into…" : "Import manuscript"}
                 </span>
-              </header>
+                <span
+                  aria-hidden
+                  className="h-px w-6 bg-current transition-all duration-300 group-enabled:group-hover:w-9"
+                />
+              </button>
 
-              <div className="mt-2">
-                {authLoading || projectsLoading ? (
-                  <div className="divide-y divide-border-quiet">
-                    {[0, 1, 2].map((n) => (
-                      <div key={n} className="flex items-center gap-6 py-7">
-                        <div className="h-12 w-[10px] rounded-full bg-surface-subtle" />
-                        <div className="flex-1 space-y-2.5">
-                          <div className="h-4 w-1/3 rounded bg-surface-subtle" />
-                          <div className="h-3 w-1/5 rounded bg-surface-subtle/70" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : projects.length === 0 ? (
-                  <div className="border-t border-dashed border-border-subtle py-20 text-center">
-                    <p className="font-serif text-2xl text-ink-parchment">
-                      The first page is blank.
-                    </p>
-                    <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
-                      No manuscripts in this study
-                    </p>
-                    <div className="mt-7 flex justify-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setNewProjectOpen(true)}
-                        className="gap-2"
-                      >
-                        <BookPlus className="w-3.5 h-3.5" />
-                        <span>Begin a story</span>
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div role="list">
-                    {projects.map((project, index) => (
-                      <ShelfRow
-                        key={project.id}
-                        project={project}
-                        index={index}
-                        staticEntry={Boolean(reduceMotion)}
-                        onUploadClick={(proj) => setUploadProject(proj)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-          </>
-        ) : (
-          /* Unauthenticated Landing / Guest Experience */
-          <div className="space-y-12 py-8">
-            <Surface depth={2} border="subtle" rounded="lg" className="p-8 sm:p-14 text-center max-w-3xl mx-auto">
-              <div className="space-y-4">
-                <Badge variant="wine" size="sm" className="gap-1.5" dot>
-                  <span>Deterministic Story Intelligence</span>
-                </Badge>
-
-                <h1 className="font-serif text-3xl sm:text-5xl font-medium tracking-tight text-ink-parchment leading-tight">
-                  Where Literary Craft Meets Forensic Continuity
-                </h1>
-
-                <p className="text-sm sm:text-base text-ink-bone max-w-xl mx-auto leading-relaxed">
-                  NERRA parses your novel into an interconnected universe: characters, knowledge
-                  states, physical object custody, and dual timelines—surfacing contradictions before
-                  your readers do.
-                </p>
-
-                <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
-                  <Link href="/login">
-                    <Button variant="primary" size="lg" className="gap-2">
-                      <span>Enter Scribe&apos;s Atelier</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </Link>
-
-                  <Link href="/register">
-                    <Button variant="outline" size="lg">
-                      <span>Create Author Account</span>
-                    </Button>
-                  </Link>
+              {importMenuOpen && projects.length > 1 && (
+                <div
+                  role="menu"
+                  className="absolute left-0 z-30 mt-2 w-72 rounded-xl border border-border-subtle bg-surface-elevated p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.6)]"
+                >
+                  <p className="px-3 py-2 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+                    Choose the manuscript to extend
+                  </p>
+                  {projects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setImportMenuOpen(false);
+                        setUploadProject(project);
+                      }}
+                      className="flex w-full items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card"
+                    >
+                      <span className="truncate font-serif text-sm text-ink-bone">
+                        {project.title}
+                      </span>
+                      <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.14em] text-ink-faint">
+                        {project.chapter_count ?? 0} ch
+                      </span>
+                    </button>
+                  ))}
                 </div>
-              </div>
-            </Surface>
-
-            {/* Feature Modules Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto text-xs">
-              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
-                <div className="w-9 h-9 rounded-xl bg-wine-accent/20 border border-wine-accent/40 flex items-center justify-center text-wine-crimson shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
-                  <Compass className="w-4 h-4" />
-                </div>
-                <h3 className="font-serif text-base font-medium text-ink-parchment">
-                  Epistemic Knowledge Matrix
-                </h3>
-                <p className="text-ink-ash leading-relaxed">
-                  2D matrix tracking exactly who knows which secrets, since which chapter, and whether
-                  information was learned firsthand or overheard.
-                </p>
-              </Surface>
-
-              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
-                <div className="w-9 h-9 rounded-xl bg-pine-accent/20 border border-pine-accent/40 flex items-center justify-center text-pine-moss shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
-                  <Clock className="w-4 h-4" />
-                </div>
-                <h3 className="font-serif text-base font-medium text-ink-parchment">
-                  Dual Chronology Engine
-                </h3>
-                <p className="text-ink-ash leading-relaxed">
-                  Toggle seamlessly between Narrative In-Book order and In-Universe Chronological
-                  order, with automatic spatiotemporal collision warnings.
-                </p>
-              </Surface>
-
-              <Surface depth={1} border="quiet" rounded="md" className="p-6 space-y-3">
-                <div className="w-9 h-9 rounded-xl bg-severity-knowledge-bg border border-severity-knowledge-border flex items-center justify-center text-severity-knowledge shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
-                  <GitBranch className="w-4 h-4" />
-                </div>
-                <h3 className="font-serif text-base font-medium text-ink-parchment">
-                  Story Graph &amp; Custody
-                </h3>
-                <p className="text-ink-ash leading-relaxed">
-                  Multi-hop entity graph tracking artifact custody handoffs and character dynamics
-                  with chapter-temporal validity.
-                </p>
-              </Surface>
+              )}
             </div>
           </div>
-        )}
+        </motion.section>
+
+        {/* Ledger */}
+        <motion.section
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={reduceMotion ? undefined : { opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.12 }}
+          className="mt-8 border-y border-border-quiet py-5"
+        >
+          <dl className="grid grid-cols-2 gap-y-4 sm:grid-cols-4 sm:gap-0 sm:divide-x sm:divide-border-quiet">
+            {ledger.map((entry, i) => (
+              <div
+                key={entry.label}
+                className={
+                  i === 0
+                    ? "sm:pr-6"
+                    : "sm:px-6 last:sm:pr-0"
+                }
+              >
+                <dd
+                  className={`font-serif text-2xl tabular-nums ${
+                    entry.alert ? "text-severity-contradiction" : "text-ink-parchment"
+                  }`}
+                >
+                  {entry.value}
+                </dd>
+                <dt className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+                  {entry.label}
+                </dt>
+              </div>
+            ))}
+          </dl>
+        </motion.section>
+
+        {/* Shelf */}
+        <section className="mt-8">
+          <header className="flex items-baseline justify-between gap-4">
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+              Your shelf
+            </h2>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+              {projects.length} {projects.length === 1 ? "manuscript" : "manuscripts"}
+            </span>
+          </header>
+
+          <div className="mt-2">
+            {authLoading || projectsLoading ? (
+              <div className="divide-y divide-border-quiet">
+                {[0, 1, 2].map((n) => (
+                  <div key={n} className="flex items-center gap-6 py-7">
+                    <div className="h-12 w-[10px] rounded-full bg-surface-subtle" />
+                    <div className="flex-1 space-y-2.5">
+                      <div className="h-4 w-1/3 rounded bg-surface-subtle" />
+                      <div className="h-3 w-1/5 rounded bg-surface-subtle/70" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : projects.length === 0 ? (
+              <div className="border-t border-dashed border-border-subtle py-20 text-center">
+                <p className="font-serif text-2xl text-ink-parchment">
+                  The first page is blank.
+                </p>
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+                  No manuscripts in this study
+                </p>
+                <div className="mt-7 flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewProjectOpen(true)}
+                    className="gap-2"
+                  >
+                    <BookPlus className="w-3.5 h-3.5" />
+                    <span>Begin a story</span>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div role="list">
+                {projects.map((project, index) => (
+                  <ShelfRow
+                    key={project.id}
+                    project={project}
+                    index={index}
+                    staticEntry={Boolean(reduceMotion)}
+                    onUploadClick={(proj) => setUploadProject(proj)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
       </main>
 
       <NewProjectModal
