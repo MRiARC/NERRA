@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { ImportManuscriptModal } from "@/components/dashboard/ImportManuscriptModal";
 import { api } from "@/lib/api";
 import { formatWords, getErrorMessage } from "@/lib/utils";
-import { ArrowRight, Download, MoreHorizontal, Sparkles, Upload } from "lucide-react";
+import { ArrowRight, Download, Loader2, MoreHorizontal, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProjectHubPageProps {
@@ -36,12 +36,21 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   const activeManuscript = manuscripts[0];
   const { data: chapters = [] } = useChapters(projectId, activeManuscript?.id);
 
-  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(null);
+  const [selectedChapterNumber, setSelectedChapterNumber] = useState<number | null>(1);
+  const [hasInitializedChapter, setHasInitializedChapter] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [filter, setFilter] = useState<FindingFilter>("major");
   const [isAuditing, setIsAuditing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Default to first chapter once chapters are available
+  useEffect(() => {
+    if (!hasInitializedChapter && chapters.length > 0) {
+      setSelectedChapterNumber(chapters[0].number);
+      setHasInitializedChapter(true);
+    }
+  }, [chapters, hasInitializedChapter]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -76,8 +85,8 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   );
 
   const activeSelectedChapter = useMemo(() => {
-    if (chapters.length === 0) return null;
-    return chapters.find((c) => c.number === selectedChapterNumber) || chapters[0];
+    if (chapters.length === 0 || selectedChapterNumber === null) return null;
+    return chapters.find((c) => c.number === selectedChapterNumber) || null;
   }, [chapters, selectedChapterNumber]);
 
   const selectedChapterFindings = useMemo(() => {
@@ -87,13 +96,40 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
     ).length;
   }, [openIssues, activeSelectedChapter]);
 
+  // Scoped issues: when a chapter is selected, filter strictly to that chapter's findings
+  const scopedIssues = useMemo(() => {
+    if (selectedChapterNumber === null) return openIssues;
+    return openIssues.filter((issue) =>
+      issue.evidence?.some((e) => e.chapter === selectedChapterNumber)
+    );
+  }, [openIssues, selectedChapterNumber]);
+
+  const scopedCriticalIssues = useMemo(
+    () => scopedIssues.filter((i) => i.severity === "red"),
+    [scopedIssues]
+  );
+  const scopedMinorIssues = useMemo(
+    () => scopedIssues.filter((i) => i.severity !== "red"),
+    [scopedIssues]
+  );
+
+  const filterOptions: Array<{ id: FindingFilter; label: string; count: number }> = [
+    { id: "major", label: "Major", count: scopedCriticalIssues.length },
+    { id: "minor", label: "Minor", count: scopedMinorIssues.length },
+    { id: "all", label: "All", count: scopedIssues.length },
+  ];
+
   const filteredFindings = useMemo(() => {
     const list =
-      filter === "major" ? criticalIssues : filter === "minor" ? minorIssues : openIssues;
+      filter === "major"
+        ? scopedCriticalIssues
+        : filter === "minor"
+        ? scopedMinorIssues
+        : scopedIssues;
     return [...list].sort(
       (a, b) => (a.evidence?.[0]?.chapter ?? 999) - (b.evidence?.[0]?.chapter ?? 999)
     );
-  }, [filter, criticalIssues, minorIssues, openIssues]);
+  }, [filter, scopedCriticalIssues, scopedMinorIssues, scopedIssues]);
 
   const stateLine = useMemo(() => {
     if (totalChapters === 0) {
@@ -149,95 +185,150 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
   };
 
   const status = activeManuscript?.status || "ready";
-  const filterOptions: Array<{ id: FindingFilter; label: string; count: number }> = [
-    { id: "major", label: "Major", count: criticalIssues.length },
-    { id: "minor", label: "Minor", count: minorIssues.length },
-    { id: "all", label: "All", count: openIssues.length },
-  ];
 
   return (
-    <div className="flex-1 w-full max-w-5xl mx-auto px-6 sm:px-8 py-10 sm:py-14">
+    <div className="flex-1 w-full max-w-5xl mx-auto px-6 sm:px-8 py-6 sm:py-8">
       {/* Masthead */}
-      <header>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
-          <span>Story overview</span>
-          {project?.genre && (
-            <>
-              <span aria-hidden className="h-px w-6 bg-border-subtle" />
-              <span className="text-ink-faint">{project.genre}</span>
-            </>
-          )}
-        </div>
+      <header className="border-b border-border-quiet pb-6">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-start">
+          <div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-ash">
+              <span>Story overview</span>
+              {project?.genre && (
+                <>
+                  <span aria-hidden className="h-px w-6 bg-border-subtle" />
+                  <span className="text-ink-faint">{project.genre}</span>
+                </>
+              )}
+            </div>
 
-        <h1 className="mt-5 font-serif text-[clamp(2rem,4vw,3rem)] font-medium leading-[1.1] tracking-tight text-ink-parchment">
-          {project?.title || "Untitled manuscript"}
-        </h1>
+            <h1 className="mt-3 font-serif text-[clamp(2rem,4vw,2.75rem)] font-medium leading-[1.1] tracking-tight text-ink-parchment">
+              {project?.title || "Untitled manuscript"}
+            </h1>
 
-        <p className="mt-4 max-w-2xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-lg">
-          {stateLine}
-        </p>
+            <p className="mt-2.5 max-w-2xl font-serif text-base italic leading-relaxed text-ink-bone sm:text-[17px]">
+              {stateLine}
+            </p>
 
-        <div className="mt-7 flex items-center gap-3">
-          <Link href={`/projects/${projectId}/editor`}>
-            <Button variant="primary" size="md" className="gap-2">
-              <span>Continue writing</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </Link>
+            <div className="mt-5 flex items-center gap-3">
+              <Link href={`/projects/${projectId}/editor`}>
+                <Button variant="primary" size="md" className="gap-2">
+                  <span>Continue writing</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </Link>
 
-          <div ref={menuRef} className="relative">
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label="Manuscript actions"
-              onClick={() => setMenuOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle text-ink-ash transition-colors hover:border-border-prominent hover:bg-surface-card hover:text-ink-parchment focus:outline-none focus-visible:border-border-focus"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-
-            {menuOpen && (
-              <div
-                role="menu"
-                className="absolute left-0 z-30 mt-2 w-60 rounded-xl border border-border-subtle bg-surface-elevated p-1.5 text-xs text-ink-bone shadow-[0_12px_36px_rgba(0,0,0,0.6)]"
-              >
+              <div ref={menuRef} className="relative">
                 <button
                   type="button"
-                  role="menuitem"
-                  onClick={handleTriggerAudit}
-                  disabled={isAuditing}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment disabled:opacity-50"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  aria-label="Manuscript actions"
+                  onClick={() => setMenuOpen((open) => !open)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle text-ink-ash transition-colors hover:border-border-prominent hover:bg-surface-card hover:text-ink-parchment focus:outline-none focus-visible:border-border-focus"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-wine-crimson" />
-                  <span>{isAuditing ? "Auditing…" : "Re-run consistency audit"}</span>
+                  <MoreHorizontal className="w-4 h-4" />
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleExportBible}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment"
-                >
-                  <Download className="w-3.5 h-3.5 text-ink-ash" />
-                  <span>Export story bible</span>
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setImportModalOpen(true);
-                  }}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment"
-                >
-                  <Upload className="w-3.5 h-3.5 text-ink-ash" />
-                  <span>Import a new draft</span>
-                </button>
+
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute left-0 z-30 mt-2 w-60 rounded-xl border border-border-subtle bg-surface-elevated p-1.5 text-xs text-ink-bone shadow-[0_12px_36px_rgba(0,0,0,0.6)]"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleTriggerAudit}
+                      disabled={isAuditing}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-wine-crimson" />
+                      <span>{isAuditing ? "Auditing…" : "Re-run consistency audit"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleExportBible}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment"
+                    >
+                      <Download className="w-3.5 h-3.5 text-ink-ash" />
+                      <span>Export story bible</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setImportModalOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-surface-card hover:text-ink-parchment"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-ink-ash" />
+                      <span>Import a new draft</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* Dossier Record tile */}
+          <div className="hidden md:flex flex-col gap-2 rounded-xl border border-border-quiet/80 bg-surface-card/40 p-4 min-w-[210px]">
+            <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+              Dossier Record
+            </span>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-2 mt-1">
+              <div>
+                <span className="block font-serif text-lg tabular-nums text-ink-parchment">
+                  {formatWords(totalWords)}
+                </span>
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                  Words
+                </span>
+              </div>
+              <div>
+                <span className="block font-serif text-lg tabular-nums text-ink-parchment">
+                  {totalChapters}
+                </span>
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                  Chapters
+                </span>
+              </div>
+              <div>
+                <span className={`block font-serif text-lg tabular-nums ${openIssues.length > 0 ? "text-severity-contradiction" : "text-ink-parchment"}`}>
+                  {openIssues.length}
+                </span>
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                  Findings
+                </span>
+              </div>
+              <div>
+                <span className="block font-serif text-lg tabular-nums text-ink-parchment">
+                  {graphNodes}
+                </span>
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.14em] text-ink-faint">
+                  Entities
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </header>
+
+      {/* Continuity Audit state banner */}
+      {isAuditing && (
+        <div className="mt-9 border-l-2 border-wine-accent py-2 pl-4 bg-surface-elevated/40 rounded-r-lg">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-wine-accent shrink-0" />
+            <p className="text-[13px] leading-relaxed text-ink-bone">
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-wine-accent font-semibold">
+                Auditing Canon ·{" "}
+              </span>
+              Checking cross-chapter continuity, world rules consistency, and timeline chronology with sovereign AI…
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Pipeline state — one line, only when it matters */}
       {status === "failed" && (
@@ -291,16 +382,16 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
 
       {/* Manuscript ruler */}
       {chapters.length > 0 ? (
-        <section className="mt-12">
+        <section className="mt-8">
           <ManuscriptRuler
             chapters={chapters}
             issues={openIssues}
-            selectedChapter={activeSelectedChapter?.number ?? null}
+            selectedChapter={selectedChapterNumber}
             onSelect={(chapterNumber) => setSelectedChapterNumber(chapterNumber)}
           />
 
-          {activeSelectedChapter && (
-            <div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+          {activeSelectedChapter ? (
+            <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
               <p className="min-w-0">
                 <span className="font-serif text-lg text-ink-parchment">
                   {activeSelectedChapter.title}
@@ -313,6 +404,14 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
               </p>
 
               <div className="flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedChapterNumber(null)}
+                  className="text-wine-crimson transition-colors hover:text-ink-parchment"
+                  title="Show all chapters"
+                >
+                  All chapters
+                </button>
                 <Link
                   href={`/projects/${projectId}/reader?chapter=${activeSelectedChapter.number}`}
                   className="text-ink-ash transition-colors hover:text-ink-parchment"
@@ -327,15 +426,29 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 </Link>
               </div>
             </div>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+              <p className="min-w-0">
+                <span className="font-serif text-lg text-ink-parchment">
+                  Whole Manuscript
+                </span>
+                <span className="ml-2 text-[13px] text-ink-ash">
+                  {chapters.length} chapters · {openIssues.length} total findings
+                </span>
+              </p>
+              <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-faint">
+                Click any chapter above to filter
+              </span>
+            </div>
           )}
         </section>
       ) : (
-        <section className="mt-12 border-t border-dashed border-border-subtle py-16 text-center">
-          <p className="font-serif text-2xl text-ink-parchment">No chapters yet.</p>
-          <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
+        <section className="mt-8 border-t border-dashed border-border-subtle py-8 text-center">
+          <p className="font-serif text-xl text-ink-parchment">No chapters yet.</p>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink-faint">
             Import a draft to draw the manuscript ruler
           </p>
-          <div className="mt-6 flex justify-center">
+          <div className="mt-5 flex justify-center">
             <Button
               variant="outline"
               size="sm"
@@ -350,9 +463,21 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       )}
 
       {/* Findings */}
-      <section className="mt-16">
+      <section className="mt-8 sm:mt-10">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 border-b border-border-prominent pb-3">
-          <h2 className="font-serif text-xl font-medium text-ink-parchment">Findings</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-serif text-xl font-medium text-ink-parchment">Findings</h2>
+            {selectedChapterNumber !== null ? (
+              <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-parchment border border-border-quiet flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-wine-crimson shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+                <span>Ch. {String(selectedChapterNumber).padStart(2, "0")} only</span>
+              </span>
+            ) : (
+              <span className="rounded-full bg-white/[0.04] px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint border border-border-quiet/50">
+                All Chapters
+              </span>
+            )}
+          </div>
 
           <div className="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.16em]">
             {filterOptions.map((option) => (
@@ -363,7 +488,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 onClick={() => setFilter(option.id)}
                 className={`transition-colors ${
                   filter === option.id
-                    ? "text-ink-parchment"
+                    ? "text-ink-parchment font-semibold"
                     : "text-ink-faint hover:text-ink-ash"
                 }`}
               >
@@ -371,37 +496,72 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
                 <span className="ml-1 tabular-nums text-ink-faint">{option.count}</span>
               </button>
             ))}
+
+            <span aria-hidden className="text-border-prominent">·</span>
+
+            {selectedChapterNumber !== null ? (
+              <button
+                type="button"
+                onClick={() => setSelectedChapterNumber(null)}
+                className="text-ink-faint hover:text-ink-parchment transition-colors"
+                title="View findings across all chapters"
+              >
+                All chapters ({openIssues.length})
+              </button>
+            ) : (
+              chapters[0] && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedChapterNumber(chapters[0].number)}
+                  className="text-ink-faint hover:text-ink-parchment transition-colors"
+                >
+                  Filter by chapter
+                </button>
+              )
+            )}
           </div>
         </div>
 
         {filteredFindings.length === 0 ? (
-          <p className="py-10 font-serif text-[15px] italic text-ink-ash">
-            Nothing outstanding in this category. The manuscript holds.
+          <p className="py-6 font-serif text-[14px] italic text-ink-ash">
+            {selectedChapterNumber !== null
+              ? `Nothing outstanding in Chapter ${selectedChapterNumber} under this category. The chapter holds.`
+              : "Nothing outstanding in this category. The manuscript holds."}
           </p>
         ) : (
           <div>
-            {filteredFindings.slice(0, 4).map((issue, index) => (
+            {filteredFindings.map((issue, index) => (
               <FindingRow key={issue.id} issue={issue} index={index} projectId={projectId} />
             ))}
           </div>
         )}
 
-        <div className="mt-5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em]">
+        <div className="mt-4 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em]">
           <Link
-            href={`/projects/${projectId}/issues`}
+            href={
+              selectedChapterNumber !== null
+                ? `/projects/${projectId}/editor?chapter=${selectedChapterNumber}&scope=chapter`
+                : `/projects/${projectId}/editor?scope=book`
+            }
             className="inline-flex items-center gap-1.5 text-ink-ash transition-colors hover:text-ink-parchment"
           >
-            <span>All {openIssues.length} findings</span>
+            <span>
+              {selectedChapterNumber !== null
+                ? `Open Chapter ${selectedChapterNumber} in editor`
+                : `All ${openIssues.length} findings in editor`}
+            </span>
             <ArrowRight className="w-3 h-3" />
           </Link>
           <span className="text-ink-faint">
-            {openIssues.length > 4 ? `Showing 4 of ${filteredFindings.length}` : ""}
+            {selectedChapterNumber !== null
+              ? `Showing all ${filteredFindings.length} findings for Chapter ${selectedChapterNumber}`
+              : `Showing ${filteredFindings.length} findings`}
           </span>
         </div>
       </section>
 
       {/* Cast */}
-      <section className="mt-16">
+      <section className="mt-8 sm:mt-10">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="font-serif text-xl font-medium text-ink-parchment">Cast</h2>
           <Link
@@ -413,11 +573,11 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
         </div>
 
         {characters.length === 0 ? (
-          <p className="mt-4 font-serif text-[15px] italic text-ink-ash">
+          <p className="mt-3 font-serif text-[14px] italic text-ink-ash">
             No one has walked onto the page yet.
           </p>
         ) : (
-          <div className="mt-4 flex flex-wrap gap-x-7 gap-y-3">
+          <div className="mt-3 flex flex-wrap gap-x-7 gap-y-2.5">
             {characters.slice(0, 12).map((character) => (
               <Link
                 key={character.id}
@@ -444,7 +604,7 @@ export default function ProjectHubPage({ params }: ProjectHubPageProps) {
       </section>
 
       {/* State line */}
-      <footer className="mt-16 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border-quiet pt-5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
+      <footer className="mt-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border-quiet pt-5 font-mono text-[9px] uppercase tracking-[0.16em] text-ink-faint">
         <span>
           {activeManuscript?.chapters_done ?? 0}/{activeManuscript?.chapters_total ?? totalChapters}{" "}
           ingested

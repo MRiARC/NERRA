@@ -12,13 +12,15 @@ from app.schemas import (
     ChangeDetectionOut,
     ChapterAppendIn,
     ChapterDetailOut,
+    ChapterInspectionItem,
     ChapterSummaryOut,
     ChapterUpdateIn,
     ImportOut,
+    InspectionOut,
     ManuscriptOut,
     StatusOut,
 )
-from app.services import change_detector, splitter
+from app.services import archive_extractor, change_detector, splitter
 from app.services.pipeline import append_chapter_to_manuscript, run_import_pipeline_guarded
 
 router = APIRouter(tags=["manuscripts"])
@@ -58,6 +60,23 @@ def _extract_text(file: UploadFile | None, pasted_text: str) -> str:
     return pasted_text
 
 
+@router.post("/projects/{project_id}/manuscripts/inspect", response_model=InspectionOut)
+def inspect_manuscript(
+    project_id: uuid.UUID,
+    file: UploadFile | None = File(default=None),
+    files: list[UploadFile] = File(default=[]),
+    text: str = Form(default=""),
+    project=Depends(get_owned_project),
+    user: User = Depends(get_current_user),
+) -> InspectionOut:
+    """Pre-flight inspection of manuscript files, ZIP archive, or folder before ingestion."""
+    return archive_extractor.inspect_manuscript_source(
+        file=file,
+        files=files if files else None,
+        pasted_text=text,
+    )
+
+
 @router.post("/projects/{project_id}/manuscripts/import", response_model=ImportOut, status_code=201)
 def import_manuscript(
     project_id: uuid.UUID,
@@ -65,32 +84,32 @@ def import_manuscript(
     title: str = Form(default=""),
     text: str = Form(default=""),
     file: UploadFile | None = File(default=None),
+    files: list[UploadFile] = File(default=[]),
     x_anthropic_key: str | None = Header(default=None, alias="X-Anthropic-Key"),
     x_anthropic_base_url: str | None = Header(default=None, alias="X-Anthropic-Base-Url"),
     project=Depends(get_owned_project),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ImportOut:
-    """Import a manuscript: upload a .txt/.md/.docx file, or paste text.
+    """Import a manuscript: upload a single file (.txt/.md/.docx/.pdf/.html), a .zip archive,
+    a folder/multi-file selection, or paste text.
 
-    In Swagger (the /docs page): click 'Try it out', optionally choose a
-    file, or type into the `text` field. The response returns immediately —
-    analysis continues in the background; poll the status endpoint.
+    Pre-flight inspection is available via POST /projects/{project_id}/manuscripts/inspect.
+    The response returns immediately — analysis continues in the background; poll status.
     """
-    content = _extract_text(file, text).strip()
-    if len(content) < 100:
-        raise HTTPException(
-            status_code=422,
-            detail="Manuscript too short — provide at least ~100 characters of story text",
-        )
-
-    display_title = title.strip() or (file.filename if file and file.filename else "Imported manuscript")
+    raw_text, display_title, chapters_total, metadata = archive_extractor.consolidate_manuscript(
+        file=file,
+        files=files if files else None,
+        pasted_text=text,
+        title=title,
+    )
 
     manuscript = Manuscript(
         project_id=project.id,
         title=display_title,
-        raw_text=content,
+        raw_text=raw_text,
         status="pending",
+        chapters_total=chapters_total,
     )
     db.add(manuscript)
     db.commit()
@@ -104,7 +123,14 @@ def import_manuscript(
         base_url=x_anthropic_base_url,
     )
 
-    return ImportOut(manuscript_id=manuscript.id, project_id=project.id, status=manuscript.status)
+    return ImportOut(
+        manuscript_id=manuscript.id,
+        project_id=project.id,
+        status=manuscript.status,
+        chapters_total=chapters_total,
+        total_words=metadata.get("total_words"),
+        source_mode=metadata.get("source_mode"),
+    )
 
 
 @router.get("/manuscripts/{manuscript_id}/status", response_model=StatusOut)

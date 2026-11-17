@@ -29,6 +29,14 @@ export function useCharacters(projectId: string) {
   });
 }
 
+export function useRelationships(projectId: string) {
+  return useQuery({
+    queryKey: ["relationships", projectId],
+    queryFn: () => api.story.getRelationships(projectId),
+    enabled: Boolean(projectId),
+  });
+}
+
 export function useEvents(projectId: string) {
   return useQuery({
     queryKey: ["events", projectId],

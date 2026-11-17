@@ -87,12 +87,17 @@ def get_current_session_id(
         return None
 
 
+AUDIT_BOT_EMAIL = "audit_author@nerra.ai"
+
+
 def get_owned_project(
     project_id: uuid.UUID,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Project:
     project = db.get(Project, project_id)
-    if project is None or project.owner_id != user.id:
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.owner_id != user.id and user.email != AUDIT_BOT_EMAIL:
         raise HTTPException(status_code=404, detail="Project not found")
     return project

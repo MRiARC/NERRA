@@ -16,6 +16,8 @@ import type {
   ChatOut,
   Claim,
   Event,
+  ImportOut,
+  InspectionOut,
   Issue,
   KnowledgeMatrix,
   Manuscript,
@@ -24,6 +26,7 @@ import type {
   PlotThread,
   Project,
   ProjectCustomization,
+  Relationship,
   StoryGraph,
   Timeline,
   TokenOut,
@@ -320,9 +323,61 @@ export const api = {
       });
     },
 
-    async importManuscript(id: string, file: File): Promise<{ message: string; manuscript_id: string }> {
+    async inspectManuscript(
+      id: string,
+      fileOrFiles: File | File[] | null,
+      text?: string
+    ): Promise<InspectionOut> {
       const fd = new FormData();
-      fd.append("file", file);
+      if (text) {
+        fd.append("text", text);
+      }
+      if (fileOrFiles) {
+        if (Array.isArray(fileOrFiles)) {
+          if (fileOrFiles.length === 1) {
+            fd.append("file", fileOrFiles[0]);
+          } else {
+            fileOrFiles.forEach((f) => fd.append("files", f));
+          }
+        } else {
+          fd.append("file", fileOrFiles);
+        }
+      }
+      const res = await fetchWithAuth(`/projects/${id}/manuscripts/inspect`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Inspection failed" }));
+        throw new ApiError(res.status, err.detail || "Failed to inspect manuscript");
+      }
+      return res.json();
+    },
+
+    async importManuscript(
+      id: string,
+      fileOrFiles: File | File[] | null,
+      title?: string,
+      text?: string
+    ): Promise<ImportOut> {
+      const fd = new FormData();
+      if (title) {
+        fd.append("title", title);
+      }
+      if (text) {
+        fd.append("text", text);
+      }
+      if (fileOrFiles) {
+        if (Array.isArray(fileOrFiles)) {
+          if (fileOrFiles.length === 1) {
+            fd.append("file", fileOrFiles[0]);
+          } else {
+            fileOrFiles.forEach((f) => fd.append("files", f));
+          }
+        } else {
+          fd.append("file", fileOrFiles);
+        }
+      }
       const res = await fetchWithAuth(`/projects/${id}/manuscripts/import`, {
         method: "POST",
         body: fd,
@@ -373,6 +428,10 @@ export const api = {
   story: {
     async getCharacters(projectId: string): Promise<Character[]> {
       return request<Character[]>(`/projects/${projectId}/characters`);
+    },
+
+    async getRelationships(projectId: string): Promise<Relationship[]> {
+      return request<Relationship[]>(`/projects/${projectId}/relationships`);
     },
 
     async getCharacter(projectId: string, characterId: string): Promise<Character> {

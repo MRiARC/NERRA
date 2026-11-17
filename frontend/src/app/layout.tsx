@@ -42,10 +42,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`h-full antialiased ${newsreader.variable} ${literata.variable} ${plusJakartaSans.variable}`}
       data-theme="literary-obsidian"
     >
-      <body className="min-h-full flex flex-col bg-surface-void text-ink-parchment selection:bg-wine-accent selection:text-ink-parchment">
+      <body
+        suppressHydrationWarning
+        className="min-h-full flex flex-col bg-surface-void text-ink-parchment selection:bg-wine-accent selection:text-ink-parchment"
+      >
         {/* Apply the persisted theme before hydration to avoid a dark flash. */}
         <script
           dangerouslySetInnerHTML={{

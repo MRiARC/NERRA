@@ -68,7 +68,7 @@ export function ShelfRow({ project, index, staticEntry = false, onUploadClick }:
       transition={{ duration: 0.45, delay: Math.min(index, 8) * 0.045, ease: "easeOut" }}
       className="group relative border-b border-border-quiet"
     >
-      <div className="-mx-3 grid grid-cols-[auto_1fr_auto] items-start gap-4 rounded-xl px-3 py-6 transition-colors duration-300 hover:bg-surface-subtle/40 sm:gap-6 sm:py-7">
+      <div className="-mx-3 grid grid-cols-[auto_1fr_auto] items-start gap-4 rounded-xl px-3 py-4 transition-colors duration-300 hover:bg-surface-subtle/40 sm:gap-6 sm:py-5">
         <ChapterSpine chapters={chapters} />
 
         {/* Identity */}

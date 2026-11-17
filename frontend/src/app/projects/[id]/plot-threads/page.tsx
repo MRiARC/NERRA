@@ -8,7 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { PageHeader, SectionHeading } from "@/components/ui/PageHeader";
 import { cn, getErrorMessage } from "@/lib/utils";
 import { toast } from "sonner";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 
 interface PlotThreadsPageProps {
   params: Promise<{ id: string }>;
@@ -157,8 +157,9 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
               type="button"
               onClick={handleSyncThreads}
               disabled={isSyncing}
-              className="text-ink-ash transition-colors hover:text-ink-parchment disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-ink-ash transition-colors hover:text-ink-parchment disabled:opacity-50"
             >
+              {isSyncing && <Loader2 className="h-3 w-3 animate-spin text-wine-accent" />}
               {isSyncing ? "reading…" : "re-read the book"}
             </button>
             <button
@@ -176,6 +177,19 @@ export default function PlotThreadsPage({ params }: PlotThreadsPageProps) {
           </div>
         }
       />
+
+      {/* Cross-Chapter Plot Threads In-Flight Banner */}
+      {isSyncing && (
+        <div className="mt-6 flex items-center gap-3 rounded-lg border border-border-subtle bg-surface-elevated/40 p-4 font-mono text-xs text-ink-bone">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-wine-accent" />
+          <p className="leading-relaxed">
+            <span className="text-[10px] uppercase tracking-[0.16em] text-wine-accent font-semibold">
+              Synthesizing Threads ·{" "}
+            </span>
+            Traversing all manuscript chapters with AI to identify planted promises, foreshadowing, and payoffs…
+          </p>
+        </div>
+      )}
 
       {isAdding && (
         <form onSubmit={handleCreateThread} className="mt-6 border-y border-border-quiet py-5">

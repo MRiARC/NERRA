@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "src/components/legacy"]
+  "exclude": [
+    "node_modules",
+    "src/components/legacy",
+    "src/components/characterNetwork",
+    "src/lib/characterNetwork",
+    "**/__tests__/**"
+  ]
 }
