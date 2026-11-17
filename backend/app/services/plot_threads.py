@@ -230,7 +230,14 @@ def extract_and_update_plot_threads_llm(
     )
 
 
-def synthesize_all_plot_threads_llm(db: Session, project_id, use_llm: bool = True) -> list:
+def synthesize_all_plot_threads_llm(
+    db: Session,
+    project_id,
+    use_llm: bool = True,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> list:
     """Synthesize plot threads across all stored chapter chunks for a project."""
     from app.models import Chunk, Manuscript
     from app.services import graph
@@ -246,7 +253,14 @@ def synthesize_all_plot_threads_llm(db: Session, project_id, use_llm: bool = Tru
     rows = []
     for ch in chunks:
         rows = extract_and_update_plot_threads_llm(
-            db, pid, ch.chapter_number, ch.content, use_llm=use_llm
+            db,
+            pid,
+            ch.chapter_number,
+            ch.content,
+            use_llm=use_llm,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
         )
     try:
         graph.sync_project_graph(db, pid)
