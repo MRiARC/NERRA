@@ -1,657 +1,438 @@
 "use client";
 
-import React, { useRef } from "react";
+import React from "react";
 import Link from "next/link";
 import { motion, useScroll, useTransform } from "motion/react";
 import {
   ArrowRight,
-  ArrowDown,
-  Layers,
-  Compass,
   Clock,
-  Network,
-  Activity,
-  Check,
-  Sparkles,
+  Compass,
+  GitBranch,
   ShieldCheck,
-  ChevronRight,
-  Feather,
+  Sparkles,
+  BookOpen,
+  Layers,
+  CheckCircle2,
 } from "lucide-react";
 import { ProductStudioSimulator } from "./ProductStudioSimulator";
 import { ThemeSwitcher } from "@/components/ui/ThemeSwitcher";
-import { cn } from "@/lib/utils";
 
-const SPRING_TRANSITION = { duration: 0.7, ease: [0.16, 1, 0.3, 1] } as const;
+// ─── Real Questions from README that resonate with novelists ──────────────────
+const NARRATIVE_PARADOXES = [
+  {
+    q: "Where was the brass compass left when Marcus fled the pier in Chapter 4?",
+    engine: "Custody Engine",
+    color: "text-red-400 border-red-500/20 bg-red-500/5",
+  },
+  {
+    q: "Does Sarah know about the banquet poisoning, or is she speaking with knowledge she hasn't acquired yet?",
+    engine: "Epistemic Matrix",
+    color: "text-sky-400 border-sky-500/20 bg-sky-500/5",
+  },
+  {
+    q: "Did this flashback occur before or after the Treaty of Ashford was signed?",
+    engine: "Dual Chronology",
+    color: "text-amber-400 border-amber-500/20 bg-amber-500/5",
+  },
+  {
+    q: "Did Sarah's eyes turn from steel-gray to amber between Chapter 1 and Chapter 8?",
+    engine: "Entity Memory",
+    color: "text-emerald-400 border-emerald-500/20 bg-emerald-500/5",
+  },
+  {
+    q: "Which of the 14 subplots introduced in Act I were abandoned without resolution?",
+    engine: "Plot Threads",
+    color: "text-purple-400 border-purple-500/20 bg-purple-500/5",
+  },
+];
+
+// ─── The 5 Intelligence Modules from README ────────────────────────────────────
+const INTELLIGENCE_MODULES = [
+  {
+    id: "01",
+    icon: Clock,
+    title: "Dual Chronology & Flashback Engine",
+    desc: "Decouples narrative reading sequence from in-universe calendar time. Pin flashbacks and catch impossible travel velocities before your readers do.",
+  },
+  {
+    id: "02",
+    icon: Compass,
+    title: "Epistemic Knowledge Matrix",
+    desc: "Tracks exactly who knows what secret, since which chapter, and how they learned it—whether witnessed firsthand, told by an ally, or overheard.",
+  },
+  {
+    id: "03",
+    icon: ShieldCheck,
+    title: "Object Custody & Paradox Prevention",
+    desc: "Traces the unbroken physical trajectory of relics, letters, and weapons. If a dagger is locked in a vault, no character can draw it from a coat pocket.",
+  },
+  {
+    id: "04",
+    icon: Sparkles,
+    title: "Intent Reasoner & World Rules",
+    desc: "Distinguishes between genuine errors and deliberate craft. Flags magical transformation, disguise, and unreliable narration without false alarms.",
+  },
+  {
+    id: "05",
+    icon: GitBranch,
+    title: "Cross-Chapter Plot Thread Tracker",
+    desc: "Monitors subplot lifecycles across chapters (Introduced → Escalating → Resolved → Abandoned), ensuring no narrative promise is forgotten.",
+  },
+];
 
 export function UnauthenticatedLandingView() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({
-    target: containerRef,
-    offset: ["start start", "end end"],
-  });
-
-  const scrollIndicatorWidth = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
-
-  const scrollToAtelier = () => {
-    document.getElementById("atelier")?.scrollIntoView({ behavior: "smooth" });
-  };
+  const { scrollYProgress } = useScroll();
+  const wireWidth = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
 
   return (
-    <div
-      ref={containerRef}
-      className="min-h-screen bg-surface-void text-ink-parchment selection:bg-wine-accent selection:text-ink-parchment"
-    >
-      {/* Top Single-Pixel Scroll Progress Wire (Solid Wine) */}
+    <div className="min-h-screen bg-surface-void text-ink-parchment selection:bg-wine-accent/30 selection:text-ink-parchment font-sans">
+      {/* Scroll indicator wire */}
       <motion.div
-        style={{ width: scrollIndicatorWidth }}
+        style={{ width: wireWidth }}
         className="fixed top-0 left-0 h-[2px] bg-wine-crimson z-50 pointer-events-none"
       />
 
       {/* ===================================================================
-          01. EDITORIAL MASTHEAD & STATUS BEACON
+          01. NAV MASTHEAD
           =================================================================== */}
-      <header className="sticky top-0 z-40 w-full border-b border-border-quiet bg-surface-void/95 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 h-14 sm:h-16 flex items-center justify-between">
-          {/* Brand Mark: Pure solid typography with live status beacon */}
-          <div className="flex items-center gap-3 select-none">
-            <Link href="/" className="flex items-center gap-2 group">
-              <span className="font-serif text-lg sm:text-xl font-medium tracking-[0.22em] text-ink-parchment group-hover:text-white transition-colors">
-                NERRA
-              </span>
-            </Link>
-
-            <span aria-hidden className="hidden sm:inline-block h-3.5 w-px bg-border-quiet" />
-
-            <div className="hidden sm:flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
+      <header className="sticky top-0 z-40 w-full border-b border-border-quiet bg-surface-void/90 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 h-16 flex items-center justify-between">
+          {/* Brand mark */}
+          <Link href="/" className="flex items-center gap-3 select-none group">
+            <span className="font-serif text-xl font-medium tracking-[0.2em] text-ink-parchment group-hover:text-white transition-colors">
+              ✦ NERRA ✦
+            </span>
+            <span className="hidden md:inline-block h-3 w-px bg-border-quiet" />
+            <span className="hidden md:flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.2em] text-ink-faint">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Scribe Engine v2.4</span>
-            </div>
-          </div>
+              Story Operating System
+            </span>
+          </Link>
 
-          {/* Navigation Anchors (Broadsheet Style) */}
-          <nav className="hidden md:flex items-center gap-6 font-mono text-[9.5px] uppercase tracking-[0.2em] text-ink-ash">
-            <a href="#thesis" className="hover:text-ink-parchment transition-colors">
-              Thesis
+          {/* Quick jump anchors */}
+          <nav className="hidden lg:flex items-center gap-7 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash">
+            <a href="#simulator" className="hover:text-ink-parchment transition-colors text-wine-accent font-semibold">
+              Interactive Studio
             </a>
-            <span className="text-border-quiet">·</span>
+            <a href="#philosophy" className="hover:text-ink-parchment transition-colors">
+              The Problem
+            </a>
             <a href="#engines" className="hover:text-ink-parchment transition-colors">
-              Four Engines
+              5 Engines
             </a>
-            <span className="text-border-quiet">·</span>
-            <a href="#cases" className="hover:text-ink-parchment transition-colors">
-              Case Records
-            </a>
-            <span className="text-border-quiet">·</span>
-            <a href="#principles" className="hover:text-ink-parchment transition-colors">
-              Manifesto
-            </a>
-            <span className="text-border-quiet">·</span>
-            <a href="#atelier" className="text-wine-accent hover:text-wine-crimson transition-colors font-semibold">
-              Live Atelier
+            <a href="#benchmark" className="hover:text-ink-parchment transition-colors">
+              Benchmark
             </a>
           </nav>
 
-          {/* Right Controls: Site Theme Switcher + Direct Sign In + Enter Studio */}
-          <div className="flex items-center gap-3 sm:gap-4 font-mono text-[10px]">
+          {/* Action controls */}
+          <div className="flex items-center gap-4">
             <ThemeSwitcher />
-
             <Link
               href="/login"
-              className="text-ink-ash hover:text-ink-parchment uppercase tracking-wider transition-colors hidden sm:inline"
+              className="hidden sm:inline font-mono text-[10px] uppercase tracking-[0.18em] text-ink-ash hover:text-ink-parchment transition-colors"
             >
               Sign In
             </Link>
-
             <Link
-              href="/login"
-              className="inline-flex items-center gap-1.5 bg-wine-accent hover:bg-wine-crimson text-white px-3.5 py-1.5 rounded text-[10px] uppercase tracking-[0.16em] font-medium transition-colors shadow-xs"
+              href="/register"
+              className="inline-flex items-center gap-1.5 rounded-full bg-wine-accent hover:bg-wine-crimson text-white px-5 py-2 text-xs font-medium uppercase tracking-wider transition-all duration-200 shadow-[0_2px_14px_rgba(140,34,66,0.35)] hover:shadow-[0_4px_22px_rgba(140,34,66,0.5)]"
             >
-              <span>Enter Studio</span>
-              <ArrowRight className="h-3 w-3" />
+              <span>Start Free</span>
+              <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
       </header>
 
       {/* ===================================================================
-          02. THE BROADSHEET MONUMENT (HERO)
-          Zero boxes. Dramatic typographic scale. Archival marginalia.
+          02. HERO SECTION — THE PHILOSOPHY & IMMEDIATE INTERACTIVE STUDIO
           =================================================================== */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 pt-12 sm:pt-20 lg:pt-24 pb-16 sm:pb-24">
-        {/* Folio Register Hairline */}
-        <div className="flex items-center justify-between pb-4 border-b border-border-quiet font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-          <div className="flex items-center gap-2">
-            <span className="text-wine-accent font-semibold">FOLIO I</span>
-            <span>/</span>
-            <span>THE FORENSIC CONTINUITY THESIS</span>
+      <section className="relative px-5 sm:px-8 lg:px-10 pt-16 sm:pt-20 pb-12 max-w-7xl mx-auto">
+        <div className="max-w-3xl space-y-6">
+          {/* Eyebrow */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-wine-accent/30 bg-wine-accent/10 px-3.5 py-1 text-[10px] font-mono uppercase tracking-[0.2em] text-wine-crimson">
+            <span>The Intelligent Story Operating System</span>
           </div>
-          <span className="hidden sm:inline">DETERMINISTIC SPATIOTEMPORAL PROOF</span>
-        </div>
 
-        {/* Monumental Newsreader Display Headline */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={SPRING_TRANSITION}
-          className="mt-8 sm:mt-12"
-        >
-          <h1 className="font-serif text-[clamp(2.5rem,7vw,5.5rem)] font-normal leading-[1.02] tracking-[-0.03em] text-ink-parchment max-w-5xl">
-            A character who dies in Chapter Three cannot unlock a door in Chapter Twelve.
+          {/* Core Philosophy Headline directly from README */}
+          <h1 className="font-serif text-[clamp(2.8rem,5.8vw,4.5rem)] font-light leading-[1.06] tracking-[-0.025em] text-ink-parchment">
+            Your story has a memory. <br />
+            <span className="italic font-normal text-wine-crimson">NERRA makes it intelligent.</span>
           </h1>
-        </motion.div>
 
-        {/* Asymmetrical 3-Column Editorial Grid (No Boxes) */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ ...SPRING_TRANSITION, delay: 0.15 }}
-          className="mt-12 sm:mt-16 pt-8 border-t border-border-quiet grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 text-ink-bone"
-        >
-          {/* Main Exposition (7 Cols) */}
-          <div className="lg:col-span-7 space-y-5">
-            <p className="font-serif text-lg sm:text-2xl font-light italic leading-relaxed text-ink-parchment">
-              Human memory breaks at 60,000 words. Narrative canon breaks immediately after.
-            </p>
-            <p className="font-sans text-sm sm:text-base leading-relaxed text-ink-ash max-w-2xl">
-              Traditional copyeditors check punctuation and rhythm. Nerra proofs physical reality.
-              We treat your manuscript as an interconnected spacetime continuum—verifying object
-              custody chains, epistemic secrecy states, and travel velocities with deterministic certainty.
-            </p>
+          {/* Value Proposition */}
+          <p className="font-serif text-lg sm:text-xl text-ink-bone leading-relaxed max-w-2xl">
+            As your novel scales past 30,000 words, human memory falters under exponential plot entanglements.
+            NERRA transforms your draft into an interconnected, graph-backed intelligence layer—verifying
+            character knowledge states, physical object custody, and dual timelines as you write.
+          </p>
 
-            {/* Action Row */}
-            <div className="pt-4 flex flex-wrap items-center gap-6 font-mono text-[11px] uppercase tracking-[0.16em]">
-              <button
-                type="button"
-                onClick={scrollToAtelier}
-                className="group inline-flex items-center gap-2 text-wine-accent hover:text-wine-crimson transition-colors cursor-pointer"
+          {/* Action pills */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <Link
+              href="/register"
+              className="inline-flex items-center gap-2 rounded-full bg-wine-accent hover:bg-wine-crimson text-white px-7 py-3 text-sm font-medium transition-all duration-200 shadow-[0_2px_16px_rgba(140,34,66,0.4)] hover:shadow-[0_4px_24px_rgba(140,34,66,0.55)]"
+            >
+              <span>Begin Your Story</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a
+              href="#simulator"
+              className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-surface-subtle/50 hover:bg-surface-elevated text-ink-bone hover:text-ink-parchment px-6 py-3 text-sm font-medium transition-colors"
+            >
+              <span>Explore Interactive Studio ↓</span>
+            </a>
+          </div>
+
+          {/* Sovereign reassurance */}
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint pt-1">
+            Zero AI training on your prose &nbsp;·&nbsp; Pure deterministic graph verification &nbsp;·&nbsp; All drafts sovereign
+          </p>
+        </div>
+
+        {/* Narrative Paradox Carousel / Chips: The authentic questions authors face */}
+        <div className="mt-12 pt-8 border-t border-border-quiet">
+          <p className="font-mono text-[9.5px] uppercase tracking-[0.22em] text-ink-faint mb-4">
+            The questions that haunt complex novelists at scale:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {NARRATIVE_PARADOXES.slice(0, 3).map((item, idx) => (
+              <div
+                key={idx}
+                className="p-4 rounded-xl border border-border-quiet bg-surface-subtle/30 backdrop-blur-xs flex flex-col justify-between gap-3"
               >
-                <span>Explore the Working Atelier</span>
-                <ArrowDown className="h-3.5 w-3.5 transition-transform group-hover:translate-y-0.5" />
-              </button>
-
-              <span aria-hidden className="text-border-quiet">·</span>
-
-              <Link
-                href="/register"
-                className="text-ink-parchment hover:text-white underline decoration-wine-accent/60 underline-offset-4 transition-colors"
-              >
-                Create Author Study &rarr;
-              </Link>
-            </div>
-          </div>
-
-          {/* Marginalia Coordinates Column (5 Cols) */}
-          <div className="lg:col-span-5 border-l-0 lg:border-l lg:border-border-quiet lg:pl-10 space-y-6 font-mono text-[10px]">
-            <span className="block text-[8.5px] uppercase tracking-[0.24em] text-ink-faint">
-              Canonical Invariants Enforced
-            </span>
-
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <span className="text-wine-crimson font-semibold tracking-wider">§ 01 / CUSTODY INVARIANT</span>
-                <p className="font-sans text-xs text-ink-ash leading-normal">
-                  A physical relic cannot exist in two places at once without an explicit recorded handoff or theft.
+                <p className="font-serif text-sm italic text-ink-bone leading-snug">
+                  &ldquo;{item.q}&rdquo;
                 </p>
+                <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider">
+                  <span className="text-ink-faint">Guarded by:</span>
+                  <span className={`px-2 py-0.5 rounded border font-medium ${item.color}`}>
+                    {item.engine}
+                  </span>
+                </div>
               </div>
-
-              <div className="space-y-1">
-                <span className="text-wine-crimson font-semibold tracking-wider">§ 02 / EPISTEMIC INVARIANT</span>
-                <p className="font-sans text-xs text-ink-ash leading-normal">
-                  A character cannot act on a secret they have never witnessed, overheard, or been confessed to.
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-wine-crimson font-semibold tracking-wider">§ 03 / SPATIOTEMPORAL INVARIANT</span>
-                <p className="font-sans text-xs text-ink-ash leading-normal">
-                  Characters cannot traverse 240 leagues across rough terrain faster than physical velocity permits.
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      </section>
-
-      {/* ===================================================================
-          03. THE EDITORIAL THESIS (TWO-COLUMN BROADSIDE)
-          Zero boxes. Ruled borders. Broadsheet essay format.
-          =================================================================== */}
-      <section id="thesis" className="border-t border-border-quiet bg-surface-subtle/10 py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Header indicator */}
-          <div className="pb-3 border-b border-border-quiet flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-            <span>SEC. 02 / THE ESSAY</span>
-            <span>WHY GENERATIVE LLMS FAIL NOVELISTS</span>
-          </div>
-
-          <div className="mt-10 sm:mt-14 grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
-            {/* Left Headline Column */}
-            <div className="lg:col-span-5">
-              <h2 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-normal leading-[1.08] tracking-tight text-ink-parchment">
-                Traditional copyeditors proofread prose. <br />
-                <span className="italic text-wine-accent">Nerra proofs reality.</span>
-              </h2>
-
-              <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.18em] text-ink-faint">
-                150,000 words · 40 characters · 18 months of drafting
-              </p>
-            </div>
-
-            {/* Right Prose Column */}
-            <div className="lg:col-span-7 space-y-6 font-serif text-base sm:text-lg leading-[1.8] text-ink-bone">
-              <p className="first-letter:float-left first-letter:mr-3 first-letter:font-serif first-letter:text-4xl first-letter:leading-none first-letter:text-wine-accent">
-                A novel is not an isolated stack of chapters; it is a closed physical world.
-                When you draft over eighteen months, subtle drift silently corrupts your story.
-                A poison vial placed inside a desk drawer in London is suddenly administered
-                in Edinburgh without a journey. An alibi relies on a three-hour train journey
-                that historically took twelve hours in 1888. A magistrate accuses a nobleman using
-                details known strictly to the conspirators.
-              </p>
-
-              <p className="text-ink-ash text-sm sm:text-base leading-relaxed font-sans">
-                Generative AI chatbots are fundamentally unsuited for this work. They hallucinate quotes,
-                lose context after 10,000 words, and offer generic stylistic clichés. Nerra takes the opposite
-                path: sovereign deterministic graph algebra and first-order temporal logic.
-                Every finding points to exact line coordinates, with zero made-up rules.
-              </p>
-            </div>
+            ))}
           </div>
         </div>
-      </section>
 
-      {/* ===================================================================
-          04. THE FOUR FORENSIC ENGINES (OPEN LEDGER · NO BOXES)
-          4-Column Ruled Structural Ledger dividing with hairlines.
-          =================================================================== */}
-      <section id="engines" className="border-t border-border-quiet py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Header */}
-          <div className="pb-3 border-b border-border-quiet flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-            <span>SEC. 03 / THE CONTINUITY LEDGER</span>
-            <span>FOUR DETERMINISTIC VERIFICATION ENGINES</span>
-          </div>
-
-          <div className="mt-8 mb-12">
-            <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink-parchment">
-              Mathematical canon security across every draft leaf.
-            </h2>
-          </div>
-
-          {/* 4-Column Ruled Ledger (Zero Boxes) */}
-          <div className="border-y border-border-quiet grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-border-quiet">
-            {/* Col 1 */}
-            <div className="py-8 md:pr-6 lg:pr-8 space-y-3">
-              <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                <span>01 / CUSTODY</span>
-                <Layers className="h-3.5 w-3.5 text-ink-faint" />
-              </div>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                Object Trajectory Worldlines
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                Every dagger, letter, coin, and carriage follows an unbroken physical path through time.
-                If Vault #409 is sealed, a relic cannot be drawn from an inner coat pocket without a theft record.
-              </p>
-              <span className="block pt-2 font-mono text-[8px] uppercase tracking-wider text-ink-faint">
-                Canon Graph · Entity Trajectories
-              </span>
-            </div>
-
-            {/* Col 2 */}
-            <div className="py-8 md:px-6 lg:px-8 space-y-3">
-              <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                <span>02 / EPISTEMICS</span>
-                <Compass className="h-3.5 w-3.5 text-ink-faint" />
-              </div>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                &ldquo;Who Knows What&rdquo; Matrix
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                A 2D truth-versus-character grid with chapter dial scrubbing. Distinguishes firsthand
-                witnesses from rumors and confessions, halting characters from acting on secrets they never heard.
-              </p>
-              <span className="block pt-2 font-mono text-[8px] uppercase tracking-wider text-ink-faint">
-                Epistemic Grid · Temporal Dial
-              </span>
-            </div>
-
-            {/* Col 3 */}
-            <div className="py-8 md:px-6 lg:px-8 space-y-3">
-              <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                <span>03 / CHRONOLOGY</span>
-                <Clock className="h-3.5 w-3.5 text-ink-faint" />
-              </div>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                Dual Chronology Engine
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                Runs two parallel clocks: in-book narrative reading sequence versus in-universe calendar time.
-                Automatically detects spatiotemporal collisions where travel exceeds physical road velocity.
-              </p>
-              <span className="block pt-2 font-mono text-[8px] uppercase tracking-wider text-ink-faint">
-                Two-Clock Sync · Spatiotemporal Bounds
-              </span>
-            </div>
-
-            {/* Col 4 */}
-            <div className="py-8 md:pl-6 lg:pl-8 space-y-3">
-              <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                <span>04 / LOGIC</span>
-                <ShieldCheck className="h-3.5 w-3.5 text-ink-faint" />
-              </div>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                Deterministic Ground Truth
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                First-order temporal logic and graph theory replace fuzzy LLM advice. Every contradiction
-                cites exact chapter and paragraph coordinates with zero hallucinated rules.
-              </p>
-              <span className="block pt-2 font-mono text-[8px] uppercase tracking-wider text-ink-faint">
-                Formal Verification · Paragraph Citations
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ===================================================================
-          05. THE CASE RECORDS (LITERARY AUTOPSY)
-          Full-width ruled broadsheet sections. Side-by-side citations.
-          =================================================================== */}
-      <section id="cases" className="border-t border-border-quiet bg-surface-subtle/10 py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Header */}
-          <div className="pb-3 border-b border-border-quiet flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-            <span>SEC. 04 / FORENSIC CASE RECORDS</span>
-            <span>HISTORICAL MANUSCRIPT AUTOPSIES</span>
-          </div>
-
-          <div className="mt-8 mb-12">
-            <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink-parchment">
-              Even literary titans slipped in the fog of 100,000 words.
-            </h2>
-            <p className="mt-2 font-serif text-sm italic text-ink-ash">
-              How Nerra&apos;s deterministic canon guard would have halted classic published errors on draft day.
-            </p>
-          </div>
-
-          {/* Three Full-Width Ruled Case Records (No chunky card boxes) */}
-          <div className="divide-y divide-border-quiet border-y border-border-quiet">
-            {/* Record 1 */}
-            <div className="py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-baseline">
-              <div className="lg:col-span-3">
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-wine-accent">
-                  CASE I · ARTHUR CONAN DOYLE
-                </span>
-                <h3 className="font-serif text-base font-medium text-ink-parchment mt-1">
-                  The Migrating Jezail Bullet
-                </h3>
-                <p className="font-mono text-[9px] text-ink-faint mt-0.5">
-                  Sherlock Holmes Canon · 1887 vs 1890
-                </p>
-              </div>
-
-              <div className="lg:col-span-6 space-y-2.5 font-serif text-xs leading-relaxed text-ink-bone">
-                <div className="border-l border-border-quiet pl-3">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-ink-faint block pb-0.5">
-                    A Study in Scarlet (Ch. 1)
-                  </span>
-                  &ldquo;I was struck on the shoulder by a Jezail bullet, which shattered the bone and grazed the subclavian artery.&rdquo;
-                </div>
-                <div className="border-l border-wine-crimson/50 pl-3 text-ink-parchment">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-wine-crimson block pb-0.5">
-                    The Sign of the Four (Ch. 1)
-                  </span>
-                  &ldquo;I sat nursing my wounded leg; a Jezail bullet had passed through it, leaving me with an aching limb.&rdquo;
-                </div>
-              </div>
-
-              <div className="lg:col-span-3 font-mono text-[9px] space-y-1">
-                <span className="text-severity-contradiction uppercase font-semibold block">
-                  ● ANATOMY CONTRADICTION
-                </span>
-                <p className="font-sans text-[11px] text-ink-ash leading-snug">
-                  Zero anatomical transfer records between shoulder joint and tibia. Scribe surfaces 1 finding in Dr. Watson&apos;s physical dossier.
-                </p>
-              </div>
-            </div>
-
-            {/* Record 2 */}
-            <div className="py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-baseline">
-              <div className="lg:col-span-3">
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-wine-accent">
-                  CASE II · ALEXANDRE DUMAS
-                </span>
-                <h3 className="font-serif text-base font-medium text-ink-parchment mt-1">
-                  The Phantom Courier
-                </h3>
-                <p className="font-mono text-[9px] text-ink-faint mt-0.5">
-                  The Count of Monte Cristo · 1844
-                </p>
-              </div>
-
-              <div className="lg:col-span-6 space-y-2.5 font-serif text-xs leading-relaxed text-ink-bone">
-                <div className="border-l border-border-quiet pl-3">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-ink-faint block pb-0.5">
-                    Volume I (Ch. 14)
-                  </span>
-                  &ldquo;The courier departed the barriers of Paris at midnight, galloping into the driving November rain.&rdquo;
-                </div>
-                <div className="border-l border-wine-crimson/50 pl-3 text-ink-parchment">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-wine-crimson block pb-0.5">
-                    Volume I (Ch. 15)
-                  </span>
-                  &ldquo;Before the dawn bells had finished ringing across Marseille harbor, the letter was delivered into Villefort&apos;s hands.&rdquo;
-                </div>
-              </div>
-
-              <div className="lg:col-span-3 font-mono text-[9px] space-y-1">
-                <span className="text-severity-warning uppercase font-semibold block">
-                  ▲ SPATIOTEMPORAL COLLISION
-                </span>
-                <p className="font-sans text-[11px] text-ink-ash leading-snug">
-                  480 miles in 5 hours: 96 mph overland horseback velocity violation. Scribe prompts chapter date recalibration.
-                </p>
-              </div>
-            </div>
-
-            {/* Record 3 */}
-            <div className="py-8 grid grid-cols-1 lg:grid-cols-12 gap-6 items-baseline">
-              <div className="lg:col-span-3">
-                <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-wine-accent">
-                  CASE III · NERRA DEMO STUDIO
-                </span>
-                <h3 className="font-serif text-base font-medium text-ink-parchment mt-1">
-                  The Clockwork Heart
-                </h3>
-                <p className="font-mono text-[9px] text-ink-faint mt-0.5">
-                  The Brass Alchemist of Prague · Draft Leaf
-                </p>
-              </div>
-
-              <div className="lg:col-span-6 space-y-2.5 font-serif text-xs leading-relaxed text-ink-bone">
-                <div className="border-l border-border-quiet pl-3">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-ink-faint block pb-0.5">
-                    Chapter 03 · Citadel Vault
-                  </span>
-                  &ldquo;Lysander logged the obsidian compass into vault register #409, sealing the iron latch.&rdquo;
-                </div>
-                <div className="border-l border-wine-crimson/50 pl-3 text-ink-parchment">
-                  <span className="font-mono text-[8px] uppercase tracking-wider text-wine-crimson block pb-0.5">
-                    Chapter 04 · Current Draft
-                  </span>
-                  &ldquo;Marcus slipped his fingers into his inner coat pocket and withdrew the obsidian compass...&rdquo;
-                </div>
-              </div>
-
-              <div className="lg:col-span-3 font-mono text-[9px] space-y-1">
-                <span className="text-severity-contradiction uppercase font-semibold block">
-                  ● BROKEN CUSTODY CHAIN
-                </span>
-                <p className="font-sans text-[11px] text-ink-ash leading-snug">
-                  Relic moved without transfer. 1-click reconcile or mark as intentional syndicate counterfeit twist in the live editor below.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ===================================================================
-          06. THE SOVEREIGN PRINCIPLES (MANIFESTO LEDGER)
-          Open 3-column broadside with single-pixel hairlines.
-          =================================================================== */}
-      <section id="principles" className="border-t border-border-quiet py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Header */}
-          <div className="pb-3 border-b border-border-quiet flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-            <span>SEC. 05 / SOVEREIGN PRINCIPLES</span>
-            <span>AUTHOR COGNITIVE CALM &amp; DRAFT PRIVACY</span>
-          </div>
-
-          <div className="mt-8 mb-12">
-            <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink-parchment">
-              Built for authors who refuse distraction.
-            </h2>
-          </div>
-
-          <div className="border-t border-border-quiet grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border-quiet">
-            <div className="py-8 md:pr-8 space-y-2.5">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                I. SOVEREIGN PRIVACY
-              </span>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                Zero Training on Your Prose
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                Your manuscripts are your private intellectual property. Nerra processes your drafts
-                in isolated studio instances; zero sentences are ever stored, mined, or used to train public models.
-              </p>
-            </div>
-
-            <div className="py-8 md:px-8 space-y-2.5">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                II. COGNITIVE CALM
-              </span>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                No Chatbots. No Clutter.
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                We believe conversational chatbots destroy literary flow. Nerra stays completely silent
-                until a factual contradiction or broken timeline is detected, presenting proof in the margins.
-              </p>
-            </div>
-
-            <div className="py-8 md:pl-8 space-y-2.5">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-wine-accent">
-                III. DETERMINISTIC GROUND TRUTH
-              </span>
-              <h3 className="font-serif text-lg font-medium text-ink-parchment">
-                Exact Coordinates
-              </h3>
-              <p className="font-sans text-xs text-ink-ash leading-relaxed">
-                Every contradiction, missing object, and secret leak links directly to the exact chapter,
-                paragraph, and character citation. You inspect the reality, verify the facts, and remain in command.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ===================================================================
-          07. THE WORKING ATELIER (THE INTERACTIVE SIMULATOR)
-          Cleanly anchored. Seamless integration. No chunky outer boxes.
-          =================================================================== */}
-      <section id="atelier" className="border-t border-border-quiet bg-surface-subtle/15 py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Header */}
-          <div className="pb-3 border-b border-border-quiet flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.22em] text-ink-faint">
-            <span>SEC. 06 / THE WORKING ATELIER</span>
-            <span>LIVE INTERACTIVE STUDIO SANDBOX</span>
-          </div>
-
-          <div className="mt-8 mb-8 flex flex-col md:flex-row md:items-baseline justify-between gap-4">
+        {/* ===================================================================
+            THE HERO INTERACTIVE STUDIO SIMULATOR
+            Embedded directly inside the Hero fold as requested
+            =================================================================== */}
+        <div id="simulator" className="mt-14 scroll-mt-20">
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-border-quiet pb-3">
             <div>
-              <h2 className="font-serif text-3xl sm:text-4xl font-normal tracking-tight text-ink-parchment">
-                Step directly into the author&apos;s workbench.
+              <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.24em] text-wine-accent">
+                <BookOpen className="h-3 w-3" />
+                <span>The Author&apos;s Workbench · Full Interactive Simulation</span>
+              </div>
+              <h2 className="mt-1 font-serif text-2xl font-light text-ink-parchment">
+                Live Manuscript Studio: <em>The Brass Alchemist of Prague</em>
               </h2>
-              <p className="mt-1 font-serif text-sm italic text-ink-ash">
-                Test the full studio: live Markdown formatting toolbar, 2D knowledge matrix, real G6 world graph, and persistent editor below.
-              </p>
             </div>
-
-            <div className="font-mono text-[9px] uppercase tracking-wider text-ink-faint flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <span>Full Interactive Simulation</span>
-            </div>
+            <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+              Interact with the Editor, Reader, Graph, Timeline &amp; Knowledge Matrix
+            </p>
           </div>
 
-          {/* Master Product Studio Simulator — Seamlessly mounted */}
-          <div className="mt-6">
+          {/* Master Product Studio Simulator */}
+          <div className="w-full">
             <ProductStudioSimulator />
           </div>
         </div>
       </section>
 
       {/* ===================================================================
-          08. ARCHITECTURAL COLOPHON & STUDIO INVITATION
-          Broadsheet closing. Pure solid colors.
+          03. THE PHILOSOPHY: NARRATIVE COMPLEXITY COLLAPSE
+          =================================================================== */}
+      <section id="philosophy" className="border-t border-border-quiet bg-surface-subtle/10 py-20 sm:py-28">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
+          <div className="max-w-3xl space-y-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-wine-crimson font-medium">
+              The Philosophy · Why Conventional Tools Break
+            </p>
+            <h2 className="font-serif text-[clamp(2.2rem,4.5vw,3.6rem)] font-light leading-[1.1] tracking-tight text-ink-parchment">
+              Flat text editors cannot remember <br />
+              <span className="italic text-ink-ash">what happened forty chapters ago.</span>
+            </h2>
+            <p className="font-serif text-base sm:text-lg text-ink-bone leading-relaxed pt-2">
+              Traditional writing tools—Scrivener, Notion, Word—treat your novel as dumb, flat text strings.
+              They force you to maintain manual side wikis that inevitably fall out of sync with your evolving manuscript.
+              When an apprentice steals a key in Act I, you shouldn&apos;t need an external spreadsheet to ensure he doesn&apos;t
+              leave it on a desk in Act III.
+            </p>
+          </div>
+
+          {/* Comparison Ledger */}
+          <div className="mt-14 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border-quiet pt-10">
+            <div className="space-y-4">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-faint">
+                Traditional Writing Tools (Scrivener, Word, Notion)
+              </span>
+              <ul className="space-y-3 font-serif text-sm text-ink-ash leading-relaxed">
+                <li className="flex items-start gap-2.5">
+                  <span className="text-red-400 font-mono">✕</span>
+                  <span><strong>Flat text silos:</strong> No awareness of entity identities, location distances, or chronological order.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-red-400 font-mono">✕</span>
+                  <span><strong>Manual wikis:</strong> Require tedious manual updates after every revision, quickly becoming obsolete.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-red-400 font-mono">✕</span>
+                  <span><strong>Silent plot holes:</strong> Contradictions and severed plot threads remain undetected until beta readers find them.</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-4 border-l border-border-quiet md:pl-8">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-emerald-400 font-medium">
+                The NERRA Story Operating System
+              </span>
+              <ul className="space-y-3 font-serif text-sm text-ink-parchment leading-relaxed">
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Living Graph Layer:</strong> Extracts characters, custody chains, and knowledge states straight from your prose.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Live Prose Squiggles:</strong> Real-time editor squiggles flag custody paradoxes and epistemic leaks as you type.</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span><strong>Intent-Aware Craft:</strong> Evaluates apparent errors against unreliable narrators, disguises, and world rules.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===================================================================
+          04. THE FIVE STORY INTELLIGENCE ENGINES
+          =================================================================== */}
+      <section id="engines" className="border-t border-border-quiet py-20 sm:py-28">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
+          <div className="max-w-2xl mb-14">
+            <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-wine-crimson font-medium">
+              Core Intelligence Modules
+            </span>
+            <h2 className="mt-2 font-serif text-3xl sm:text-4xl font-light text-ink-parchment">
+              Five engines designed around the way novelists actually write.
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {INTELLIGENCE_MODULES.map((eng) => (
+              <div
+                key={eng.id}
+                className="space-y-3 border-t border-border-quiet pt-6"
+              >
+                <div className="flex items-center justify-between">
+                  <eng.icon className="h-5 w-5 text-wine-accent" strokeWidth={1.5} />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink-faint">
+                    Module {eng.id}
+                  </span>
+                </div>
+                <h3 className="font-serif text-lg font-medium text-ink-parchment">
+                  {eng.title}
+                </h3>
+                <p className="font-sans text-xs text-ink-ash leading-relaxed">
+                  {eng.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===================================================================
+          05. EMPIRICAL BENCHMARK (REAL DATA FROM 20-CH NOVEL STRESS TEST)
+          =================================================================== */}
+      <section id="benchmark" className="border-t border-border-quiet bg-surface-subtle/15 py-16 sm:py-20">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
+          <div className="flex flex-col md:flex-row md:items-baseline justify-between gap-4 mb-10 pb-4 border-b border-border-quiet">
+            <div>
+              <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-ink-faint">
+                Empirical Audit · Full-Length Fantasy Manuscript
+              </span>
+              <h2 className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment mt-1">
+                Stress-tested on <em>The Obsidian Archive of Aethelgard</em>
+              </h2>
+            </div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-ash">
+              51,960 Words · 20 Chapters · Zero State Corruption
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6">
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment tabular-nums">51,960</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Novel Word Count</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment tabular-nums">728</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Resolved Entities</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment tabular-nums">46</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Custody Transfers</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment tabular-nums">261</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Plot Thread States</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-ink-parchment tabular-nums">94</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Issues Triaged</p>
+            </div>
+            <div className="space-y-1">
+              <span className="font-serif text-2xl sm:text-3xl font-light text-emerald-400 tabular-nums">100%</span>
+              <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">Prose Preserved</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===================================================================
+          06. ARCHITECTURAL COLOPHON & FINAL INVITATION
           =================================================================== */}
       <footer className="border-t border-border-quiet bg-surface-void py-16 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-          {/* Closing Broadside Statement */}
-          <div className="space-y-4 max-w-4xl">
-            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-wine-accent block">
-              THE CANON INVITATION
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
+          <div className="max-w-3xl space-y-6">
+            <span className="font-mono text-[9px] uppercase tracking-[0.24em] text-wine-accent">
+              ✦ ENTER THE STUDY ✦
             </span>
-            <h2 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-normal leading-[1.06] tracking-tight text-ink-parchment">
-              Every fictional world has physical laws. <br />
-              <span className="italic text-ink-ash">Nerra ensures yours never breaks.</span>
+            <h2 className="font-serif text-4xl sm:text-5xl font-light leading-[1.08] tracking-tight text-ink-parchment">
+              Write your story. <br />
+              <span className="italic text-ink-ash">Let NERRA remember everything.</span>
             </h2>
 
-            <div className="pt-6 flex flex-wrap items-center gap-6 font-mono text-[11px] uppercase tracking-[0.16em]">
+            <div className="flex flex-wrap items-center gap-4 pt-4">
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 bg-wine-accent hover:bg-wine-crimson text-white px-5 py-2.5 rounded text-[11px] uppercase tracking-[0.18em] font-medium transition-colors shadow-xs"
+                className="inline-flex items-center gap-2 rounded-full bg-wine-accent hover:bg-wine-crimson text-white px-7 py-3 text-sm font-medium transition-all duration-200 shadow-[0_2px_14px_rgba(140,34,66,0.35)]"
               >
-                <span>Create Your Study</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <span>Create Author Account</span>
+                <ArrowRight className="h-4 w-4" />
               </Link>
-
               <Link
                 href="/login"
-                className="text-ink-ash hover:text-ink-parchment transition-colors underline decoration-border-subtle underline-offset-4"
+                className="font-mono text-xs text-ink-ash hover:text-ink-parchment transition-colors uppercase tracking-wider pl-2"
               >
-                Author Sign In &rarr;
+                Sign In to Study &rarr;
               </Link>
             </div>
           </div>
 
-          {/* Structural Colophon Hairline Ledger */}
-          <div className="mt-16 sm:mt-24 pt-8 border-t border-border-quiet grid grid-cols-1 md:grid-cols-12 gap-6 font-mono text-[9px] uppercase tracking-wider text-ink-faint">
-            <div className="md:col-span-4 space-y-1">
-              <span className="text-ink-parchment font-semibold">NERRA STUDIO SYSTEMS</span>
-              <p className="font-sans normal-case text-xs text-ink-ash">
-                Deterministic forensic story intelligence for novelists, showrunners, and narrative directors.
-              </p>
-            </div>
-
-            <div className="md:col-span-4 space-y-1">
-              <span className="text-ink-parchment font-semibold">STUDIO PALETTES</span>
-              <p className="normal-case text-ink-ash text-[9.5px]">
-                Literary Obsidian · Cypress Void · Scholar Slate · Ivory Atelier
-              </p>
-            </div>
-
-            <div className="md:col-span-4 md:text-right space-y-1">
-              <span className="text-ink-parchment font-semibold">COLOPHON</span>
-              <p className="normal-case text-ink-ash text-[9.5px]">
-                Set in Newsreader by Production Type &amp; Literata by TypeTogether.
-              </p>
-              <p className="text-[8.5px] text-ink-faint/60">
-                &copy; {new Date().getFullYear()} NERRA TECHNOLOGIES. ALL DRAFTS SOVEREIGN.
-              </p>
-            </div>
+          <div className="mt-16 pt-8 border-t border-border-quiet flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-mono text-[9px] uppercase tracking-[0.18em] text-ink-faint">
+            <p>
+              NERRA &copy; {new Date().getFullYear()} &nbsp;·&nbsp; Designed for novelists who care about their fictional worlds.
+            </p>
+            <p>
+              All Drafts Sovereign &nbsp;·&nbsp; Zero Prose Training
+            </p>
           </div>
         </div>
       </footer>

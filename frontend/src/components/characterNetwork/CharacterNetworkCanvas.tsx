@@ -129,29 +129,66 @@ export const CharacterNetworkCanvas = React.memo(function CharacterNetworkCanvas
 
       // Helper to accurately resolve graph node/edge IDs across @antv/g DisplayObject hierarchies
       const resolveNodeId = (e: any): string | null => {
-        let curr = e?.target;
+        if (!e) return null;
+        if (e.targetId && typeof e.targetId === "string") {
+          return e.targetId;
+        }
+        const targetId = e.target?.id;
+        if (targetId && typeof targetId === "string") {
+          if (
+            targetId.startsWith("char:") ||
+            targetId.startsWith("obj:") ||
+            targetId.startsWith("loc:") ||
+            targetId.startsWith("event:")
+          ) {
+            return targetId;
+          }
+          try {
+            if (graph.getNodeData(targetId)) return String(targetId);
+          } catch {}
+        }
+        let curr = e.target || e;
         while (curr) {
-          if (curr.id) {
+          const id = curr.id || curr.attributes?.id;
+          if (id && typeof id === "string") {
+            if (
+              id.startsWith("char:") ||
+              id.startsWith("obj:") ||
+              id.startsWith("loc:") ||
+              id.startsWith("event:")
+            ) {
+              return id;
+            }
             try {
-              if (graph.getNodeData(curr.id)) return String(curr.id);
+              if (graph.getNodeData(id)) return String(id);
             } catch {}
           }
-          curr = curr.parentNode || curr.parentElement;
+          curr = curr.parentElement || curr.parentNode;
         }
-        return e?.target?.id || e?.targetId || null;
+        return null;
       };
 
       const resolveEdgeId = (e: any): string | null => {
-        let curr = e?.target;
+        if (!e) return null;
+        if (e.targetId && typeof e.targetId === "string" && e.targetId.includes("--")) {
+          return e.targetId;
+        }
+        const targetId = e.target?.id;
+        if (targetId && typeof targetId === "string" && targetId.includes("--")) {
+          return targetId;
+        }
+        let curr = e.target || e;
         while (curr) {
-          if (curr.id) {
+          const id = curr.id || curr.attributes?.id;
+          if (id && typeof id === "string") {
+            if (id.includes("--")) return id;
             try {
-              if (graph.getEdgeData(curr.id)) return String(curr.id);
+              if (graph.getEdgeData(id)) return String(id);
             } catch {}
           }
-          curr = curr.parentNode || curr.parentElement;
+          curr = curr.parentElement || curr.parentNode;
         }
-        return e?.target?.id || e?.targetId || null;
+        return null;
       };
 
       // Register Interactive Events

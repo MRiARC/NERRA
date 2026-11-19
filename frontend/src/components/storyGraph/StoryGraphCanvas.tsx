@@ -104,47 +104,76 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
           data: g6Data,
         });
 
-        // Resolve node ID recursively across @antv/g DisplayObject hierarchy
-        const resolveNodeId = (target: any): string | null => {
-          let curr = target;
+        // Resolve node ID robustly across G6 event payload and @antv/g DisplayObject hierarchy
+        const resolveNodeId = (e: any): string | null => {
+          if (!e) return null;
+          // 1. Direct targetId on G6 event
+          if (e.targetId && typeof e.targetId === "string") {
+            return e.targetId;
+          }
+          // 2. Direct id on target
+          const targetId = e.target?.id;
+          if (targetId && typeof targetId === "string") {
+            if (
+              targetId.startsWith("char:") ||
+              targetId.startsWith("obj:") ||
+              targetId.startsWith("loc:") ||
+              targetId.startsWith("event:")
+            ) {
+              return targetId;
+            }
+            try {
+              if (graph.getNodeData(targetId)) return String(targetId);
+            } catch {}
+          }
+          // 3. Recursive DisplayObject tree traversal
+          let curr = e.target || e;
           while (curr) {
-            if (curr.id && typeof curr.id === "string") {
+            const id = curr.id || curr.attributes?.id;
+            if (id && typeof id === "string") {
               if (
-                curr.id.startsWith("char:") ||
-                curr.id.startsWith("obj:") ||
-                curr.id.startsWith("loc:") ||
-                curr.id.startsWith("event:")
+                id.startsWith("char:") ||
+                id.startsWith("obj:") ||
+                id.startsWith("loc:") ||
+                id.startsWith("event:")
               ) {
-                return curr.id;
+                return id;
               }
               try {
-                if (graph.getNodeData(curr.id)) return String(curr.id);
+                if (graph.getNodeData(id)) return String(id);
               } catch {}
             }
-            curr = curr.parentNode || curr.parentElement;
+            curr = curr.parentElement || curr.parentNode;
           }
           return null;
         };
 
-        const resolveEdgeId = (target: any): string | null => {
-          let curr = target;
+        const resolveEdgeId = (e: any): string | null => {
+          if (!e) return null;
+          if (e.targetId && typeof e.targetId === "string" && e.targetId.includes("--")) {
+            return e.targetId;
+          }
+          const targetId = e.target?.id;
+          if (targetId && typeof targetId === "string" && targetId.includes("--")) {
+            return targetId;
+          }
+          let curr = e.target || e;
           while (curr) {
-            if (curr.id && typeof curr.id === "string") {
-              if (curr.id.includes("--")) {
-                return curr.id;
-              }
+            const id = curr.id || curr.attributes?.id;
+            if (id && typeof id === "string") {
+              if (id.includes("--")) return id;
               try {
-                if (graph.getEdgeData(curr.id)) return String(curr.id);
+                if (graph.getEdgeData(id)) return String(id);
               } catch {}
             }
-            curr = curr.parentNode || curr.parentElement;
+            curr = curr.parentElement || curr.parentNode;
           }
           return null;
         };
 
         // Pointer event listeners — Scene-graph native event handling with hover intent dwell
         graph.on("node:pointerenter", (e: any) => {
-          const nodeId = resolveNodeId(e.target);
+          const nodeId = resolveNodeId(e);
           if (nodeId) {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
             hoverTimeoutRef.current = setTimeout(() => {
@@ -164,11 +193,13 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
             clearTimeout(hoverTimeoutRef.current);
             hoverTimeoutRef.current = null;
           }
-          setLocalHoveredNodeId(null);
+          hoverTimeoutRef.current = setTimeout(() => {
+            setLocalHoveredNodeId(null);
+          }, 120);
         });
 
         graph.on("node:click", (e: any) => {
-          const nodeId = resolveNodeId(e.target);
+          const nodeId = resolveNodeId(e);
           if (nodeId) {
             onSelectNode(nodeId);
             onSelectConnection(null);
@@ -176,7 +207,7 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
         });
 
         graph.on("edge:pointerenter", (e: any) => {
-          const edgeId = resolveEdgeId(e.target);
+          const edgeId = resolveEdgeId(e);
           if (edgeId) {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
             hoverTimeoutRef.current = setTimeout(() => {
@@ -196,11 +227,13 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
             clearTimeout(hoverTimeoutRef.current);
             hoverTimeoutRef.current = null;
           }
-          setLocalHoveredEdgeId(null);
+          hoverTimeoutRef.current = setTimeout(() => {
+            setLocalHoveredEdgeId(null);
+          }, 120);
         });
 
         graph.on("edge:click", (e: any) => {
-          const edgeId = resolveEdgeId(e.target);
+          const edgeId = resolveEdgeId(e);
           if (edgeId) {
             onSelectConnection(edgeId);
             onSelectNode(null);
@@ -336,9 +369,19 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
       {/* Floating GPU Tooltip */}
       <div
         ref={tooltipRef}
+        onMouseEnter={() => {
+          if (hoverTimeoutRef.current) {
+            clearTimeout(hoverTimeoutRef.current);
+            hoverTimeoutRef.current = null;
+          }
+        }}
+        onMouseLeave={() => {
+          setLocalHoveredNodeId(null);
+          setLocalHoveredEdgeId(null);
+        }}
         className={cn(
-          "pointer-events-none absolute z-30 top-0 left-0 transition-opacity duration-150 will-change-transform",
-          hoveredNode || hoveredConn ? "opacity-100" : "opacity-0"
+          "absolute z-30 top-0 left-0 transition-opacity duration-150 will-change-transform",
+          hoveredNode || hoveredConn ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
       >
@@ -375,10 +418,13 @@ export const StoryGraphCanvas = React.memo(function StoryGraphCanvas({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectNode(hoveredNode.id);
-                  onSelectConnection(null);
+                  e.preventDefault();
+                  if (hoveredNode?.id) {
+                    onSelectNode(hoveredNode.id);
+                    onSelectConnection(null);
+                  }
                 }}
-                className="text-sky-400 hover:text-sky-300 pointer-events-auto cursor-pointer underline-offset-2 hover:underline"
+                className="text-sky-400 hover:text-sky-300 pointer-events-auto cursor-pointer underline-offset-2 hover:underline font-medium"
               >
                 Inspect Dossier →
               </button>
