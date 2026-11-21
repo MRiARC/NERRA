@@ -195,7 +195,7 @@ python -m venv ../.venv
 source ../.venv/bin/activate
 pip install -r requirements.txt
 
-# Run full test suite (71 passing tests)
+# Run full test suite (85 passing tests)
 pytest
 
 # Launch FastAPI development server
@@ -206,10 +206,28 @@ uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```bash
 cd ../frontend
 npm install
-npm run dev
+npm run dev -- -p 3001
 ```
 
-Visit `http://localhost:3000` to access the NERRA Studio.
+Visit `http://localhost:3001` (or `http://localhost:3000`) to access the NERRA Studio.
+
+### 4. Local Services & Port Map
+
+| Service | Port | Description |
+|---|---|---|
+| **Frontend (Next.js Studio)** | `3001` / `3000` | Real-time Author Studio, Graph Explorer, Dossier |
+| **Backend API (FastAPI)** | `8001` | Story Engine, Pipeline, Swagger Docs (`/docs`) |
+| **PostgreSQL (`pgvector`)** | `5434` | Relational DB + Vector Embeddings |
+| **Neo4j Graph Database** | `7474` / `7687` | Cypher Browser (`7474`), Bolt Protocol (`7687`) |
+
+### 5. Preloaded Demo Accounts & Credentials
+
+| Email | Password | Preloaded Projects / Novels |
+|---|---|---|
+| **`author.test@nerra.studio`** | `password123` | • **Wepon of Mass Destruction** (Multi-chapter)<br>• **lets see**<br>• **Whispers of Highcliff Manor**<br>• **The Obsidian Archive of Aethelgard** |
+| **`author@nerra.dev`** | `nerra_dev_password` | • **The Ashford Mystery** (Full Manuscript)<br>• **The Ashford Mystery (Live Claude 4.5 Test)**<br>• **Ashford Mystery v2** |
+
+*(You can also click **"Create Author Account"** at `/register` to start fresh with a blank workspace).*
 
 ---
 
